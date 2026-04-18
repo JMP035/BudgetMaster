@@ -9,17 +9,14 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.budgetmaster.app"
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#0A0A0A"
       },
-      "edgeToEdgeEnabled": true,
-      "package": "com.budgetmaster.app",
-      "permissions": []
+      "package": "com.jakov11035.BudgetMaster"
     },
     "web": {
       "bundler": "metro",
@@ -36,15 +33,12 @@
           "resizeMode": "contain",
           "backgroundColor": "#0A0A0A"
         }
-      ],
-      "./withSmsListener.js",
-      "expo-build-properties"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "router": {},
       "eas": {
         "projectId": "5b0eacac-146f-4402-97a7-6b29237cecc3"
       }

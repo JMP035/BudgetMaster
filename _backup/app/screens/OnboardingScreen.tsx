@@ -35,9 +35,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <View style={s.container}>
             {/* Logo */}
             <View style={s.header}>
-            <View style={{ width: 100, height: 100, borderRadius: 28, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-                <Ionicons name="wallet-outline" size={60} color="#1A0E00" />
-            </View>
+                <Image source={require("../../assets/images/logo.png")} style={{ width: 100, height: 100, borderRadius: 28, marginBottom: 12 }} />
                 <Text style={s.logoTitle}>BudgetMaster</Text>
                 <Text style={s.logoSub}>INTELIGENCIA FINANCIERA</Text>
             </View>

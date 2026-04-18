@@ -1,8 +1,0 @@
-node_modules/
-.expo/
-dist/
-android/app/build/
-android/.gradle/
-ios/
-.claude/
-.vscode/
