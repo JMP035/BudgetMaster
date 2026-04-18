@@ -32,9 +32,8 @@ export const SmsService = {
 
     const filter = {
       box: 'inbox',
-      read: 0,
       indexFrom: 0,
-      maxCount: 20,
+      maxCount: 50, // Aumentamos a 50 para cubrir más días de transacciones
     };
 
     return new Promise((resolve, reject) => {
