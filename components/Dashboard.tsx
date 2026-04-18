@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { Transaction, UserSettings } from "../services/storage";
 import { getCat } from "../categories";
 import { C, shadow } from "../theme";
@@ -21,9 +21,11 @@ export function MiniBarChart({ data, color, labels }: { data: number[]; color: s
 }
 
 export function BudgetRing({ spent, limit, currency }: { spent: number; limit: number; currency: string }) {
+    const { width, height } = useWindowDimensions();
     const pct = Math.min(spent / limit, 1);
-    const size = 160;
-    const stroke = 14;
+    const isLandscape = width > height;
+    const size = isLandscape ? 120 : 160;
+    const stroke = isLandscape ? 10 : 14;
     const over = spent > limit;
     const ringColor = over ? C.danger : pct > 0.8 ? C.warning : C.primaryLight;
 
@@ -147,7 +149,14 @@ export default function DashboardScreen({ transactions, settings, onRefresh, ref
                                 </View>
                                 <View style={{ flex: 1 }}>
                                     <Text style={s.txDesc} numberOfLines={1}>{tx.description || cat.label}</Text>
-                                    <Text style={s.txDate}>{new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short" })}</Text>
+                                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
+                                        <Text style={s.txDate}>{new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short" })}</Text>
+                                        {tx.bank && (
+                                            <View style={{ backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4 }}>
+                                                <Text style={{ color: C.primaryLight, fontSize: 9, fontWeight: "800" }}>{tx.bank.toUpperCase()}</Text>
+                                            </View>
+                                        )}
+                                    </View>
                                 </View>
                                 <Text style={[s.txAmount, { color: tx.type === "income" ? C.income : C.expense }]}>
                                     {tx.type === "income" ? "+" : "-"}{fmt(tx.amount)}

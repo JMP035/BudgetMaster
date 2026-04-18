@@ -1,9 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { StorageService, Transaction } from "../services/storage";
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
+import { detectBankName } from "../ai";
 
 export default function AddScreen({ onAdd, defaultCurrency }: { onAdd: (tx: Transaction) => void; defaultCurrency: string }) {
     const [type, setType] = useState<"expense" | "income">("expense");
@@ -11,8 +12,33 @@ export default function AddScreen({ onAdd, defaultCurrency }: { onAdd: (tx: Tran
     const [desc, setDesc] = useState("");
     const [category, setCategory] = useState("other");
     const [loading, setLoading] = useState(false);
+    const [smsText, setSmsText] = useState("");
+    const [showSmsInput, setShowSmsInput] = useState(false);
 
     const cats = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+
+    const handleParseSms = () => {
+        if (!smsText.trim()) { Alert.alert("Error", "Pega el texto de tu SMS primero"); return; }
+        
+        // Lógica de detección simple
+        const bank = detectBankName(smsText);
+        
+        // Buscar montos (Q 100.00 o Q.100.00 o 100.00)
+        const amountMatch = smsText.match(/(?:Q\.?|S\/\.?|USD)\s*([\d,.]+)/i) || smsText.match(/([\d,.]+)/);
+        
+        if (amountMatch) {
+            const val = amountMatch[1].replace(",", "");
+            setAmount(val);
+        }
+        
+        const isIncome = smsText.toLowerCase().includes("abono") || smsText.toLowerCase().includes("deposito") || smsText.toLowerCase().includes("ingreso") || smsText.toLowerCase().includes("acreditamiento");
+        
+        setType(isIncome ? "income" : "expense");
+        setDesc(`${bank}: ${smsText.slice(0, 15)}...`);
+        setShowSmsInput(false);
+        setSmsText("");
+        Alert.alert("¡Detectado!", `Mensaje de ${bank} analizado correctamente.`);
+    };
 
     const handleAdd = async () => {
         const amt = parseFloat(amount.replace(",", "."));
@@ -33,10 +59,36 @@ export default function AddScreen({ onAdd, defaultCurrency }: { onAdd: (tx: Tran
     };
 
     return (
-        <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"} 
+            style={{ flex: 1 }}
+        >
+            <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
             <View style={s.header}>
                 <Text style={s.title}>Nueva Transacción</Text>
+                <TouchableOpacity style={s.smsBtn} onPress={() => setShowSmsInput(!showSmsInput)}>
+                    <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
+                    <Text style={s.smsBtnTxt}>Leer SMS</Text>
+                </TouchableOpacity>
             </View>
+
+            {showSmsInput && (
+                <View style={[s.card, { borderColor: C.accent + "55", backgroundColor: C.accent + "11" }]}>
+                    <Text style={[s.lbl, { color: C.accentLight }]}>PEGA AQUÍ EL TEXTO DEL BANCO</Text>
+                    <TextInput 
+                        style={[s.txtInput, { minHeight: 60, textAlignVertical: "top" }]} 
+                        multiline 
+                        value={smsText} 
+                        onChangeText={setSmsText} 
+                        placeholder="Ej: Banrural le informa: Debito por Q.50.00..." 
+                        placeholderTextColor={C.textMuted}
+                    />
+                    <TouchableOpacity style={s.parseBtn} onPress={handleParseSms}>
+                        <Text style={s.parseBtnTxt}>Analizar ahora</Text>
+                        <Ionicons name="flash" size={16} color="#1A0E00" />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             <View style={s.typeRow}>
                 <TouchableOpacity style={[s.typeBtn, type === "expense" && s.typeBtnExp]} onPress={() => { setType("expense"); setCategory("other"); }}>
@@ -84,13 +136,18 @@ export default function AddScreen({ onAdd, defaultCurrency }: { onAdd: (tx: Tran
 
             <View style={{ height: 140 }} />
         </ScrollView>
+    </KeyboardAvoidingView>
     );
 }
 
 const s = StyleSheet.create({
     screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-    header: { marginBottom: 18 },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
     title: { color: C.textPrimary, fontSize: 26, fontWeight: "800", letterSpacing: 0.5 },
+    smsBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primaryDark + "44", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
+    smsBtnTxt: { color: C.primaryLight, fontSize: 12, fontWeight: "700" },
+    parseBtn: { flexDirection: "row", backgroundColor: C.accent, borderRadius: 8, paddingVertical: 10, alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12 },
+    parseBtnTxt: { color: "#1A0E00", fontSize: 13, fontWeight: "800" },
     typeRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
     typeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: C.cardBorder, backgroundColor: C.card },
     typeTxt: { color: C.textSub, fontSize: 16, fontWeight: "800", letterSpacing: 0.5 },
@@ -100,7 +157,7 @@ const s = StyleSheet.create({
     lbl: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 8 },
     amtRow: { flexDirection: "row", alignItems: "center" },
     cur: { color: C.textMuted, fontSize: 28, fontWeight: "600", marginRight: 8 },
-    amtInput: { flex: 1, fontSize: 40, fontWeight: "900", height: 50 },
+    amtInput: { flex: 1, fontSize: 44, fontWeight: "900", height: 80, color: C.textPrimary },
     descRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: C.primary + "55", paddingBottom: 8 },
     txtInput: { flex: 1, color: C.text, fontSize: 16 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8 },

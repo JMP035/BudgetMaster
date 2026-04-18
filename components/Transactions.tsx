@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Transaction, UserSettings } from "../services/storage";
 import { getCat } from "../categories";
 import { C, shadow } from "../theme";
@@ -26,6 +26,11 @@ export function TxCard({ tx, currency, onDelete }: { tx: Transaction; currency: 
                 <Text style={s.txDesc} numberOfLines={1}>{tx.description || cat.label}</Text>
                 <View style={s.txMeta}>
                     <Text style={s.txDate}>{new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short", year: "numeric" })}</Text>
+                    {tx.bank && (
+                        <View style={{ backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.primary + "55" }}>
+                            <Text style={{ color: C.primaryLight, fontSize: 8, fontWeight: "900" }}>{tx.bank.toUpperCase()}</Text>
+                        </View>
+                    )}
                     {tx.source === "sms" && <View style={s.smsBadge}><Text style={s.smsTxt}>SMS</Text></View>}
                     <Text style={[s.txCat, { color: cat.color + "cc" }]}>{cat.label}</Text>
                 </View>
@@ -66,7 +71,11 @@ export default function TransactionsScreen({ transactions, settings, onDelete }:
         .sort((a, b) => +new Date(b.date) - +new Date(a.date));
 
     return (
-        <View style={s.screen}>
+        <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"} 
+            style={{ flex: 1 }}
+        >
+            <View style={s.screen}>
             <View style={s.header}>
                 <Text style={s.title}>Movimientos</Text>
                 <Text style={s.sub}>{filtered.length} registros</Text>
@@ -102,6 +111,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete }:
                 <View style={{ height: 120 }} />
             </ScrollView>
         </View>
+    </KeyboardAvoidingView>
     );
 }
 

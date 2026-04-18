@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { Transaction, UserSettings } from "../services/storage";
 import { getAIResponse } from "../ai";
 import { C, shadow } from "../theme";
@@ -35,43 +35,49 @@ export default function AIAdvisor({ transactions, settings }: Props) {
     }, [messages]);
 
     return (
-        <View style={s.screen}>
-            <View style={s.header}>
-                <View style={s.iconBg}>
-                    <Ionicons name="sparkles" size={24} color={C.primaryLight} />
+        <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"} 
+            style={{ flex: 1 }}
+            keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+        >
+            <View style={s.screen}>
+                <View style={s.header}>
+                    <View style={s.iconBg}>
+                        <Ionicons name="sparkles" size={24} color={C.primaryLight} />
+                    </View>
+                    <Text style={s.title}>Asesor IA</Text>
                 </View>
-                <Text style={s.title}>Asesor IA</Text>
-            </View>
 
-            <ScrollView ref={scrollRef} style={s.chatList} showsVerticalScrollIndicator={false}>
-                {messages.map(m => (
-                    <View key={m.id} style={[s.bubble, m.role === "user" ? s.userBubble : s.aiBubble]}>
-                        {m.role === "ai" && <Ionicons name="sparkles" size={14} color={C.primary} style={s.aiIcon} />}
-                        <Text style={[s.text, m.role === "user" && { color: "#1A0E00" }]}>{m.text}</Text>
-                    </View>
-                ))}
-                {loading && (
-                    <View style={[s.bubble, s.aiBubble, { width: 60, alignItems: "center" }]}>
-                        <ActivityIndicator color={C.primary} size="small" />
-                    </View>
-                )}
-                <View style={{ height: 40 }} />
-            </ScrollView>
+                <ScrollView ref={scrollRef} style={s.chatList} showsVerticalScrollIndicator={false}>
+                    {messages.map(m => (
+                        <View key={m.id} style={[s.bubble, m.role === "user" ? s.userBubble : s.aiBubble]}>
+                            {m.role === "ai" && <Ionicons name="sparkles" size={14} color={C.primary} style={s.aiIcon} />}
+                            <Text style={[s.text, m.role === "user" && { color: "#1A0E00" }]}>{m.text}</Text>
+                        </View>
+                    ))}
+                    {loading && (
+                        <View style={[s.bubble, s.aiBubble, { width: 60, alignItems: "center" }]}>
+                            <ActivityIndicator color={C.primary} size="small" />
+                        </View>
+                    )}
+                    <View style={{ height: 40 }} />
+                </ScrollView>
 
-            <View style={s.inputContainer}>
-                <TextInput
-                    style={s.input}
-                    value={input}
-                    onChangeText={setInput}
-                    placeholder="Ej: Quiero comprar unos zapatos de Q500..."
-                    placeholderTextColor={C.textMuted}
-                    onSubmitEditing={handleSend}
-                />
-                <TouchableOpacity style={s.sendBtn} onPress={handleSend}>
-                    <Ionicons name="send" size={20} color="#1A0E00" />
-                </TouchableOpacity>
+                <View style={s.inputContainer}>
+                    <TextInput
+                        style={s.input}
+                        value={input}
+                        onChangeText={setInput}
+                        placeholder="Ej: Quiero comprar unos zapatos de Q500..."
+                        placeholderTextColor={C.textMuted}
+                        onSubmitEditing={handleSend}
+                    />
+                    <TouchableOpacity style={s.sendBtn} onPress={handleSend}>
+                        <Ionicons name="send" size={20} color="#1A0E00" />
+                    </TouchableOpacity>
+                </View>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 

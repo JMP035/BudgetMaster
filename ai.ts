@@ -25,29 +25,47 @@ export async function getAIResponse(
     if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
         try {
             const prompt = `
-Eres el asesor financiero privado de ${settings.userName} para la app BudgetMaster.
-Tono: Profesional, motivador, directo y premium (estilo asesor de banca privada suiza). Usa lenguaje natural, no parezcas un robot. Máximo 4 oraciones breves. NO USES NEGRITAS MARKDOWN (**), SOLO TEXTO PLANO O EMOJIS.
+Eres el ASESOR FINANCIERO ELITE de ${settings.userName} para la aplicación BudgetMaster.
+TU MISIÓN: Ayudar al usuario a alcanzar la libertad financiera mediante planes de ahorro agresivos y control de gastos inteligente.
 
-Contexto actual del usuario este mes (${now.toLocaleDateString("es-GT")}):
+PAUTAS DE COMPORTAMIENTO:
+1. TONO: Profesional, directo, motivador pero firme (como un asesor de banca privada suiza).
+2. ENFOQUE: Siempre prioriza el AHORRO. Si el usuario pregunta por gastar, evalúa el impacto real en su presupuesto mensual.
+3. CONTEXTO LOCAL: Estás configurado para el mercado de GUATEMALA.
+4. BREVEDAD: Máximo 3-4 oraciones muy claras. 
+5. FORMATO: Usa lenguaje natural. NUNCA uses negritas (**), solo texto plano o emojis.
+
+DATOS ACTUALES (${now.toLocaleDateString("es-GT")}):
 - Presupuesto mensual: ${fmt(settings.budgetLimit, cur)}
 - Ingresos: ${fmt(income, cur)}
 - Gastos: ${fmt(spent, cur)}
-- Presupuesto restante: ${fmt(budgetLeft, cur)}
-- Tasa de ahorro actual: ${savingsRate.toFixed(2)}%
-- Historial reciente de compras: ${monthTx.filter(t => t.type === "expense").slice(0, 5).map(t => `${t.description} (${t.amount})`).join(", ")}
+- Saldo Disponible: ${fmt(balance, cur)}
+- Tasa de Ahorro: ${savingsRate.toFixed(2)}%
 
-Pregunta o comentario del usuario: "${message}"
-Actúa como experto respondiendo directamente a su consulta. Si pregunta sobre comprar algo, evalúa si su "Presupuesto restante" lo permite, o si afectará su ahorro. Advierte si va a quedar en cero.
-Respuesta del Asesor:`;
+Si el usuario te pregunta por compras (ej: "¿Puedo comprar un celular?"), calcula cuánto le quedará de "Saldo Disponible" después de ese gasto y adviértele si su tasa de ahorro bajará de forma alarmante. Si pregunta por planes de ahorro, propón métodos como el 50/30/20 o metas a corto plazo.
 
-            let targetModel = "gemini-1.5-flash"; // Versión estable y rápida disponible en el tier gratuito
+Pregunta del usuario: "${message}"
+Respuesta del Asesor Elite:`;
 
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
+            let targetModel = "gemini-1.0-pro"; // Modelo 1.0 estable sugerido por el usuario
+
+            let res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
-            const data = await res.json();
+            let data = await res.json();
+
+            // Si falla el 1.0, intentamos el 1.5 en silencio
+            if (data.error) {
+                targetModel = "gemini-1.5-flash";
+                res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                });
+                data = await res.json();
+            }
 
             // Especial: Si nos rechaza y dice 'Model Not Found', consultaremos a la propia Google, directamente desde la app, qué modelos SI tienes habilitados.
             if (data.error && data.error.code === 404 && data.error.message.includes("not found")) {
@@ -114,4 +132,17 @@ Respuesta del Asesor:`;
     }
 
     return `(Modo Local Básico Activo) No puedo entender oraciones complejas sin tu Gemni API Key. Te recomiendo colocarla en "Ajustes", o usar frases cortas como "¿Cómo voy?".`;
+}
+
+// Helper para reconocer bancos de Guatemala en SMS
+export function detectBankName(text: string): string {
+    const t = text.toUpperCase();
+    if (t.includes("BANRURAL")) return "Banrural";
+    if (t.includes("BAC") || t.includes("BAMER")) return "BAC Bank";
+    if (t.includes("BI") || t.includes("INDUSTRIAL")) return "Banco Industrial";
+    if (t.includes("G&T") || t.includes("CONTINENTAL")) return "G&T Continental";
+    if (t.includes("PROMERICA")) return "Banco Promerica";
+    if (t.includes("BANTRAB")) return "Bantrab";
+    if (t.includes("CHIT") || t.includes("INTERCAP")) return "Intercap";
+    return "Banco Desconocido";
 }

@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { StorageService, UserSettings } from "../services/storage";
 import { C, shadow } from "../theme";
 
@@ -35,7 +35,11 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     };
 
     return (
-        <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"} 
+            style={{ flex: 1 }}
+        >
+            <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
             <View style={s.header}>
                 <Text style={s.title}>Configuración</Text>
             </View>
@@ -102,8 +106,9 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                     <Text style={{ color: C.danger, fontWeight: "700" }}>Borrar Todos los Datos</Text>
                 </TouchableOpacity>
             </View>
-            <View style={{ height: 140 }} />
+            <View style={{ height: 120 }} />
         </ScrollView>
+    </KeyboardAvoidingView>
     );
 }
 

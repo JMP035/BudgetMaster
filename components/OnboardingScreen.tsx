@@ -3,6 +3,7 @@ import React, { useRef, useState } from "react";
 import {
     Alert, Animated, Dimensions,
     Image,
+    KeyboardAvoidingView, Platform,
     StyleSheet, Text,
     TextInput, TouchableOpacity, View
 } from "react-native";
@@ -32,7 +33,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
     };
 
     return (
-        <View style={s.container}>
+        <KeyboardAvoidingView 
+            behavior={Platform.OS === "ios" ? "padding" : "height"} 
+            style={{ flex: 1 }}
+        >
+            <View style={s.container}>
             {/* Logo */}
             <View style={s.header}>
             <View style={{ width: 100, height: 100, borderRadius: 28, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
@@ -77,6 +82,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 <Ionicons name={step === 0 ? "arrow-forward" : "rocket"} size={20} color="#1A0E00" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
         </View>
+    </KeyboardAvoidingView>
     );
 }
 
