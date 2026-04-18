@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /s \"c:\\Users\\USUARIO\\Documents\\BudgetMaster\")",
+      "Bash(ls:*)",
+      "Bash(npx expo start:*)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
