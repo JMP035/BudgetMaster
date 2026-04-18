@@ -40,7 +40,7 @@ Pregunta o comentario del usuario: "${message}"
 Actúa como experto respondiendo directamente a su consulta. Si pregunta sobre comprar algo, evalúa si su "Presupuesto restante" lo permite, o si afectará su ahorro. Advierte si va a quedar en cero.
 Respuesta del Asesor:`;
 
-            let targetModel = "gemini-2.5-flash-lite"; // Versión hiper-liviana gratuita sin facturación
+            let targetModel = "gemini-1.5-flash"; // Versión estable y rápida disponible en el tier gratuito
 
             const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
                 method: "POST",
