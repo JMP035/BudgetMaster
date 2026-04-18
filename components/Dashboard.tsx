@@ -1,7 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
-import { Image, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Alert, Image, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 import { Transaction, UserSettings } from "../services/storage";
+import { SmsService } from "../services/SmsService";
 import { getCat } from "../categories";
 import { C, shadow } from "../theme";
 
@@ -62,6 +63,20 @@ export default function DashboardScreen({ transactions, settings, onRefresh, ref
     const month = now.getMonth();
     const year = now.getFullYear();
 
+    const handleSmsSync = async () => {
+        try {
+            const newTxs: any = await SmsService.syncBankSms();
+            if (newTxs && newTxs.length > 0) {
+                Alert.alert("Sincronización Exitosa", `Se han importado ${newTxs.length} transacciones nuevas desde tus SMS.`);
+                onRefresh(); // Refrescar la vista
+            } else {
+                Alert.alert("Sincronización", "No se encontraron mensajes bancarios nuevos para importar.");
+            }
+        } catch (error) {
+            Alert.alert("Aviso", "Asegúrate de conceder permisos de lectura de SMS en los ajustes de tu teléfono.");
+        }
+    };
+
     const monthTx = transactions.filter(t => new Date(t.date).getMonth() === month && new Date(t.date).getFullYear() === year);
 
     const spent = monthTx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
@@ -100,10 +115,10 @@ export default function DashboardScreen({ transactions, settings, onRefresh, ref
                     </View>
                 </View>
 
-                <View style={[s.badge, settings.smsEnabled && { borderColor: C.accent, backgroundColor: C.accent + "22" }]}>
-                    <Ionicons name="chatbubble-ellipses" size={18} color={settings.smsEnabled ? C.accent : C.textMuted} />
-                    {settings.smsEnabled && <View style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent }} />}
-                </View>
+                <TouchableOpacity onPress={handleSmsSync} style={[s.badge, { borderColor: C.accent, backgroundColor: C.accent + "22" }]}>
+                    <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
+                    <View style={{ position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent }} />
+                </TouchableOpacity>
             </View>
 
             <NetWorthCard totalNetWorth={totalNetWorth} currency={settings.currency} />
