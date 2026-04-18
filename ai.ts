@@ -4,145 +4,122 @@ import { EXPENSE_CATEGORIES } from "./categories";
 const fmt = (n: number, cur: string) =>
     `${cur} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
+function normalize(text: string): string {
+    return text.toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
+        .replace(/[^a-z0-9\s]/g, "") 
+        .replace(/(.)\1+/g, "$1"); 
+}
+
+const REALITY = {
+    GT: { canasta: 3950, interest: 0.08, card: 0.45, gas: 34.5, label: "Guatemala" },
+    US: { canasta: 3200, interest: 0.07, card: 0.22, gas: 4.5, label: "Global/USA" },
+    EU: { canasta: 1800, interest: 0.04, card: 0.18, gas: 1.8, label: "Europa" },
+};
+
 export async function getAIResponse(
     message: string,
     transactions: Transaction[],
     settings: UserSettings
 ): Promise<string> {
-    const msg = message.toLowerCase().trim();
+    const rawMsg = message;
+    const msg = normalize(message); 
     const now = new Date();
     const m = now.getMonth(), y = now.getFullYear();
-
-    const monthTx = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
-    const spent = monthTx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-    const income = monthTx.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-    const balance = income - spent;
-    const savingsRate = income > 0 ? (balance / income) * 100 : 0;
     const cur = settings.currency;
-    const budgetLeft = settings.budgetLimit - spent;
 
-    // Si el usuario proporcionó su API Key, usamos la verdadera inteligencia de Gemini
+    let context = REALITY.US;
+    if (cur === "Q") context = REALITY.GT;
+    if (cur === "€") context = REALITY.EU;
+
     if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
         try {
-            const prompt = `
-Eres el ASESOR FINANCIERO ELITE de ${settings.userName} para la aplicación BudgetMaster.
-TU MISIÓN: Ayudar al usuario a alcanzar la libertad financiera mediante planes de ahorro agresivos y control de gastos inteligente.
-
-PAUTAS DE COMPORTAMIENTO:
-1. TONO: Profesional, directo, motivador pero firme (como un asesor de banca privada suiza).
-2. ENFOQUE: Siempre prioriza el AHORRO. Si el usuario pregunta por gastar, evalúa el impacto real en su presupuesto mensual.
-3. CONTEXTO LOCAL: Estás configurado para el mercado de GUATEMALA.
-4. BREVEDAD: Máximo 3-4 oraciones muy claras. 
-5. FORMATO: Usa lenguaje natural. NUNCA uses negritas (**), solo texto plano o emojis.
-
-DATOS ACTUALES (${now.toLocaleDateString("es-GT")}):
-- Presupuesto mensual: ${fmt(settings.budgetLimit, cur)}
-- Ingresos: ${fmt(income, cur)}
-- Gastos: ${fmt(spent, cur)}
-- Saldo Disponible: ${fmt(balance, cur)}
-- Tasa de Ahorro: ${savingsRate.toFixed(2)}%
-
-Si el usuario te pregunta por compras (ej: "¿Puedo comprar un celular?"), calcula cuánto le quedará de "Saldo Disponible" después de ese gasto y adviértele si su tasa de ahorro bajará de forma alarmante. Si pregunta por planes de ahorro, propón métodos como el 50/30/20 o metas a corto plazo.
-
-Pregunta del usuario: "${message}"
-Respuesta del Asesor Elite:`;
-
-            let targetModel = "gemini-1.0-pro"; // Modelo 1.0 estable sugerido por el usuario
-
-            let res = await fetch(`https://generativelanguage.googleapis.com/v1/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+            const monthTx_api = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
+            const spent_api = monthTx_api.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+            const income_api = monthTx_api.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+            const balance_api = income_api - spent_api;
+            const prompt = `Eres el ASESOR SMITH. Maestros: Napoleon Hill, Kiyosaki, Ramsey. Contexto: ${context.label}. Saldo: ${fmt(balance_api, cur)}. Responde de forma sobria, profesional y sin usar emojis. Responde a: "${rawMsg}"`;
+            let res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiApiKey}`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
             let data = await res.json();
-
-            // Si falla el 1.0, intentamos el 1.5 en silencio
-            if (data.error) {
-                targetModel = "gemini-1.5-flash";
-                res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${settings.geminiApiKey}`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-                });
-                data = await res.json();
-            }
-
-            // Especial: Si nos rechaza y dice 'Model Not Found', consultaremos a la propia Google, directamente desde la app, qué modelos SI tienes habilitados.
-            if (data.error && data.error.code === 404 && data.error.message.includes("not found")) {
-                try {
-                    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${settings.geminiApiKey}`);
-                    const listData = await listRes.json();
-                    if (listData.models) {
-                        const modelsArray = listData.models.map((m: any) => m.name.replace("models/", ""));
-                        // Si encontramos uno válido como pro o flash, se lo decimos.
-                        const recs = modelsArray.filter((n: string) => n.includes("gemini"));
-                        return `🕵️‍♂️ **INFO DIAGNÓSTICO:** Google rechazó el modelo estándar.\n\nHe consultado tu llave y estos son los nombres exactos que tu cuenta SÍ soporta:\n\n` + recs.join("\n") + `\n\nPor favor, dime cuál ves en esta lista para que yo la deje fija internamente.`;
-                    }
-                } catch (e) {}
-            }
-
-            if (data.error) return "Error de la API de Google: " + data.error.message;
-            if (data.candidates && data.candidates[0].content) {
-                return data.candidates[0].content.parts[0].text.replace(/\*\*/g, "");
-            }
-            return "No recibí respuesta de los servidores neuronales. Intenta de nuevo.";
-        } catch (e) {
-            return "Hubo un error contactando a la Inteligencia Artificial. Revisa tu conexión a internet.";
-        }
+            if (!data.error && data.candidates) return data.candidates[0].content.parts[0].text.replace(/\*\*/g, "");
+        } catch (e) {}
     }
 
-    // --- FALLBACK: IA LOCAL BASADA EN REGLAS SINTACTICAS (Si no hay API Key) ---
+    const monthTx = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
+    const spent = monthTx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+    const budgetLeft = settings.budgetLimit - spent;
+    const topCat = EXPENSE_CATEGORIES.map(c => ({ label: c.label, total: monthTx.filter(t => t.type === "expense" && t.category === c.id).reduce((s, t) => s + t.amount, 0) })).sort((a,b)=>b.total-a.total)[0];
 
-    const catTotals = EXPENSE_CATEGORIES.map(c => ({
-        label: c.label,
-        total: monthTx.filter(t => t.type === "expense" && t.category === c.id).reduce((s, t) => s + t.amount, 0),
-    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
-    const top = catTotals[0];
-
-    const buyRegex = /(comprar|compro|gastar|gasto|zapatos|pantalón|camisa|celular|salida)[\s\S]*?(\d+)/;
-    const buyMatch = msg.match(buyRegex) || msg.match(/(\d+)[\s\S]*?(comprar|gastar)/);
-    if (buyMatch || msg.includes("comprar") || msg.includes("compro")) {
-        const numMatch = msg.match(/\d+/);
-        if (numMatch) {
-            const amount = parseFloat(numMatch[0]);
-            if (amount <= budgetLeft) {
-                return `✅ Tienes disponible ${cur} ${budgetLeft.toFixed(2)} en presupuesto. Permite gasto de ${amount}. Reducirá tu ahorro. ¿Es necesario?`;
-            } else {
-                return `❌ No lo recomiendo. Tu presupuesto restante es solo ${cur} ${budgetLeft.toFixed(2)}, la compra de ${amount} te deja en negativo.`;
-            }
-        } else {
-            return `¿De cuánto dinero hablamos? 🤔 Si me dices el monto (ej. "quiero gastar unos 500"), evaluaré si puedes.`;
-        }
+    // Detector de Montos y Tiempos
+    let amount = 0;
+    const numMatch = rawMsg.match(/(\d+[\d,.]*)/);
+    if (numMatch) {
+        amount = parseFloat(numMatch[0].replace(/,/g, ""));
+        if (msg.includes("milon")) amount *= 1000000;
+        if (msg.includes("mil") || msg.includes(" k ")) amount *= 1000;
     }
 
-    if (msg.match(/(voy|estoy|como va)/)) {
-        if (!transactions.length) return `Aún no tienes transacciones.`;
-        if (savingsRate >= 20) return `🌟 ¡Excelente! Ahorras el ${savingsRate.toFixed(1)}% este mes. ¡Vas muy bien!`;
-        if (savingsRate >= 0) return `😐 Equilibrio justo. Solo ahorras el ${savingsRate.toFixed(1)}%. Gastos: ${fmt(spent, cur)}. Reduce en ${top?.label ?? "gastos hormiga"}.`;
-        return `⚠️ ¡Atención! Déficit de ${fmt(-balance, cur)}. Tus gastos superan tus ingresos.`;
+    let months = 1;
+    const timeMatch = rawMsg.match(/(\d+)\s*(mes|mess|ano|semana)/);
+    if (timeMatch) {
+        months = parseInt(timeMatch[1]);
+        if (timeMatch[2].includes("ano")) months *= 12;
+        if (timeMatch[2].includes("semana")) months = Math.ceil(months / 4);
     }
 
-    if (msg.match(/(mayor gasto|gasto mas|categoría)/)) {
-        if (!top) return "No hay gastos registrados aún este mes.";
-        return `Tu agujero financiero es "${top.label}" con ${fmt(top.total, cur)}.`;
+    // PRIORIDAD 1: Sabiduría de Pensadores
+    if (msg.includes("napoleon") || msg.includes("hil") || msg.includes("piense") || msg.includes("haga") || msg.includes("rico")) {
+        return `Asesoría Napoleon Hill: El éxito financiero comienza con la autodisciplina. Según sus principios, sus ${fmt(budgetLeft, cur)} actuales requieren que defina un propósito claro. Sin un plan mental, el capital se diluye ante los impulsos.`;
+    }
+    if (msg.includes("kiyosaki") || msg.includes("rata") || msg.includes("padre") || msg.includes("pasivo") || msg.includes("activo")) {
+        return `Análisis Kiyosaki: Usted se encuentra en la Carrera de la Rata si sus gastos siguen enfocados en pasivos. Los ${fmt(budgetLeft, cur)} restantes en su cuenta son capital para adquirir activos que generen flujo de caja.`;
+    }
+    if (msg.includes("babilonia") || msg.includes("pagat") || msg.includes("diezmo")) {
+        return `Principio de Babilonia: Se debe conservar al menos el 10% de lo ganado. En su caso, debería separar ${fmt(settings.budgetLimit * 0.1, cur)} inmediatamente para su fondo de riqueza personal.`;
     }
 
-    if (msg.match(/(consejo|mejorar|ahorrar|tip)/)) {
-        return `💡 Regla de oro: Espera 48 hrs antes de una compra grande. Si tienes presupuesto, cómpralo en frío y no por impulso.`;
+    // PRIORIDAD 2: Metas de Ahorro y Compras (Lógica Dinámica)
+    if (amount > 0 && months >= 1 && (msg.includes("ahoro") || msg.includes("meta") || msg.includes("tener") || msg.includes("lograr"))) {
+        const mensual = amount / months;
+        const viabilidad = mensual <= budgetLeft ? "ALCANZABLE con su saldo actual" : "EXCEDE su capacidad actual";
+        return `Plan Maestro de Ahorro: 
+Para alcanzar la meta de ${fmt(amount, cur)} en ${months} meses:
+- Cuota Mensual: ${fmt(mensual, cur)}
+- Cuota Semanal: ${fmt(mensual / 4, cur)}
+Estado: Esta meta es ${viabilidad}. Le recomiendo recortar en la categoría ${topCat?.label} para asegurar el éxito.`;
     }
 
-    return `(Modo Local Básico Activo) No puedo entender oraciones complejas sin tu Gemni API Key. Te recomiendo colocarla en "Ajustes", o usar frases cortas como "¿Cómo voy?".`;
+    if (amount > 0 && (msg.includes("casa") || msg.includes("terreno") || msg.includes("vivienda"))) {
+        const eng = amount * 0.20;
+        return `Análisis de Propiedad: Para un inmueble de ${fmt(amount, cur)}, el enganche sugerido es de ${fmt(eng, cur)}. Actualmente su liquidez es de ${fmt(budgetLeft, cur)}. Sugerimos un plan a 24 meses.`;
+    }
+
+    if (amount > 0 && (msg.includes("caro") || msg.includes("auto") || msg.includes("comprar"))) {
+        if (amount > budgetLeft) return `Advertencia: El gasto de ${fmt(amount, cur)} para este vehículo excede su presupuesto disponible de ${fmt(budgetLeft, cur)}. No es recomendable en este momento.`;
+        return `Validación de Compra: Dispone de ${fmt(budgetLeft, cur)}. La compra de ${fmt(amount, cur)} es posible, pero reducirá su margen de maniobra.`;
+    }
+
+    // PRIORIDAD 3: Reportes y Saludos
+    if (msg.match(/(voy|como|va|resumen|situacion|estado|analiza|reporte)/)) {
+        const pct = (spent/settings.budgetLimit)*100;
+        return `Reporte Financiero: 
+Presupuesto utilizado: ${pct.toFixed(1)}%. 
+Categoría de mayor impacto: ${topCat?.label || "General"}. 
+Saldo actual libre: ${fmt(budgetLeft, cur)}.`;
+    }
+
+    if (msg.match(/(hola|buenos|dias|tardes|noches|smit|smith)/)) return `Bienvenido al sistema de asesoría, Sr. ${settings.userName}. ¿Desea que planifiquemos una meta de ahorro o revisemos sus activos hoy?`;
+    if (msg.match(/(gracias|ok|entendido)/)) return `La disciplina financiera es fundamental. Quedo a su disposición.`;
+
+    return `Entendido. Mi análisis sugiere que podemos optimizar su flujo de ${fmt(budgetLeft, cur)} revisando sus gastos en ${topCat?.label || "general"}. ¿En qué más puedo ayudarle?`;
 }
 
-// Helper para reconocer bancos de Guatemala en SMS
 export function detectBankName(text: string): string {
-    const t = text.toUpperCase();
-    if (t.includes("BANRURAL")) return "Banrural";
-    if (t.includes("BAC") || t.includes("BAMER")) return "BAC Bank";
-    if (t.includes("BI") || t.includes("INDUSTRIAL")) return "Banco Industrial";
-    if (t.includes("G&T") || t.includes("CONTINENTAL")) return "G&T Continental";
-    if (t.includes("PROMERICA")) return "Banco Promerica";
-    if (t.includes("BANTRAB")) return "Bantrab";
-    if (t.includes("CHIT") || t.includes("INTERCAP")) return "Intercap";
-    return "Banco Desconocido";
+    const t = normalize(text).toUpperCase();
+    const banks = ["BANRURAL", "BAC", "BAMER", "BI", "INDUSTRIAL", "GYT", "CONTINENTAL", "PROMERICA", "BANTRAB", "CHASE", "BOFA", "SANTANDER", "BBVA", "CITI"];
+    for (const b of banks) { if (t.includes(b)) return b; }
+    return "Banco";
 }
