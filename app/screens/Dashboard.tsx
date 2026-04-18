@@ -89,7 +89,9 @@ export default function DashboardScreen({ transactions, settings, onRefresh, ref
         <ScrollView style={s.screen} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />} showsVerticalScrollIndicator={false}>
             <View style={s.header}>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
-                    <Image source={require("../../assets/images/logo.png")} style={{ width: 44, height: 44, borderRadius: 12, marginRight: 12 }} />
+                    <View style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                        <Ionicons name="wallet-outline" size={28} color="#1A0E00" />
+                    </View>
                     <View>
                         <Text style={s.greeting}>Hola, {settings.userName}</Text>
                         <Text style={s.month}>{now.toLocaleDateString("es-GT", { month: "long", year: "numeric" }).toUpperCase()}</Text>
