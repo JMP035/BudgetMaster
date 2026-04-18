@@ -1,4 +1,4 @@
-import { Transaction, UserSettings } from "../services/storage";
+import { Transaction, UserSettings } from "./services/storage";
 import { EXPENSE_CATEGORIES } from "./categories";
 
 const fmt = (n: number, cur: string) =>

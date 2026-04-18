@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import { Alert, Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { StorageService, UserSettings } from "../../services/storage";
+import { StorageService, UserSettings } from "../services/storage";
 import { C, shadow } from "../theme";
 
 interface Props { settings: UserSettings; onSave: (s: UserSettings) => void; onClearAll: () => void; }

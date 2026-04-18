@@ -2,21 +2,21 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
 import { LayoutAnimation, Platform, StyleSheet, Text, TouchableOpacity, UIManager, View } from "react-native";
 import { StorageService, Transaction, UserSettings } from "../services/storage";
-import { C, shadow } from "./theme";
+import { C, shadow } from "../theme";
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
 // Pantallas
-import AddScreen from "./screens/AddScreen";
-import AIAdvisor from "./screens/AIAdvisor";
-import DashboardScreen from "./screens/Dashboard";
-import OnboardingScreen from "./screens/OnboardingScreen";
-import SettingsScreen from "./screens/SettingsScreen";
-import SplashScreen from "./screens/SplashScreen";
-import StatsScreen from "./screens/StatsScreen";
-import TransactionsScreen from "./screens/Transactions";
+import AddScreen from "../components/AddScreen";
+import AIAdvisor from "../components/AIAdvisor";
+import DashboardScreen from "../components/Dashboard";
+import OnboardingScreen from "../components/OnboardingScreen";
+import SettingsScreen from "../components/SettingsScreen";
+import SplashScreen from "../components/SplashScreen";
+import StatsScreen from "../components/StatsScreen";
+import TransactionsScreen from "../components/Transactions";
 export type Tab = "dashboard" | "transactions" | "add" | "stats" | "ai" | "settings";
 
 const TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { Transaction, UserSettings } from "../../services/storage";
+import { Transaction, UserSettings } from "../services/storage";
 import { getAIResponse } from "../ai";
 import { C, shadow } from "../theme";
 
