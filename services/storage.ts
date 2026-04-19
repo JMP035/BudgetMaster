@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Tipos
+// ─────────────────────────────────────────────────────────────
+// TIPOS
+// ─────────────────────────────────────────────────────────────
+export type Currency = 'Q' | 'USD' | 'EUR' | '£';
+
 export interface Transaction {
   id: string;
   amount: number;
@@ -9,21 +13,34 @@ export interface Transaction {
   date: string;
   type: 'expense' | 'income';
   source: 'manual' | 'sms';
+  currency: Currency;       // Moneda real de la transacción
   originalSMS?: string;
   bank?: string;
   location?: string;
+}
+
+export interface CustomCategory {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+  type: 'expense' | 'income' | 'both';
 }
 
 export interface UserSettings {
   userName: string;
   userTitle: string;
   budgetLimit: number;
-  currency: string;
+  budgetLimitUSD: number;     // Presupuesto mensual en USD
+  currency: Currency;         // Moneda principal del usuario
   smsEnabled: boolean;
   externalSavings: number;
+  externalSavingsUSD: number; // Ahorros externos en USD
   onboardingComplete: boolean;
   tutorialComplete: boolean;
   geminiApiKey?: string;
+  exchangeRate: number;       // Tipo de cambio USD → Q (default 7.70)
+  customCategories: CustomCategory[];
 }
 
 export interface AppData {
@@ -33,35 +50,48 @@ export interface AppData {
   lastResetDate: string;
 }
 
-// Claves de almacenamiento
+// ─────────────────────────────────────────────────────────────
+// CLAVES DE ALMACENAMIENTO
+// ─────────────────────────────────────────────────────────────
 const STORAGE_KEYS = {
   TRANSACTIONS: '@budgetmaster_transactions',
   SETTINGS: '@budgetmaster_settings',
-
   LAST_RESET: '@budgetmaster_last_reset',
+  CUSTOM_CATEGORIES: '@budgetmaster_custom_categories',
 };
 
-// Valores por defecto
+// ─────────────────────────────────────────────────────────────
+// VALORES POR DEFECTO
+// ─────────────────────────────────────────────────────────────
 const DEFAULT_SETTINGS: UserSettings = {
   userName: 'Usuario',
   userTitle: 'BudgetMaster Pro',
   budgetLimit: 6000,
+  budgetLimitUSD: 800,
   currency: 'Q',
   smsEnabled: true,
   externalSavings: 0,
+  externalSavingsUSD: 0,
   onboardingComplete: false,
   tutorialComplete: false,
   geminiApiKey: '',
+  exchangeRate: 7.70,
+  customCategories: [],
 };
 
-// Funciones de almacenamiento
-
+// ─────────────────────────────────────────────────────────────
+// SERVICIO DE ALMACENAMIENTO
+// ─────────────────────────────────────────────────────────────
 export const StorageService = {
-  // Transacciones
+
+  // ── Transacciones ──────────────────────────────────────────
   async getTransactions(): Promise<Transaction[]> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      return data ? JSON.parse(data) : [];
+      if (!data) return [];
+      const txs: Transaction[] = JSON.parse(data);
+      // Migración: transacciones viejas sin campo currency reciben la moneda default
+      return txs.map(t => ({ ...t, currency: t.currency ?? 'Q' }));
     } catch (error) {
       console.error('Error loading transactions:', error);
       return [];
@@ -97,7 +127,7 @@ export const StorageService = {
     return list;
   },
 
-  // Configuración
+  // ── Configuración ──────────────────────────────────────────
   async getSettings(): Promise<UserSettings> {
     try {
       const data = await AsyncStorage.getItem(STORAGE_KEYS.SETTINGS);
@@ -116,9 +146,32 @@ export const StorageService = {
     }
   },
 
+  // ── Categorías personalizadas ───────────────────────────────
+  async getCustomCategories(): Promise<CustomCategory[]> {
+    try {
+      const data = await AsyncStorage.getItem(STORAGE_KEYS.CUSTOM_CATEGORIES);
+      return data ? JSON.parse(data) : [];
+    } catch (error) {
+      console.error('Error loading custom categories:', error);
+      return [];
+    }
+  },
 
+  async saveCustomCategory(cat: CustomCategory): Promise<CustomCategory[]> {
+    const all = await this.getCustomCategories();
+    const updated = [...all, cat];
+    await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(updated));
+    return updated;
+  },
 
-  // Reset mensual
+  async deleteCustomCategory(id: string): Promise<CustomCategory[]> {
+    const all = await this.getCustomCategories();
+    const updated = all.filter(c => c.id !== id);
+    await AsyncStorage.setItem(STORAGE_KEYS.CUSTOM_CATEGORIES, JSON.stringify(updated));
+    return updated;
+  },
+
+  // ── Reset mensual ───────────────────────────────────────────
   async getLastResetDate(): Promise<string | null> {
     try {
       return await AsyncStorage.getItem(STORAGE_KEYS.LAST_RESET);
@@ -136,21 +189,18 @@ export const StorageService = {
     }
   },
 
-  // Verificar si necesita reset mensual
   async checkMonthlyReset(): Promise<boolean> {
     const lastReset = await this.getLastResetDate();
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${now.getMonth()}`;
-
     if (lastReset !== currentMonth) {
-      // Solo actualizamos la fecha, el cálculo se hace dinámicamente
       await this.saveLastResetDate(currentMonth);
       return true;
     }
     return false;
   },
 
-  // Cargar todos los datos
+  // ── Cargar todos los datos ──────────────────────────────────
   async loadAllData(): Promise<AppData> {
     const [transactions, settings, lastResetDate] = await Promise.all([
       this.getTransactions(),
@@ -158,15 +208,16 @@ export const StorageService = {
       this.getLastResetDate(),
     ]);
 
-    // Calcular gasto del mes actual dinámicamente
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
+    // Gasto del mes en moneda principal (Q)
     const currentMonthSpent = transactions.reduce((total, t) => {
       const tDate = new Date(t.date);
       if (
         t.type === 'expense' &&
+        t.currency === 'Q' &&
         tDate.getMonth() === currentMonth &&
         tDate.getFullYear() === currentYear
       ) {
@@ -183,26 +234,24 @@ export const StorageService = {
     };
   },
 
-  // Limpiar todos los datos
+  // ── Limpiar todos los datos ─────────────────────────────────
   async clearAllData(): Promise<void> {
     try {
       await AsyncStorage.multiRemove([
         STORAGE_KEYS.TRANSACTIONS,
         STORAGE_KEYS.SETTINGS,
-
         STORAGE_KEYS.LAST_RESET,
+        STORAGE_KEYS.CUSTOM_CATEGORIES,
       ]);
     } catch (error) {
       console.error('Error clearing data:', error);
     }
   },
 
-  // Reiniciar solo el mes actual (mantener historial de meses anteriores)
   async resetMonth(): Promise<void> {
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${now.getMonth()}`;
     const transactions = await this.getTransactions();
-    // Keep transactions from previous months
     const kept = transactions.filter(t => {
       const d = new Date(t.date);
       return d.getFullYear() < now.getFullYear() ||
