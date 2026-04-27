@@ -8,7 +8,6 @@ import { detectBankName } from '../ai';
 // HELPERS
 // ─────────────────────────────────────────────────────────────
 
-/** Detecta la moneda real del SMS */
 function detectCurrency(body: string): Currency {
   const b = body.toUpperCase();
   if (b.includes('USD') || b.includes('US$') || b.includes('DOLAR')) return 'USD';
@@ -17,23 +16,15 @@ function detectCurrency(body: string): Currency {
   return 'Q';
 }
 
-/** Extrae el monto numérico — soporta todos los formatos GT */
 function extractAmount(body: string): number | null {
   const patterns = [
-    // "Monto: Q. 500.00" / "Monto: USD 10.00"
     /[Mm]onto\s*:\s*(?:Q\.?|GTQ|USD?|EUR?|GBP|£)\s*([\d,]+(?:\.\d{1,2})?)/,
-    // "Aprobada por Q 35.00" / "Aprobada por USD 10.00"
     /[Aa]probada\s+por\s+(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    // "por Q 201.30" / "por GTQ 700.00"
     /por\s+(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    // "Q.100.00" / "Q 35.00" / "GTQ 2200.00"
     /(?:Q\.?|GTQ)\s*([\d,]+(?:\.\d{1,2})?)/,
-    // "USD 10.00" / "EUR 5.00"
     /(?:USD|EUR|GBP)\s*([\d,]+(?:\.\d{1,2})?)/i,
-    // "201.30 Q" (monto antes de moneda)
     /([\d,]+(?:\.\d{1,2})?)\s*(?:Q|GTQ|USD|EUR)\b/i,
   ];
-
   for (const pattern of patterns) {
     const match = body.match(pattern);
     if (match) {
@@ -44,7 +35,6 @@ function extractAmount(body: string): number | null {
   return null;
 }
 
-/** Determina si el SMS es ingreso o gasto */
 function detectTransactionType(body: string): 'income' | 'expense' {
   const b = body.toLowerCase();
   const incomeKeywords = [
@@ -55,31 +45,15 @@ function detectTransactionType(body: string): 'income' | 'expense' {
   return incomeKeywords.some(k => b.includes(k)) ? 'income' : 'expense';
 }
 
-/** Detecta transferencias entre cuentas propias (no contarlas como gasto real) */
-function isOwnTransfer(body: string): boolean {
-  const b = body.toLowerCase();
-  const ownKeywords = [
-    'transferencia inmediata', 'tif', 'transferencias inmediatas',
-    'entre cuentas', 'cuenta propia', 'mismo titular',
-  ];
-  // Si tiene keyword de transferencia Y keyword de ingreso al mismo tiempo
-  // probablemente es un movimiento interno
-  const hasTransfer = ownKeywords.some(k => b.includes(k));
-  const hasDebit = b.includes('debito') || b.includes('debitado') || b.includes('se debito');
-  const hasCredit = b.includes('acredito') || b.includes('se acredito');
-  // Solo marcamos como transferencia interna si ambos lados aparecen en el mismo SMS
-  return hasTransfer && (hasDebit || hasCredit);
-}
-
-/** Categoría automática según comercio en el SMS */
 function detectCategory(body: string, type: 'income' | 'expense'): string {
   if (type === 'income') return 'salary';
   const b = body.toLowerCase();
   if (b.match(/pizza|mcdon|burger|pollo|kfc|subway|irtra|restauran|comida|food|domino/)) return 'food';
   if (b.match(/walmart|despensa|hiper|supermercado|grocery|maxi/)) return 'groceries';
   if (b.match(/uber|taxi|gasolina|combustible|puma|shell|texaco/)) return 'fuel';
+  if (b.match(/seguro|insurance|asegura/)) return 'insurance';
   if (b.match(/atm|retiro de atm/)) return 'atm';
-  if (b.match(/netflix|spotify|disney|hbo|youtube|prime|streaming/)) return 'streaming';
+  if (b.match(/netflix|spotify|disney|hbo|youtube|prime|paramount|streaming/)) return 'streaming';
   if (b.match(/steam|playstation|xbox|nintendo|game|juego/)) return 'entertainment';
   if (b.match(/farmacia|galeno|meykos|medicina|pharmacy/)) return 'pharmacy';
   if (b.match(/hospital|medico|doctor|clinica|salud/)) return 'health';
@@ -92,7 +66,92 @@ function detectCategory(body: string, type: 'income' | 'expense'): string {
   return 'other';
 }
 
-/** ID determinístico basado en contenido — evita duplicados reales */
+// ─────────────────────────────────────────────────────────────
+// DESCRIPCIÓN INTELIGENTE — extrae el comercio real del SMS
+// ─────────────────────────────────────────────────────────────
+function buildSmartDescription(body: string, bank: string, type: 'income' | 'expense'): string {
+  const b = body;
+
+  // BAC: "compra Aprobada por Q X.XX en NOMBRE_COMERCIO el DD/MM/YY"
+  const bacMatch = b.match(/en\s+([A-Z][A-Z0-9\s]+?)\s+(?:el|El|\d{2}\/)/);
+  if (bacMatch) {
+    const place = toTitleCase(bacMatch[1].trim());
+    return `${bank} · Compra en ${place}`;
+  }
+
+  // BANRURAL: "se debito de tu Cuenta X en: DESCRIPCION"
+  const banruralDebit = b.match(/en:\s+([A-Z][A-Z0-9\s\-]+)/i);
+  if (banruralDebit) {
+    const desc = toTitleCase(banruralDebit[1].trim());
+    return `${bank} · ${desc}`;
+  }
+
+  // BANRURAL ingreso: "se acredito a tu Cuenta X"
+  if (b.toLowerCase().includes('se acredito') || b.toLowerCase().includes('acreditado')) {
+    return `${bank} · Abono recibido`;
+  }
+
+  // GTC: "Consumo tarjeta de debito con la cuenta XXXX ... Localidad: LUGAR CIUDAD"
+  const gtcLocalidad = b.match(/[Ll]ocalidad:\s*([A-Z][A-Z0-9\s]+?)(?:\s{2,}|\n|GT|$)/);
+  if (gtcLocalidad) {
+    const place = toTitleCase(gtcLocalidad[1].trim());
+    return `${bank} · Consumo en ${place}`;
+  }
+
+  // GTC: "Retiro de ATM"
+  if (b.toLowerCase().includes('retiro de atm')) {
+    return `${bank} · Retiro en cajero automático`;
+  }
+
+  // BANTRAB: "DEBITO IFT" o "Transferencia"
+  if (b.toLowerCase().includes('debito ift')) {
+    return `${bank} · Débito por transferencia`;
+  }
+  if (b.toLowerCase().includes('transferencia')) {
+    return type === 'income'
+      ? `${bank} · Transferencia recibida`
+      : `${bank} · Transferencia enviada`;
+  }
+
+  // Detectar comercios conocidos en el texto
+  const knownPlaces: [RegExp, string][] = [
+    [/mcdon|mcdonald/i, "McDonald's"],
+    [/pizza\s*hut/i, "Pizza Hut"],
+    [/kfc/i, "KFC"],
+    [/subway/i, "Subway"],
+    [/walmart/i, "Walmart"],
+    [/despensa/i, "Despensa Familiar"],
+    [/netflix/i, "Netflix"],
+    [/spotify/i, "Spotify"],
+    [/disney/i, "Disney+"],
+    [/paramount/i, "Paramount+"],
+    [/google/i, "Google"],
+    [/apple/i, "Apple"],
+    [/amazon/i, "Amazon"],
+    [/uber/i, "Uber"],
+    [/tigo/i, "Tigo"],
+    [/claro/i, "Claro"],
+    [/irtra/i, "IRTRA"],
+  ];
+
+  for (const [regex, name] of knownPlaces) {
+    if (regex.test(b)) {
+      return type === 'income'
+        ? `${bank} · Pago recibido de ${name}`
+        : `${bank} · Compra en ${name}`;
+    }
+  }
+
+  // Fallback genérico limpio
+  return type === 'income'
+    ? `${bank} · Ingreso recibido`
+    : `${bank} · Gasto con tarjeta`;
+}
+
+function toTitleCase(str: string): string {
+  return str.toLowerCase().replace(/\b\w/g, c => c.toUpperCase()).trim();
+}
+
 function generateSmsId(body: string, date: number): string {
   const base = `${date}-${body.trim().substring(0, 40)}`;
   let hash = 0;
@@ -104,28 +163,31 @@ function generateSmsId(body: string, date: number): string {
 }
 
 // ─────────────────────────────────────────────────────────────
-// KEYWORDS — todos los bancos GT cubiertos
+// KEYWORDS
 // ─────────────────────────────────────────────────────────────
 function msgContainsBankKeywords(text: string): boolean {
   const t = text.toLowerCase();
   const keywords = [
-    // Operaciones genéricas
     'compra', 'consumo', 'retiro', 'debito', 'debitado',
     'abono', 'deposito', 'depósito', 'transferencia', 'pago',
-    // BAC Credomatic
     'aprobada por', 'bac visa', 'bac mastercard', 'prf protege',
-    // BANRURAL
     'se debito', 'se acredito', 'cuenta monetaria', 'banrural',
-    // Banco GTC / G&T Continental
     'retiro de atm', 'tarjeta de debito', 'no. autorizacion', 'monto:',
-    // BANTRAB
     'informamos', 'debito ift', 'gtq',
-    // PROMERICA
     'promerica', 'notificame', 'transaccion autorizada',
-    // Genéricos
     'acreditado', 'acredito', 'cargo', 'movimiento',
+    'seguro', 'insurance',
   ];
   return keywords.some(k => t.includes(k));
+}
+
+function isOwnTransfer(body: string): boolean {
+  const b = body.toLowerCase();
+  const ownKeywords = ['transferencia inmediata', 'tif', 'transferencias inmediatas', 'entre cuentas'];
+  const hasTransfer = ownKeywords.some(k => b.includes(k));
+  const hasDebit = b.includes('debito') || b.includes('se debito');
+  const hasCredit = b.includes('acredito') || b.includes('se acredito');
+  return hasTransfer && (hasDebit || hasCredit);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -135,8 +197,8 @@ export interface SyncResult {
   transactions: Transaction[];
   totalRead: number;
   totalMatched: number;
-  totalSkipped: number;   // Ya existían
-  totalIgnored: number;   // Sin monto o transferencias internas
+  totalSkipped: number;
+  totalIgnored: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -149,29 +211,15 @@ export const SmsService = {
       return { transactions: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 };
     }
 
-    // Permisos ya dados por ADB — no pedimos en runtime para evitar
-    // que Android los rechace automáticamente en apps de sideload
-
-    const filter = {
-      box: 'inbox',
-      indexFrom: 0,
-      maxCount: 300, // Cubre 2 meses para la mayoría de usuarios
-    };
+    const filter = { box: 'inbox', indexFrom: 0, maxCount: 300 };
 
     return new Promise((resolve, reject) => {
       SmsAndroid.list(
         JSON.stringify(filter),
-        (fail: string) => {
-          console.error('Failed to list SMS:', fail);
-          reject(new Error(fail));
-        },
+        (fail: string) => { console.error('SMS list failed:', fail); reject(new Error(fail)); },
         async (_count: number, smsList: string) => {
           let messages: Array<{ body: string; date: number; address: string }> = [];
-
-          try {
-            messages = JSON.parse(smsList);
-          } catch (e) {
-            console.error('Error parsing SMS list:', e);
+          try { messages = JSON.parse(smsList); } catch {
             resolve({ transactions: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 });
             return;
           }
@@ -182,47 +230,33 @@ export const SmsService = {
           let totalIgnored = 0;
           const newTransactions: Transaction[] = [];
 
-          // Filtrar por los últimos 2 meses
           const now = new Date();
           const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
 
           for (const sms of messages) {
             try {
-              // Solo procesar SMS de los últimos 2 meses
               if (sms.date < twoMonthsAgo) continue;
-
               const body = sms.body;
               if (!msgContainsBankKeywords(body)) continue;
               totalMatched++;
 
-              // Ignorar transferencias internas
-              if (isOwnTransfer(body)) {
-                totalIgnored++;
-                continue;
-              }
+              if (isOwnTransfer(body)) { totalIgnored++; continue; }
 
               const parsed = this.parseSimpleSms(body, sms.date);
-              if (!parsed) {
-                totalIgnored++;
-                continue;
-              }
+              if (!parsed) { totalIgnored++; continue; }
 
               const exists = await this.checkIfExists(parsed.id);
-              if (exists) {
-                totalSkipped++;
-                continue;
-              }
+              if (exists) { totalSkipped++; continue; }
 
               await StorageService.addTransaction(parsed);
               newTransactions.push(parsed);
-
             } catch (e) {
-              console.warn('Error processing SMS:', e);
+              console.warn('SMS parse error:', e);
               continue;
             }
           }
 
-          console.log(`SMS Sync: leídos=${totalRead}, bancarios=${totalMatched}, nuevos=${newTransactions.length}, omitidos=${totalSkipped}, ignorados=${totalIgnored}`);
+          console.log(`SMS Sync: leídos=${totalRead}, bancarios=${totalMatched}, nuevos=${newTransactions.length}`);
           resolve({ transactions: newTransactions, totalRead, totalMatched, totalSkipped, totalIgnored });
         }
       );
@@ -238,8 +272,7 @@ export const SmsService = {
     const currency = detectCurrency(body);
     const bank = detectBankName(body);
     const date = smsDate ? new Date(smsDate).toISOString() : new Date().toISOString();
-    const shortBody = body.replace(/\s+/g, ' ').trim().substring(0, 40);
-    const description = `${bank}: ${shortBody}...`;
+    const description = buildSmartDescription(body, bank, type);
     const id = generateSmsId(body, smsDate ?? Date.now());
 
     return {
@@ -250,13 +283,12 @@ export const SmsService = {
       description,
       type,
       source: 'sms',
-      currency,                // ← Moneda real detectada del SMS
+      currency,
       originalSMS: body,
       bank,
     };
   },
 
-  /** Verifica duplicado por ID determinístico */
   async checkIfExists(id: string): Promise<boolean> {
     const all = await StorageService.getTransactions();
     return all.some(t => t.id === id);

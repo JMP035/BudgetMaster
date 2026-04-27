@@ -30,7 +30,7 @@ export async function getAIResponse(
 
     let context = REALITY.US;
     if (cur === "Q") context = REALITY.GT;
-    if (cur === "€") context = REALITY.EU;
+    if (cur === "EUR") context = REALITY.EU;
 
     if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
         try {
