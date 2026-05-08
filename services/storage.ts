@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ─────────────────────────────────────────────────────────────
 export type Currency = 'Q' | 'USD' | 'EUR' | '£';
 export type PaymentCycle = 'monthly' | 'biweekly' | 'weekly' | 'irregular';
-export type RiskProfile = 'conservative' | 'moderate' | 'aggressive';
+export type AccountType = 'cash' | 'bank' | 'credit' | 'investment' | 'savings';
 
 // ─────────────────────────────────────────────────────────────
 // TRANSACCIÓN
@@ -16,12 +16,51 @@ export interface Transaction {
   description: string;
   category: string;
   date: string;
-  type: 'expense' | 'income';
+  type: 'expense' | 'income' | 'transfer';
   source: 'manual' | 'sms';
   currency: Currency;
   originalSMS?: string;
   bank?: string;
   location?: string;
+  fromAccountId?: string;   // Para transferencias
+  toAccountId?: string;   // Para transferencias
+}
+
+// ─────────────────────────────────────────────────────────────
+// CUENTA FINANCIERA
+// ─────────────────────────────────────────────────────────────
+export interface Account {
+  id: string;
+  name: string;
+  type: AccountType;
+  currency: Currency;
+  balance: number;        // Saldo actual
+  initialBalance: number;       // Saldo inicial al crear
+  color: string;
+  icon: string;
+  bankName?: string;        // Nombre del banco si aplica
+  creditLimit?: number;        // Para tarjetas de crédito
+  isActive: boolean;
+  createdAt: string;
+  notes?: string;
+}
+
+// ─────────────────────────────────────────────────────────────
+// VISACUOTA / CUOTA DE TARJETA
+// ─────────────────────────────────────────────────────────────
+export interface CreditInstallment {
+  id: string;
+  accountId: string;      // Tarjeta de crédito asociada
+  name: string;      // Ej: "Laptop Lenovo"
+  totalAmount: number;      // Monto total de la compra
+  monthlyPayment: number;      // Cuota mensual
+  totalInstallments: number;    // Total de cuotas
+  paidInstallments: number;    // Cuotas pagadas
+  startDate: string;      // Fecha de inicio
+  currency: Currency;
+  category: string;
+  isActive: boolean;
+  notes?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -36,7 +75,7 @@ export interface CustomCategory {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GASTO FIJO MENSUAL
+// GASTO FIJO
 // ─────────────────────────────────────────────────────────────
 export interface FixedExpense {
   id: string;
@@ -44,10 +83,10 @@ export interface FixedExpense {
   amount: number;
   currency: Currency;
   category: string;
-  dayOfMonth: number;        // Día del mes que vence (1-31)
-  isPaid: boolean;       // Si ya se pagó este mes
-  paidDate?: string;        // Fecha en que se marcó como pagado
-  autoRecord: boolean;       // Si se registra automáticamente como transacción
+  dayOfMonth: number;
+  isPaid: boolean;
+  paidDate?: string;
+  autoRecord: boolean;
   notes?: string;
   isActive: boolean;
 }
@@ -59,7 +98,7 @@ export interface CategoryBudget {
   categoryId: string;
   limit: number;
   currency: Currency;
-  alertAt: number;        // % para alertar (default 80)
+  alertAt: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -71,7 +110,7 @@ export interface SavingsGoal {
   targetAmount: number;
   currency: Currency;
   currentAmount: number;
-  deadline: string;       // ISO date
+  deadline: string;
   category?: string;
   icon: string;
   color: string;
@@ -80,56 +119,31 @@ export interface SavingsGoal {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CONFIGURACIÓN DE USUARIO (CFO PROFILE)
+// CONFIGURACIÓN DE USUARIO
 // ─────────────────────────────────────────────────────────────
 export interface UserSettings {
-  // Perfil básico
   userName: string;
   userTitle: string;
-
-  // Presupuesto
-  budgetLimit: number;         // Presupuesto mensual en Q
-  budgetLimitUSD: number;         // Presupuesto mensual en USD
-  currency: Currency;       // Moneda principal
-
-  // Ciclo de pago
-  paymentCycle: PaymentCycle;   // Frecuencia de pago
-  paymentDay: number;         // Día del mes que cobra (mensual)
-  paymentDays: number[];       // Días si es quincenal [15, 30]
-  monthlyIncome: number;         // Ingreso promedio declarado en Q
-  monthlyIncomeUSD: number;         // Ingreso promedio en USD
-
-  // Deudas
-  activeDebts: number;         // Monto total de deudas activas en Q
+  budgetLimit: number;
+  budgetLimitUSD: number;
+  currency: Currency;
+  paymentCycle: PaymentCycle;
+  paymentDay: number;
+  paymentDays: number[];
+  monthlyIncome: number;
+  monthlyIncomeUSD: number;
+  activeDebts: number;
   activeDebtsUSD: number;
-
-  // Meta de ahorro mensual
-  monthlySavingsGoal: number;         // Cuánto quiere ahorrar por mes en Q
-
-  // Ahorros externos
+  monthlySavingsGoal: number;
   externalSavings: number;
   externalSavingsUSD: number;
-
-  // Bancos preferidos
-  preferredBanks: string[];       // ['BAC', 'BANRURAL', ...]
-
-  // Tipo de cambio
-  exchangeRate: number;         // USD → Q
-
-  // SMS
+  preferredBanks: string[];
+  exchangeRate: number;
   smsEnabled: boolean;
-
-  // IA
   geminiApiKey?: string;
-
-  // Categorías custom
   customCategories: CustomCategory[];
-
-  // Onboarding
   onboardingComplete: boolean;
   tutorialComplete: boolean;
-
-  // Score financiero histórico
   financialScoreHistory: { month: string; score: number }[];
 }
 
@@ -142,6 +156,8 @@ export interface AppData {
   fixedExpenses: FixedExpense[];
   categoryBudgets: CategoryBudget[];
   savingsGoals: SavingsGoal[];
+  accounts: Account[];
+  creditInstallments: CreditInstallment[];
   currentMonthSpent: number;
   lastResetDate: string;
 }
@@ -157,6 +173,8 @@ const K = {
   FIXED_EXPENSES: '@bm_fixed_expenses',
   CATEGORY_BUDGETS: '@bm_category_budgets',
   SAVINGS_GOALS: '@bm_savings_goals',
+  ACCOUNTS: '@bm_accounts',
+  CREDIT_INSTALLMENTS: '@bm_credit_installments',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -192,22 +210,19 @@ export const DEFAULT_SETTINGS: UserSettings = {
 // HELPERS
 // ─────────────────────────────────────────────────────────────
 
-/** Días que faltan hasta el próximo pago según ciclo */
+/** Días hasta próximo pago */
 export function getDaysUntilNextPayment(settings: UserSettings): number {
   const now = new Date();
   const today = now.getDate();
   const month = now.getMonth();
   const year = now.getFullYear();
 
-  if (settings.paymentCycle === 'weekly') {
-    return 7 - now.getDay();
-  }
+  if (settings.paymentCycle === 'weekly') return 7 - now.getDay();
 
   if (settings.paymentCycle === 'biweekly') {
     const days = settings.paymentDays.sort((a, b) => a - b);
     const next = days.find(d => d > today);
     if (next) return next - today;
-    // Siguiente mes primer día de pago
     const firstNext = new Date(year, month + 1, days[0]);
     return Math.ceil((firstNext.getTime() - now.getTime()) / 86400000);
   }
@@ -218,16 +233,16 @@ export function getDaysUntilNextPayment(settings: UserSettings): number {
     const nextPay = new Date(year, month + 1, payDay);
     return Math.ceil((nextPay.getTime() - now.getTime()) / 86400000);
   }
-
-  return 0; // irregular
+  return 0;
 }
 
-/** Calcula el Score Financiero (0-100) */
+/** Score financiero 0-100 */
 export function calcFinancialScore(
   transactions: Transaction[],
   settings: UserSettings,
   fixedExpenses: FixedExpense[],
   categoryBudgets: CategoryBudget[],
+  accounts: Account[],
 ): number {
   const now = new Date();
   const m = now.getMonth();
@@ -241,27 +256,48 @@ export function calcFinancialScore(
   const income = monthTx.filter(t => t.type === 'income' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
   const expense = monthTx.filter(t => t.type === 'expense' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
 
-  let score = 50; // base
+  let score = 50;
 
-  // +20 si tasa de ahorro >= 20%
   const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
   if (savingsRate >= 20) score += 20;
   else if (savingsRate >= 10) score += 10;
   else if (savingsRate < 0) score -= 15;
 
-  // +15 si no superó el presupuesto
   if (expense <= settings.budgetLimit) score += 15;
   else score -= 10;
 
-  // +10 si pagó todos los gastos fijos
   const paidFixed = fixedExpenses.filter(f => f.isPaid && f.isActive).length;
   const totalFixed = fixedExpenses.filter(f => f.isActive).length;
   if (totalFixed > 0 && paidFixed === totalFixed) score += 10;
 
-  // +5 si tiene metas activas
-  // (se suma en BudgetScreen al guardar metas)
+  // Bonus si tiene cuentas registradas
+  if (accounts.length > 0) score += 5;
 
   return Math.max(0, Math.min(100, score));
+}
+
+/** Patrimonio neto total desde cuentas */
+export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: number): { totalQ: number; totalUSD: number } {
+  let totalQ = 0;
+  let totalUSD = 0;
+
+  for (const acc of accounts) {
+    if (!acc.isActive) continue;
+    const isCredit = acc.type === 'credit';
+    const amount = isCredit ? -Math.abs(acc.balance) : acc.balance;
+
+    if (acc.currency === 'Q') totalQ += amount;
+    if (acc.currency === 'USD') totalUSD += amount;
+  }
+
+  return { totalQ, totalUSD };
+}
+
+/** Cuota mensual pendiente de visacuotas */
+export function getMonthlyInstallmentTotal(installments: CreditInstallment[]): number {
+  return installments
+    .filter(i => i.isActive && i.paidInstallments < i.totalInstallments)
+    .reduce((s, i) => s + i.monthlyPayment, 0);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -350,16 +386,16 @@ export const StorageService = {
     try { await AsyncStorage.setItem(K.FIXED_EXPENSES, JSON.stringify(expenses)); } catch { }
   },
 
-  async addFixedExpense(expense: FixedExpense): Promise<FixedExpense[]> {
+  async addFixedExpense(e: FixedExpense): Promise<FixedExpense[]> {
     const all = await this.getFixedExpenses();
-    const updated = [...all, expense];
+    const updated = [...all, e];
     await this.saveFixedExpenses(updated);
     return updated;
   },
 
-  async updateFixedExpense(expense: FixedExpense): Promise<FixedExpense[]> {
+  async updateFixedExpense(e: FixedExpense): Promise<FixedExpense[]> {
     const all = await this.getFixedExpenses();
-    const updated = all.map(e => e.id === expense.id ? expense : e);
+    const updated = all.map(x => x.id === e.id ? e : x);
     await this.saveFixedExpenses(updated);
     return updated;
   },
@@ -371,7 +407,6 @@ export const StorageService = {
     return updated;
   },
 
-  /** Resetea isPaid de todos los gastos fijos al inicio del mes */
   async resetFixedExpensesForNewMonth(): Promise<void> {
     const all = await this.getFixedExpenses();
     const reset = all.map(e => ({ ...e, isPaid: false, paidDate: undefined }));
@@ -419,16 +454,16 @@ export const StorageService = {
     try { await AsyncStorage.setItem(K.SAVINGS_GOALS, JSON.stringify(goals)); } catch { }
   },
 
-  async addSavingsGoal(goal: SavingsGoal): Promise<SavingsGoal[]> {
+  async addSavingsGoal(g: SavingsGoal): Promise<SavingsGoal[]> {
     const all = await this.getSavingsGoals();
-    const updated = [...all, goal];
+    const updated = [...all, g];
     await this.saveSavingsGoals(updated);
     return updated;
   },
 
-  async updateSavingsGoal(goal: SavingsGoal): Promise<SavingsGoal[]> {
+  async updateSavingsGoal(g: SavingsGoal): Promise<SavingsGoal[]> {
     const all = await this.getSavingsGoals();
-    const updated = all.map(g => g.id === goal.id ? goal : g);
+    const updated = all.map(x => x.id === g.id ? g : x);
     await this.saveSavingsGoals(updated);
     return updated;
   },
@@ -438,6 +473,96 @@ export const StorageService = {
     const updated = all.filter(g => g.id !== id);
     await this.saveSavingsGoals(updated);
     return updated;
+  },
+
+  // ── Cuentas ───────────────────────────────────────────────
+  async getAccounts(): Promise<Account[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.ACCOUNTS);
+      return data ? JSON.parse(data) : [];
+    } catch { return []; }
+  },
+
+  async saveAccounts(accounts: Account[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(accounts)); } catch { }
+  },
+
+  async addAccount(account: Account): Promise<Account[]> {
+    const all = await this.getAccounts();
+    const updated = [...all, account];
+    await this.saveAccounts(updated);
+    return updated;
+  },
+
+  async updateAccount(account: Account): Promise<Account[]> {
+    const all = await this.getAccounts();
+    const updated = all.map(a => a.id === account.id ? account : a);
+    await this.saveAccounts(updated);
+    return updated;
+  },
+
+  async deleteAccount(id: string): Promise<Account[]> {
+    const all = await this.getAccounts();
+    const updated = all.filter(a => a.id !== id);
+    await this.saveAccounts(updated);
+    return updated;
+  },
+
+  /** Actualiza el saldo de una cuenta */
+  async adjustAccountBalance(accountId: string, delta: number): Promise<void> {
+    const all = await this.getAccounts();
+    const updated = all.map(a =>
+      a.id === accountId ? { ...a, balance: a.balance + delta } : a
+    );
+    await this.saveAccounts(updated);
+  },
+
+  // ── Visacuotas / Cuotas ───────────────────────────────────
+  async getCreditInstallments(): Promise<CreditInstallment[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.CREDIT_INSTALLMENTS);
+      return data ? JSON.parse(data) : [];
+    } catch { return []; }
+  },
+
+  async saveCreditInstallments(items: CreditInstallment[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(items)); } catch { }
+  },
+
+  async addCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {
+    const all = await this.getCreditInstallments();
+    const updated = [...all, item];
+    await this.saveCreditInstallments(updated);
+    return updated;
+  },
+
+  async updateCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {
+    const all = await this.getCreditInstallments();
+    const updated = all.map(x => x.id === item.id ? item : x);
+    await this.saveCreditInstallments(updated);
+    return updated;
+  },
+
+  async deleteCreditInstallment(id: string): Promise<CreditInstallment[]> {
+    const all = await this.getCreditInstallments();
+    const updated = all.filter(x => x.id !== id);
+    await this.saveCreditInstallments(updated);
+    return updated;
+  },
+
+  /** Avanza un mes en todas las cuotas activas */
+  async processMonthlyInstallments(): Promise<void> {
+    const all = await this.getCreditInstallments();
+    const updated = all.map(item => {
+      if (!item.isActive || item.paidInstallments >= item.totalInstallments) return item;
+      const newPaid = item.paidInstallments + 1;
+      return {
+        ...item,
+        paidInstallments: newPaid,
+        isActive: newPaid < item.totalInstallments,
+      };
+    });
+    await this.saveCreditInstallments(updated);
   },
 
   // ── Reset mensual ─────────────────────────────────────────
@@ -455,6 +580,7 @@ export const StorageService = {
     const currentMonth = `${now.getFullYear()}-${now.getMonth()}`;
     if (lastReset !== currentMonth) {
       await this.resetFixedExpensesForNewMonth();
+      await this.processMonthlyInstallments();
       await this.saveLastResetDate(currentMonth);
       return true;
     }
@@ -463,15 +589,20 @@ export const StorageService = {
 
   // ── Cargar TODO ───────────────────────────────────────────
   async loadAllData(): Promise<AppData> {
-    const [transactions, settings, fixedExpenses, categoryBudgets, savingsGoals, lastResetDate] =
-      await Promise.all([
-        this.getTransactions(),
-        this.getSettings(),
-        this.getFixedExpenses(),
-        this.getCategoryBudgets(),
-        this.getSavingsGoals(),
-        this.getLastResetDate(),
-      ]);
+    const [
+      transactions, settings, fixedExpenses,
+      categoryBudgets, savingsGoals, accounts,
+      creditInstallments, lastResetDate,
+    ] = await Promise.all([
+      this.getTransactions(),
+      this.getSettings(),
+      this.getFixedExpenses(),
+      this.getCategoryBudgets(),
+      this.getSavingsGoals(),
+      this.getAccounts(),
+      this.getCreditInstallments(),
+      this.getLastResetDate(),
+    ]);
 
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -490,6 +621,8 @@ export const StorageService = {
       fixedExpenses,
       categoryBudgets,
       savingsGoals,
+      accounts,
+      creditInstallments,
       currentMonthSpent,
       lastResetDate: lastResetDate || new Date().toISOString(),
     };
@@ -497,8 +630,6 @@ export const StorageService = {
 
   // ── Limpiar todo ──────────────────────────────────────────
   async clearAllData(): Promise<void> {
-    try {
-      await AsyncStorage.multiRemove(Object.values(K));
-    } catch { }
+    try { await AsyncStorage.multiRemove(Object.values(K)); } catch { }
   },
 };

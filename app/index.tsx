@@ -1,14 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  LayoutAnimation, Platform, StyleSheet,
-  Text, TouchableOpacity, UIManager, View
+  LayoutAnimation, Platform, StatusBar,
+  StyleSheet, Text, TouchableOpacity,
+  UIManager, View
 } from "react-native";
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  CategoryBudget, DEFAULT_SETTINGS, FixedExpense,
-  SavingsGoal, StorageService, Transaction, UserSettings
+  Account, CategoryBudget, CreditInstallment,
+  DEFAULT_SETTINGS, FixedExpense, SavingsGoal,
+  StorageService, Transaction, UserSettings
 } from "../services/storage";
 import { NotificationService } from "../services/NotificationService";
+import { TutorialService } from "../services/Tutorial";
 import { C, shadow } from "../theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -16,6 +20,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 // Pantallas
+import AccountsScreen from "../components/AccountsScreen";
 import AddScreen from "../components/AddScreen";
 import AIAdvisor from "../components/AIAdvisor";
 import BudgetScreen from "../components/BudgetScreen";
@@ -25,6 +30,7 @@ import SettingsScreen from "../components/SettingsScreen";
 import SplashScreen from "../components/SplashScreen";
 import StatsScreen from "../components/StatsScreen";
 import TransactionsScreen from "../components/Transactions";
+import TutorialOverlay from "../components/TutorialOverlay";
 
 export type Tab = "dashboard" | "transactions" | "add" | "budget" | "settings";
 
@@ -37,7 +43,7 @@ const TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; label: string }[] =
 ];
 
 // ─────────────────────────────────────────────────────────────
-// ONBOARDING DATA → SETTINGS
+// ONBOARDING → SETTINGS
 // ─────────────────────────────────────────────────────────────
 function buildSettingsFromOnboarding(data: any): UserSettings {
   return {
@@ -63,6 +69,9 @@ function buildSettingsFromOnboarding(data: any): UserSettings {
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 export default function Index() {
+  const insets = useSafeAreaInsets();
+
+  // ── Estado global ─────────────────────────────────────────
   const [tab, setTab] = useState<Tab>("dashboard");
   const [showSplash, setShowSplash] = useState(true);
   const [txs, setTxs] = useState<Transaction[]>([]);
@@ -70,8 +79,12 @@ export default function Index() {
   const [fixedExpenses, setFixedExpenses] = useState<FixedExpense[]>([]);
   const [categoryBudgets, setCategoryBudgets] = useState<CategoryBudget[]>([]);
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [creditInstallments, setCreditInstallments] = useState<CreditInstallment[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [showAI, setShowAI] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
+  const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -81,16 +94,20 @@ export default function Index() {
     setFixedExpenses(data.fixedExpenses);
     setCategoryBudgets(data.categoryBudgets);
     setSavingsGoals(data.savingsGoals);
-    // Reset mensual automático
+    setAccounts(data.accounts);
+    setCreditInstallments(data.creditInstallments);
     await StorageService.checkAndRunMonthlyReset();
   }, []);
 
   useEffect(() => {
     loadData();
-    // Solicitar permisos de notificaciones
     NotificationService.requestPermissions();
-    // Programar resumen semanal
     NotificationService.scheduleWeeklySummary();
+
+    // Tour inicial automático
+    TutorialService.isCompleted('tour_inicial').then(done => {
+      if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1500);
+    });
   }, [loadData]);
 
   // ── Handlers ──────────────────────────────────────────────
@@ -112,18 +129,11 @@ export default function Index() {
 
   const hAdd = async (tx: Transaction) => {
     setTxs(p => [tx, ...p]);
-
-    // Disparar notificación inteligente
     try {
       await NotificationService.onTransactionAdded(
-        tx,
-        [tx, ...txs],
-        settings,
-        categoryBudgets,
-        fixedExpenses,
+        tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses,
       );
     } catch { }
-
     setTab("dashboard");
   };
 
@@ -139,6 +149,7 @@ export default function Index() {
     const newSettings = buildSettingsFromOnboarding(data);
     await StorageService.saveSettings(newSettings);
     setSettings(newSettings);
+    setTimeout(() => setAutoTutorial('tour_inicial'), 800);
   };
 
   const switchTab = (id: Tab) => {
@@ -152,70 +163,64 @@ export default function Index() {
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
 
   return (
-    <View style={s.root}>
+    <View style={[s.root, { backgroundColor: C.bgDeep }]}>
+      <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
 
       {/* CONTENIDO */}
-      {tab === "dashboard" && !showAI && (
-        <DashboardScreen
-          transactions={txs}
-          settings={settings}
-          fixedExpenses={fixedExpenses}
-          categoryBudgets={categoryBudgets}
-          savingsGoals={savingsGoals}
-          onRefresh={hRefresh}
-          refreshing={refreshing}
-          onNavigateBudget={() => switchTab("budget")}
-        />
-      )}
-
-      {tab === "transactions" && !showAI && (
-        <TransactionsScreen
-          transactions={txs}
-          settings={settings}
-          onDelete={hDelete}
-          onUpdate={hUpdate}
-        />
-      )}
-
-      {tab === "add" && !showAI && (
-        <AddScreen
-          onAdd={hAdd}
-          settings={settings}
-        />
-      )}
-
-      {tab === "budget" && !showAI && (
-        <BudgetScreen
-          transactions={txs}
-          setTransactions={setTxs}
-          settings={settings}
-          fixedExpenses={fixedExpenses}
-          setFixedExpenses={setFixedExpenses}
-          categoryBudgets={categoryBudgets}
-          setCategoryBudgets={setCategoryBudgets}
-          savingsGoals={savingsGoals}
-          setSavingsGoals={setSavingsGoals}
-        />
-      )}
-
-      {tab === "settings" && !showAI && (
-        <SettingsScreen
-          settings={settings}
-          onSave={hSaveSettings}
-          onClearAll={hClearAll}
-        />
-      )}
-
-      {/* ASESOR IA — overlay desde cualquier tab */}
-      {showAI && (
-        <AIAdvisor
-          transactions={txs}
-          settings={settings}
-        />
-      )}
+      <View style={s.content}>
+        {tab === "dashboard" && !showAI && (
+          <DashboardScreen
+            transactions={txs}
+            settings={settings}
+            fixedExpenses={fixedExpenses}
+            categoryBudgets={categoryBudgets}
+            savingsGoals={savingsGoals}
+            accounts={accounts}
+            creditInstallments={creditInstallments}
+            onRefresh={hRefresh}
+            refreshing={refreshing}
+            onNavigateBudget={() => switchTab("budget")}
+            onNavigateAccounts={() => setShowAccounts(true)}
+          />
+        )}
+        {tab === "transactions" && !showAI && (
+          <TransactionsScreen
+            transactions={txs}
+            settings={settings}
+            onDelete={hDelete}
+            onUpdate={hUpdate}
+          />
+        )}
+        {tab === "add" && !showAI && (
+          <AddScreen onAdd={hAdd} settings={settings} />
+        )}
+        {tab === "budget" && !showAI && (
+          <BudgetScreen
+            transactions={txs}
+            setTransactions={setTxs}
+            settings={settings}
+            fixedExpenses={fixedExpenses}
+            setFixedExpenses={setFixedExpenses}
+            categoryBudgets={categoryBudgets}
+            setCategoryBudgets={setCategoryBudgets}
+            savingsGoals={savingsGoals}
+            setSavingsGoals={setSavingsGoals}
+          />
+        )}
+        {tab === "settings" && !showAI && (
+          <SettingsScreen
+            settings={settings}
+            onSave={hSaveSettings}
+            onClearAll={hClearAll}
+          />
+        )}
+        {showAI && (
+          <AIAdvisor transactions={txs} settings={settings} />
+        )}
+      </View>
 
       {/* TAB BAR */}
-      <View style={s.tabBar}>
+      <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {TABS.map(t => {
           const isActive = tab === t.id && !showAI;
           const isAdd = t.id === "add";
@@ -239,9 +244,9 @@ export default function Index() {
           );
         })}
 
-        {/* BOTÓN IA FLOTANTE */}
+        {/* ASESOR IA */}
         <TouchableOpacity
-          style={[s.tabItem]}
+          style={s.tabItem}
           onPress={() => {
             LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
             setShowAI(!showAI);
@@ -254,6 +259,25 @@ export default function Index() {
         </TouchableOpacity>
       </View>
 
+      {/* MODAL CUENTAS */}
+      {showAccounts && (
+        <AccountsScreen
+          accounts={accounts}
+          setAccounts={setAccounts}
+          creditInstallments={creditInstallments}
+          setCreditInstallments={setCreditInstallments}
+          transactions={txs}
+          setTransactions={setTxs}
+          settings={settings}
+          onClose={() => { setShowAccounts(false); loadData(); }}
+        />
+      )}
+
+      {/* TUTORIAL */}
+      <TutorialOverlay
+        activeTutorialId={autoTutorial}
+        onTutorialEnd={() => setAutoTutorial(undefined)}
+      />
     </View>
   );
 }
@@ -262,8 +286,17 @@ export default function Index() {
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  tabBar: { flexDirection: "row", backgroundColor: C.card, borderTopWidth: 1.5, borderTopColor: C.primary + "55", paddingBottom: 20, paddingTop: 8, paddingHorizontal: 4, ...shadow(C.primaryGlow, 8, 0.25) },
+  root: { flex: 1, backgroundColor: C.bgDeep },
+  content: { flex: 1 },
+  tabBar: {
+    flexDirection: "row",
+    backgroundColor: C.card,
+    borderTopWidth: 1.5,
+    borderTopColor: C.primary + "55",
+    paddingTop: 8,
+    paddingHorizontal: 4,
+    ...shadow(C.primaryGlow, 8, 0.25),
+  },
   tabItem: { flex: 1, alignItems: "center", gap: 3 },
   tabAddItem: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -18 },
   tabBg: { backgroundColor: C.primaryDark + "44", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "55" },

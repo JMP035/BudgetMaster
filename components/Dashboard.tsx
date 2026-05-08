@@ -5,9 +5,10 @@ import {
     ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import {
-    CategoryBudget, FixedExpense, SavingsGoal,
-    Transaction, UserSettings,
-    calcFinancialScore, getDaysUntilNextPayment
+    Account, CategoryBudget, CreditInstallment, FixedExpense,
+    SavingsGoal, Transaction, UserSettings,
+    calcFinancialScore, calcNetWorthFromAccounts,
+    getDaysUntilNextPayment, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
@@ -20,12 +21,7 @@ import { C, shadow } from "../theme";
 function AnimBar({ pct, color }: { pct: number; color: string }) {
     const anim = useRef(new Animated.Value(0)).current;
     useEffect(() => {
-        Animated.timing(anim, {
-            toValue: Math.min(pct, 100),
-            duration: 900,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: false,
-        }).start();
+        Animated.timing(anim, { toValue: Math.min(pct, 100), duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
     }, [pct]);
     const w = anim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
     return (
@@ -40,8 +36,7 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 // ─────────────────────────────────────────────────────────────
 export function BudgetRing({ spent, limit, currency }: { spent: number; limit: number; currency: string }) {
     const pct = Math.min(spent / limit, 1);
-    const over = spent > limit;
-    const ringColor = over ? C.danger : pct > 0.8 ? C.warning : C.primaryLight;
+    const ringColor = spent > limit ? C.danger : pct > 0.8 ? C.warning : C.primaryLight;
     return (
         <View style={{ alignItems: "center" }}>
             <View style={[s.ringBg, { width: 160, height: 160, borderRadius: 80, borderWidth: 14 }]}>
@@ -65,6 +60,20 @@ export function BudgetRing({ spent, limit, currency }: { spent: number; limit: n
     );
 }
 
+export function MiniBarChart({ data, color, labels }: { data: number[]; color: string; labels: string[] }) {
+    const max = Math.max(...data, 1);
+    return (
+        <View style={{ flexDirection: "row", alignItems: "flex-end", height: 60, gap: 4 }}>
+            {data.map((val, i) => (
+                <View key={i} style={{ flex: 1, alignItems: "center" }}>
+                    <View style={{ width: "80%", height: Math.max(4, (val / max) * 50), backgroundColor: color, borderRadius: 3, opacity: i === data.length - 1 ? 1 : 0.4 }} />
+                    <Text style={{ color: C.textMuted, fontSize: 9, marginTop: 3 }}>{labels[i]}</Text>
+                </View>
+            ))}
+        </View>
+    );
+}
+
 // ─────────────────────────────────────────────────────────────
 // SCORE FINANCIERO
 // ─────────────────────────────────────────────────────────────
@@ -74,12 +83,7 @@ function ScoreWidget({ score }: { score: number }) {
     const label = score >= 80 ? "Excelente" : score >= 60 ? "Bueno" : score >= 40 ? "Regular" : "Crítico";
 
     useEffect(() => {
-        Animated.timing(anim, {
-            toValue: score,
-            duration: 1200,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: false,
-        }).start();
+        Animated.timing(anim, { toValue: score, duration: 1200, easing: Easing.out(Easing.cubic), useNativeDriver: false }).start();
     }, [score]);
 
     const w = anim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
@@ -117,15 +121,14 @@ function CurrencyCard({ currency, income, expense }: { currency: string; income:
     const balance = income - expense;
     const isPositive = balance >= 0;
     const fmt = (n: number) => `${currency} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
-    const accentColor = currency === 'Q' ? C.primary : "#4A9EE8";
-
+    const accentColor = currency === "Q" ? C.primary : "#4A9EE8";
     return (
         <View style={[s.currencyCard, { borderTopColor: accentColor }]}>
             <View style={s.currencyHeader}>
                 <View style={[s.currencyBadge, { backgroundColor: accentColor + "22" }]}>
                     <Text style={[s.currencySymbol, { color: accentColor }]}>{currency}</Text>
                 </View>
-                <Text style={s.currencyTitle}>{currency === 'Q' ? 'QUETZALES' : currency === 'USD' ? 'DÓLARES' : currency}</Text>
+                <Text style={s.currencyTitle}>{currency === "Q" ? "QUETZALES" : currency === "USD" ? "DÓLARES" : currency}</Text>
             </View>
             <View style={s.currencyRow}>
                 <View style={s.currencyItem}>
@@ -150,14 +153,102 @@ function CurrencyCard({ currency, income, expense }: { currency: string; income:
 }
 
 // ─────────────────────────────────────────────────────────────
+// WIDGET CUENTAS
+// ─────────────────────────────────────────────────────────────
+function AccountsWidget({ accounts, installments, settings, onPress }: {
+    accounts: Account[]; installments: CreditInstallment[];
+    settings: UserSettings; onPress: () => void;
+}) {
+    const active = accounts.filter(a => a.isActive);
+    const { totalQ, totalUSD } = calcNetWorthFromAccounts(active, settings.exchangeRate);
+    const monthlyInst = getMonthlyInstallmentTotal(installments);
+    const totalDebt = active.filter(a => a.type === "credit").reduce((s, a) => s + a.balance, 0);
+    const creditCards = active.filter(a => a.type === "credit");
+
+    return (
+        <TouchableOpacity style={s.widgetCard} onPress={onPress} activeOpacity={0.8}>
+            <View style={s.widgetHeader}>
+                <Ionicons name="wallet-outline" size={18} color={C.primaryLight} />
+                <Text style={s.widgetTitle}>Mis Cuentas</Text>
+                <Text style={[s.widgetBadgeTxt, { color: C.textMuted }]}>{active.length} cuenta{active.length !== 1 ? "s" : ""}</Text>
+                <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+            </View>
+
+            <View style={s.accountsRow}>
+                <View style={s.accountsItem}>
+                    <Text style={s.accountsLbl}>NETO Q</Text>
+                    <Text style={[s.accountsVal, { color: totalQ >= 0 ? C.income : C.danger }]}>
+                        {totalQ < 0 ? "-" : ""}Q {Math.abs(totalQ).toFixed(0)}
+                    </Text>
+                </View>
+                {totalUSD !== 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>NETO USD</Text>
+                            <Text style={[s.accountsVal, { color: totalUSD >= 0 ? "#4A9EE8" : C.danger }]}>
+                                {totalUSD < 0 ? "-" : ""}USD {Math.abs(totalUSD).toFixed(0)}
+                            </Text>
+                        </View>
+                    </>
+                )}
+                {totalDebt > 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>DEUDA</Text>
+                            <Text style={[s.accountsVal, { color: C.danger }]}>Q {totalDebt.toFixed(0)}</Text>
+                        </View>
+                    </>
+                )}
+                {monthlyInst > 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>CUOTAS/MES</Text>
+                            <Text style={[s.accountsVal, { color: C.warning }]}>Q {monthlyInst.toFixed(0)}</Text>
+                        </View>
+                    </>
+                )}
+            </View>
+
+            {/* Mini lista de cuentas */}
+            {active.slice(0, 3).map(acc => (
+                <View key={acc.id} style={s.accMiniRow}>
+                    <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
+                    <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
+                    <Text style={[s.accMiniVal, { color: acc.type === "credit" ? C.danger : acc.color }]}>
+                        {acc.type === "credit" ? "-" : ""}{acc.currency} {acc.balance.toFixed(2)}
+                    </Text>
+                </View>
+            ))}
+            {active.length > 3 && (
+                <Text style={s.widgetMore}>+{active.length - 3} cuentas más →</Text>
+            )}
+
+            {/* Alerta visacuotas */}
+            {monthlyInst > 0 && (
+                <View style={[s.widgetAlert, { backgroundColor: C.warning + "11", borderColor: C.warning + "33" }]}>
+                    <Ionicons name="card-outline" size={13} color={C.warning} />
+                    <Text style={[s.widgetAlertTxt, { color: C.warning }]}>
+                        Este mes debés Q{monthlyInst.toFixed(0)} en visacuotas
+                    </Text>
+                </View>
+            )}
+        </TouchableOpacity>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // WIDGET GASTOS FIJOS
 // ─────────────────────────────────────────────────────────────
-function FixedExpensesWidget({ fixedExpenses, onPress }: { fixedExpenses: FixedExpense[]; onPress: () => void }) {
+function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
+    fixedExpenses: FixedExpense[]; settings: UserSettings; onPress: () => void;
+}) {
     const active = fixedExpenses.filter(e => e.isActive);
     const paid = active.filter(e => e.isPaid).length;
     const pending = active.filter(e => !e.isPaid);
     const overdue = pending.filter(e => new Date().getDate() > e.dayOfMonth);
-
     if (active.length === 0) return null;
 
     return (
@@ -173,7 +264,7 @@ function FixedExpensesWidget({ fixedExpenses, onPress }: { fixedExpenses: FixedE
             </View>
             <AnimBar pct={active.length > 0 ? (paid / active.length) * 100 : 0} color={paid === active.length ? C.income : C.primary} />
             {overdue.length > 0 && (
-                <Text style={s.widgetAlert}>⚠️ {overdue.length} gasto(s) vencido(s) sin pagar</Text>
+                <Text style={s.overdueTxt}>⚠️ {overdue.length} gasto(s) vencido(s) sin pagar</Text>
             )}
             {pending.slice(0, 2).map(e => (
                 <View key={e.id} style={s.widgetItem}>
@@ -183,20 +274,17 @@ function FixedExpensesWidget({ fixedExpenses, onPress }: { fixedExpenses: FixedE
                     <Text style={s.widgetItemDay}>Día {e.dayOfMonth}</Text>
                 </View>
             ))}
-            {pending.length > 2 && (
-                <Text style={s.widgetMore}>+{pending.length - 2} más pendientes →</Text>
-            )}
+            {pending.length > 2 && <Text style={s.widgetMore}>+{pending.length - 2} más →</Text>}
         </TouchableOpacity>
     );
 }
 
 // ─────────────────────────────────────────────────────────────
-// WIDGET METAS DE AHORRO
+// WIDGET METAS
 // ─────────────────────────────────────────────────────────────
 function GoalsWidget({ goals, onPress }: { goals: SavingsGoal[]; onPress: () => void }) {
     const active = goals.filter(g => !g.isCompleted);
     if (active.length === 0) return null;
-
     return (
         <TouchableOpacity style={s.widgetCard} onPress={onPress} activeOpacity={0.8}>
             <View style={s.widgetHeader}>
@@ -216,9 +304,7 @@ function GoalsWidget({ goals, onPress }: { goals: SavingsGoal[]; onPress: () => 
                     </View>
                 );
             })}
-            {active.length > 2 && (
-                <Text style={s.widgetMore}>+{active.length - 2} metas más →</Text>
-            )}
+            {active.length > 2 && <Text style={s.widgetMore}>+{active.length - 2} metas más →</Text>}
         </TouchableOpacity>
     );
 }
@@ -228,53 +314,23 @@ function GoalsWidget({ goals, onPress }: { goals: SavingsGoal[]; onPress: () => 
 // ─────────────────────────────────────────────────────────────
 function BriefingCard({ text, loading }: { text: string; loading: boolean }) {
     const fadeAnim = useRef(new Animated.Value(0)).current;
-
     useEffect(() => {
         if (!loading && text) {
             Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
         }
     }, [loading, text]);
 
-    if (loading) {
-        return (
-            <View style={s.briefingCard}>
-                <View style={s.briefingHeader}>
-                    <Ionicons name="sparkles-outline" size={16} color={C.primaryLight} />
-                    <Text style={s.briefingTitle}>CFO Intelligence</Text>
-                </View>
-                <Text style={s.briefingLoading}>Analizando tu situación financiera...</Text>
-            </View>
-        );
-    }
-
     return (
-        <Animated.View style={[s.briefingCard, { opacity: fadeAnim }]}>
+        <Animated.View style={[s.briefingCard, { opacity: loading ? 1 : fadeAnim }]}>
             <View style={s.briefingHeader}>
                 <Ionicons name="sparkles-outline" size={16} color={C.primaryLight} />
                 <Text style={s.briefingTitle}>CFO Intelligence</Text>
-                <View style={s.briefingBadge}>
-                    <Text style={s.briefingBadgeTxt}>AI</Text>
-                </View>
+                <View style={s.briefingBadge}><Text style={s.briefingBadgeTxt}>AI</Text></View>
             </View>
-            <Text style={s.briefingText}>{text}</Text>
+            <Text style={loading ? s.briefingLoading : s.briefingText}>
+                {loading ? "Analizando tu situación financiera..." : text}
+            </Text>
         </Animated.View>
-    );
-}
-
-// ─────────────────────────────────────────────────────────────
-// MINI BAR CHART
-// ─────────────────────────────────────────────────────────────
-export function MiniBarChart({ data, color, labels }: { data: number[]; color: string; labels: string[] }) {
-    const max = Math.max(...data, 1);
-    return (
-        <View style={{ flexDirection: "row", alignItems: "flex-end", height: 60, gap: 4 }}>
-            {data.map((val, i) => (
-                <View key={i} style={{ flex: 1, alignItems: "center" }}>
-                    <View style={{ width: "80%", height: Math.max(4, (val / max) * 50), backgroundColor: color, borderRadius: 3, opacity: i === data.length - 1 ? 1 : 0.4 }} />
-                    <Text style={{ color: C.textMuted, fontSize: 9, marginTop: 3 }}>{labels[i]}</Text>
-                </View>
-            ))}
-        </View>
     );
 }
 
@@ -287,14 +343,18 @@ interface Props {
     fixedExpenses: FixedExpense[];
     categoryBudgets: CategoryBudget[];
     savingsGoals: SavingsGoal[];
+    accounts: Account[];
+    creditInstallments: CreditInstallment[];
     onRefresh: () => void;
     refreshing: boolean;
     onNavigateBudget?: () => void;
+    onNavigateAccounts?: () => void;
 }
 
 export default function DashboardScreen({
-    transactions, settings, fixedExpenses, categoryBudgets, savingsGoals,
-    onRefresh, refreshing, onNavigateBudget,
+    transactions, settings, fixedExpenses, categoryBudgets,
+    savingsGoals, accounts, creditInstallments,
+    onRefresh, refreshing, onNavigateBudget, onNavigateAccounts,
 }: Props) {
     const now = new Date();
     const month = now.getMonth();
@@ -303,13 +363,10 @@ export default function DashboardScreen({
     const [briefing, setBriefing] = useState("");
     const [briefingLoading, setBriefingLoading] = useState(true);
 
-    // Cargar briefing al montar
     useEffect(() => {
         const load = async () => {
             setBriefingLoading(true);
-            const text = await NotificationService.getDailyBriefing(
-                settings, transactions, categoryBudgets, fixedExpenses
-            );
+            const text = await NotificationService.getDailyBriefing(settings, transactions, categoryBudgets, fixedExpenses);
             setBriefing(text);
             setBriefingLoading(false);
         };
@@ -320,20 +377,17 @@ export default function DashboardScreen({
         try {
             const result = await SmsService.syncBankSms();
             if (result.transactions.length > 0) {
-                Alert.alert(
-                    "✅ Sincronización Exitosa",
+                Alert.alert("✅ Sincronización Exitosa",
                     `Se importaron ${result.transactions.length} transacción(es).\n\n` +
                     `📨 SMS leídos: ${result.totalRead}\n` +
-                    `🏦 Bancarios detectados: ${result.totalMatched}\n` +
+                    `🏦 Bancarios: ${result.totalMatched}\n` +
                     `⏭ Ya registrados: ${result.totalSkipped}`
                 );
                 onRefresh();
             } else {
-                Alert.alert(
-                    "📭 Al día",
-                    `Se revisaron ${result.totalRead} SMS.\n` +
-                    `Bancarios: ${result.totalMatched} | Ya registrados: ${result.totalSkipped}\n\n` +
-                    `Todo está actualizado.`
+                Alert.alert("📭 Al día",
+                    `SMS revisados: ${result.totalRead}\n` +
+                    `Bancarios: ${result.totalMatched} | Ya registrados: ${result.totalSkipped}`
                 );
             }
         } catch {
@@ -353,21 +407,17 @@ export default function DashboardScreen({
     const expenseUSD = monthTx.filter(t => t.type === "expense" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
     const hasUSD = incomeUSD > 0 || expenseUSD > 0;
 
-    // Patrimonio total
+    // Patrimonio total — prioriza cuentas si existen, sino usa transacciones
+    const hasAccounts = accounts.filter(a => a.isActive).length > 0;
+    const { totalQ: accNetQ, totalUSD: accNetUSD } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const allIncQ = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const allExpQ = transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const allIncUSD = transactions.filter(t => t.type === "income" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
-    const allExpUSD = transactions.filter(t => t.type === "expense" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
-    const netQ = (settings.externalSavings || 0) + (allIncQ - allExpQ);
-    const netUSD = (settings.externalSavingsUSD || 0) + (allIncUSD - allExpUSD);
+    const netQ = hasAccounts ? accNetQ : (settings.externalSavings || 0) + (allIncQ - allExpQ);
+    const netUSD = hasAccounts ? accNetUSD : (settings.externalSavingsUSD || 0);
 
-    // Score
-    const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets);
-
-    // Días hasta próximo pago
+    const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
     const daysLeft = getDaysUntilNextPayment(settings);
 
-    // Gráfica 6 meses
     const months = Array.from({ length: 6 }, (_, i) => {
         const d = new Date(year, month - (5 - i), 1);
         return { label: d.toLocaleDateString("es-GT", { month: "short" }), month: d.getMonth(), year: d.getFullYear() };
@@ -416,7 +466,7 @@ export default function DashboardScreen({
             {/* BRIEFING CFO */}
             <BriefingCard text={briefing} loading={briefingLoading} />
 
-            {/* SCORE FINANCIERO */}
+            {/* SCORE */}
             <ScoreWidget score={score} />
 
             {/* PATRIMONIO TOTAL */}
@@ -430,22 +480,33 @@ export default function DashboardScreen({
                         {netUSD < 0 ? "-" : "+"}USD {Math.abs(netUSD).toFixed(2)}
                     </Text>
                 )}
+                {hasAccounts && (
+                    <Text style={s.netWorthSource}>Basado en tus cuentas registradas</Text>
+                )}
             </View>
 
             {/* BALANCE Q */}
             <CurrencyCard currency="Q" income={incomeQ} expense={expenseQ} />
-
-            {/* BALANCE USD */}
             {hasUSD && <CurrencyCard currency="USD" income={incomeUSD} expense={expenseUSD} />}
 
-            {/* PRESUPUESTO Q */}
+            {/* PRESUPUESTO */}
             <View style={[s.card, { alignItems: "center", paddingVertical: 24 }]}>
                 <Text style={[s.sectionTitle, { marginBottom: 16 }]}>PRESUPUESTO MENSUAL Q</Text>
                 <BudgetRing spent={expenseQ} limit={settings.budgetLimit} currency="Q" />
             </View>
 
-            {/* WIDGETS PRESUPUESTO */}
-            <FixedExpensesWidget fixedExpenses={fixedExpenses} onPress={onNavigateBudget || (() => { })} />
+            {/* WIDGET CUENTAS */}
+            <AccountsWidget
+                accounts={accounts}
+                installments={creditInstallments}
+                settings={settings}
+                onPress={onNavigateAccounts || (() => { })}
+            />
+
+            {/* WIDGET GASTOS FIJOS */}
+            <FixedExpensesWidget fixedExpenses={fixedExpenses} settings={settings} onPress={onNavigateBudget || (() => { })} />
+
+            {/* WIDGET METAS */}
             <GoalsWidget goals={savingsGoals} onPress={onNavigateBudget || (() => { })} />
 
             {/* GRÁFICA 6 MESES */}
@@ -464,29 +525,25 @@ export default function DashboardScreen({
                 ) : recent.map(tx => {
                     const cat = getCat(tx.category, settings.customCategories);
                     const txCurrency = tx.currency || "Q";
+                    const isTransfer = tx.type === "transfer";
                     return (
                         <View key={tx.id} style={s.txItem}>
-                            <View style={[s.txIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44", shadowColor: cat.color }]}>
-                                <Ionicons name={cat.icon} size={20} color={cat.color} />
+                            <View style={[s.txIcon, { backgroundColor: isTransfer ? C.primary + "22" : cat.color + "22", borderColor: isTransfer ? C.primary + "44" : cat.color + "44", shadowColor: isTransfer ? C.primary : cat.color }]}>
+                                <Ionicons name={isTransfer ? "swap-horizontal-outline" : cat.icon} size={20} color={isTransfer ? C.primaryLight : cat.color} />
                             </View>
                             <View style={{ flex: 1 }}>
                                 <Text style={s.txDesc} numberOfLines={1}>{tx.description || cat.label}</Text>
                                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 2 }}>
                                     <Text style={s.txDate}>{new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short" })}</Text>
-                                    {tx.bank && (
-                                        <View style={s.bankBadge}>
-                                            <Text style={s.bankBadgeTxt}>{tx.bank}</Text>
-                                        </View>
-                                    )}
-                                    {txCurrency !== "Q" && (
-                                        <View style={[s.bankBadge, { backgroundColor: "#4A9EE822" }]}>
-                                            <Text style={[s.bankBadgeTxt, { color: "#4A9EE8" }]}>{txCurrency}</Text>
-                                        </View>
-                                    )}
+                                    {tx.bank && <View style={s.bankBadge}><Text style={s.bankBadgeTxt}>{tx.bank}</Text></View>}
+                                    {txCurrency !== "Q" && <View style={[s.bankBadge, { backgroundColor: "#4A9EE822" }]}><Text style={[s.bankBadgeTxt, { color: "#4A9EE8" }]}>{txCurrency}</Text></View>}
+                                    {isTransfer && <View style={[s.bankBadge, { backgroundColor: C.primary + "22" }]}><Text style={[s.bankBadgeTxt, { color: C.primaryLight }]}>TRANSFER</Text></View>}
                                 </View>
                             </View>
-                            <Text style={[s.txAmount, { color: tx.type === "income" ? C.income : C.expense }]}>
-                                {tx.type === "income" ? "+" : "-"}{fmt(tx.amount, txCurrency)}
+                            <Text style={[s.txAmount, {
+                                color: isTransfer ? C.textMuted : tx.type === "income" ? C.income : C.expense
+                            }]}>
+                                {isTransfer ? "→" : tx.type === "income" ? "+" : "-"}{fmt(tx.amount, txCurrency)}
                             </Text>
                         </View>
                     );
@@ -501,8 +558,6 @@ export default function DashboardScreen({
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
     screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-
-    // Header
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
     logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12 },
     greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
@@ -512,7 +567,6 @@ const s = StyleSheet.create({
     syncBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.primaryDark + "33", borderWidth: 1, borderColor: C.accent + "66", alignItems: "center", justifyContent: "center" },
     syncDot: { position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent },
 
-    // Briefing
     briefingCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.primary + "33", borderLeftWidth: 3, borderLeftColor: C.primary, padding: 16, marginBottom: 14, ...shadow(C.primaryGlow, 8, 0.2) },
     briefingHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
     briefingTitle: { color: C.primaryLight, fontSize: 12, fontWeight: "800", letterSpacing: 1, flex: 1 },
@@ -521,7 +575,6 @@ const s = StyleSheet.create({
     briefingText: { color: C.text, fontSize: 13, lineHeight: 20 },
     briefingLoading: { color: C.textMuted, fontSize: 13, fontStyle: "italic" },
 
-    // Score
     scoreCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
     scoreHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
     scoreIconBg: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
@@ -531,13 +584,12 @@ const s = StyleSheet.create({
     scoreMax: { color: C.textMuted, fontSize: 14, marginLeft: 2, alignSelf: "flex-end", marginBottom: 4 },
     scoreHint: { color: C.textMuted, fontSize: 12, marginTop: 8 },
 
-    // Patrimonio
     netWorthCard: { backgroundColor: C.cardHigh, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44", padding: 24, alignItems: "center", marginBottom: 14, ...shadow(C.primaryGlow, 15, 0.2) },
     netWorthTitle: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1.5, marginBottom: 8 },
     netWorthVal: { fontSize: 34, fontWeight: "900" },
     netWorthValSub: { fontSize: 18, fontWeight: "700", marginTop: 4 },
+    netWorthSource: { color: C.textMuted, fontSize: 10, marginTop: 6, letterSpacing: 0.5 },
 
-    // Balance moneda
     currencyCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 3, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
     currencyHeader: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
     currencyBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginRight: 10 },
@@ -549,25 +601,34 @@ const s = StyleSheet.create({
     currencyVal: { fontSize: 15, fontWeight: "800" },
     currencyDivider: { width: 1, height: 40, backgroundColor: C.cardBorder },
 
-    // Widgets
-    widgetCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopColor: C.shimmer, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    widgetCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
     widgetHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
     widgetTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", flex: 1 },
     widgetBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
     widgetBadgeTxt: { fontSize: 12, fontWeight: "800" },
-    widgetAlert: { color: C.danger, fontSize: 11, fontWeight: "700", marginTop: 6, marginBottom: 6 },
     widgetItem: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
     widgetItemTxt: { flex: 1, color: C.text, fontSize: 13, fontWeight: "600" },
     widgetItemAmt: { color: C.textPrimary, fontSize: 13, fontWeight: "800", marginRight: 8 },
     widgetItemDay: { color: C.textMuted, fontSize: 11 },
     widgetMore: { color: C.primaryLight, fontSize: 12, fontWeight: "700", marginTop: 6, textAlign: "right" },
+    widgetAlert: { flexDirection: "row", alignItems: "center", gap: 6, padding: 8, borderRadius: 8, borderWidth: 1, marginTop: 8 },
+    widgetAlertTxt: { fontSize: 12, fontWeight: "700" },
+    overdueTxt: { color: C.danger, fontSize: 11, fontWeight: "700", marginTop: 6, marginBottom: 6 },
 
-    // General
-    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopColor: C.shimmer, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    accountsRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+    accountsItem: { flex: 1, alignItems: "center" },
+    accountsLbl: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1, marginBottom: 3 },
+    accountsVal: { fontSize: 14, fontWeight: "900" },
+    accountsDivider: { width: 1, height: 32, backgroundColor: C.cardBorder, marginHorizontal: 6 },
+    accMiniRow: { flexDirection: "row", alignItems: "center", paddingVertical: 5, borderTopWidth: 1, borderTopColor: C.separator },
+    accMiniDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
+    accMiniName: { flex: 1, color: C.textSub, fontSize: 12 },
+    accMiniVal: { fontSize: 12, fontWeight: "700" },
+
+    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
     sectionTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.8 },
     ringBg: { borderColor: C.bgDeep, alignItems: "center", justifyContent: "center" },
 
-    // Recientes
     txItem: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.separator },
     txIcon: { width: 44, height: 44, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginRight: 14, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 10, elevation: 8 },
     txDesc: { color: C.text, fontSize: 14, fontWeight: "800" },
