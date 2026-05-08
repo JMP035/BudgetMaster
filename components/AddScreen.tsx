@@ -4,7 +4,7 @@ import {
     Alert, KeyboardAvoidingView, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
-import { Currency, StorageService, Transaction, UserSettings } from "../services/storage";
+import { Currency, Transaction, UserSettings } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { C, shadow } from "../theme";
 import { detectBankName } from "../ai";
@@ -82,7 +82,6 @@ export default function AddScreen({ onAdd, settings }: Props) {
             source: "manual",
             currency,
         };
-        await StorageService.addTransaction(tx);
         onAdd(tx);
         // Reset
         setAmount(""); setDesc(""); setCategory("other");

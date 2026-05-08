@@ -1,16 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     Alert, KeyboardAvoidingView, Modal, Platform,
     ScrollView, StyleSheet, Switch, Text,
-    TextInput, TouchableOpacity, View
+    TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import { Currency, CustomCategory, StorageService, UserSettings } from "../services/storage";
+import { ExchangeRateService } from "../services/ExchangeRateService";
+import { TutorialService } from "../services/TutorialService";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
 
 // ─────────────────────────────────────────────────────────────
-// SECCIÓN CON TÍTULO Y DESCRIPCIÓN
+// SECCIÓN CON ÍCONO Y DESCRIPCIÓN
 // ─────────────────────────────────────────────────────────────
 function Section({ icon, title, description, children }: {
     icon: any; title: string; description?: string; children: React.ReactNode;
@@ -32,7 +34,7 @@ function Section({ icon, title, description, children }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MODAL PARA CREAR CATEGORÍA CUSTOM
+// MODAL NUEVA CATEGORÍA
 // ─────────────────────────────────────────────────────────────
 function NewCategoryModal({ onSave, onClose }: {
     onSave: (cat: CustomCategory) => void;
@@ -44,15 +46,14 @@ function NewCategoryModal({ onSave, onClose }: {
     const [type, setType] = useState<'expense' | 'income' | 'both'>('expense');
 
     const handleSave = () => {
-        if (!label.trim()) { Alert.alert("Error", "Ingresa un nombre para la categoría."); return; }
-        const newCat: CustomCategory = {
+        if (!label.trim()) { Alert.alert("Error", "Ingresa un nombre."); return; }
+        onSave({
             id: `custom_${Date.now()}`,
             label: label.trim(),
             icon,
             color,
             type,
-        };
-        onSave(newCat);
+        });
         onClose();
     };
 
@@ -66,28 +67,14 @@ function NewCategoryModal({ onSave, onClose }: {
                             <Ionicons name="close" size={22} color={C.textMuted} />
                         </TouchableOpacity>
                     </View>
-
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        {/* NOMBRE */}
-                        <Text style={nc.label}>NOMBRE</Text>
-                        <TextInput
-                            style={nc.input}
-                            value={label}
-                            onChangeText={setLabel}
-                            placeholder="Ej: Mascotas, Gym, Café..."
-                            placeholderTextColor={C.textMuted}
-                            autoFocus
-                        />
+                        <Text style={nc.lbl}>NOMBRE</Text>
+                        <TextInput style={nc.input} value={label} onChangeText={setLabel} placeholder="Ej: Mascotas, Gym..." placeholderTextColor={C.textMuted} autoFocus />
 
-                        {/* TIPO */}
-                        <Text style={nc.label}>APLICA PARA</Text>
+                        <Text style={nc.lbl}>APLICA PARA</Text>
                         <View style={nc.typeRow}>
                             {(['expense', 'income', 'both'] as const).map(t => (
-                                <TouchableOpacity
-                                    key={t}
-                                    style={[nc.typeBtn, type === t && nc.typeBtnActive]}
-                                    onPress={() => setType(t)}
-                                >
+                                <TouchableOpacity key={t} style={[nc.typeBtn, type === t && nc.typeBtnActive]} onPress={() => setType(t)}>
                                     <Text style={[nc.typeTxt, type === t && { color: C.primaryLight }]}>
                                         {t === 'expense' ? 'Gastos' : t === 'income' ? 'Ingresos' : 'Ambos'}
                                     </Text>
@@ -95,38 +82,28 @@ function NewCategoryModal({ onSave, onClose }: {
                             ))}
                         </View>
 
-                        {/* COLOR */}
-                        <Text style={nc.label}>COLOR</Text>
+                        <Text style={nc.lbl}>COLOR</Text>
                         <View style={nc.colorGrid}>
                             {CATEGORY_COLORS.map(c => (
-                                <TouchableOpacity
-                                    key={c}
-                                    style={[nc.colorDot, { backgroundColor: c }, color === c && nc.colorDotActive]}
-                                    onPress={() => setColor(c)}
-                                >
+                                <TouchableOpacity key={c} style={[nc.colorDot, { backgroundColor: c }, color === c && nc.colorDotActive]} onPress={() => setColor(c)}>
                                     {color === c && <Ionicons name="checkmark" size={14} color="#fff" />}
                                 </TouchableOpacity>
                             ))}
                         </View>
 
-                        {/* ICONO */}
-                        <Text style={nc.label}>ÍCONO</Text>
+                        <Text style={nc.lbl}>ÍCONO</Text>
                         <View style={nc.iconGrid}>
                             {CATEGORY_ICONS.slice(0, 24).map(ic => (
-                                <TouchableOpacity
-                                    key={ic}
-                                    style={[nc.iconBtn, icon === ic && { borderColor: color, backgroundColor: color + "22" }]}
-                                    onPress={() => setIcon(ic)}
-                                >
+                                <TouchableOpacity key={ic} style={[nc.iconBtn, icon === ic && { borderColor: color, backgroundColor: color + "22" }]} onPress={() => setIcon(ic as any)}>
                                     <Ionicons name={ic} size={22} color={icon === ic ? color : C.textSub} />
                                 </TouchableOpacity>
                             ))}
                         </View>
 
-                        {/* PREVIEW */}
+                        {/* Preview */}
                         <View style={[nc.preview, { borderColor: color + "55", backgroundColor: color + "11" }]}>
                             <View style={[nc.previewIcon, { backgroundColor: color + "22", borderColor: color + "44" }]}>
-                                <Ionicons name={icon} size={24} color={color} />
+                                <Ionicons name={icon as any} size={24} color={color} />
                             </View>
                             <Text style={[nc.previewLabel, { color }]}>{label || "Vista previa"}</Text>
                         </View>
@@ -144,7 +121,7 @@ function NewCategoryModal({ onSave, onClose }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// PANTALLA PRINCIPAL DE AJUSTES
+// PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 interface Props {
     settings: UserSettings;
@@ -160,12 +137,43 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     const [extSavingsQ, setExtSavingsQ] = useState(settings.externalSavings?.toString() || "0");
     const [extSavingsUSD, setExtSavingsUSD] = useState((settings.externalSavingsUSD || 0).toString());
     const [exchangeRate, setExchangeRate] = useState((settings.exchangeRate || 7.70).toString());
+    const [rateSource, setRateSource] = useState<string>("");
+    const [loadingRate, setLoadingRate] = useState(false);
     const [smsOpt, setSmsOpt] = useState(settings.smsEnabled ?? true);
     const [apiKey, setApiKey] = useState(settings.geminiApiKey || "");
     const [saved, setSaved] = useState(false);
     const [showNewCat, setShowNewCat] = useState(false);
     const [customCats, setCustomCats] = useState<CustomCategory[]>(settings.customCategories || []);
 
+    // ── Cargar tipo de cambio automático al abrir ────────────
+    useEffect(() => {
+        loadExchangeRate();
+    }, []);
+
+    const loadExchangeRate = async () => {
+        setLoadingRate(true);
+        try {
+            const { rate, source } = await ExchangeRateService.getRate();
+            setExchangeRate(rate.toFixed(5));
+            setRateSource(source);
+        } catch { }
+        setLoadingRate(false);
+    };
+
+    const forceRefreshRate = async () => {
+        setLoadingRate(true);
+        try {
+            const { rate, source } = await ExchangeRateService.forceRefresh();
+            setExchangeRate(rate.toFixed(5));
+            setRateSource(source);
+            Alert.alert("✅ Actualizado", `Tipo de cambio: Q${rate.toFixed(5)}\nFuente: ${source}`);
+        } catch {
+            Alert.alert("Error", "No se pudo actualizar el tipo de cambio.");
+        }
+        setLoadingRate(false);
+    };
+
+    // ── Guardar ───────────────────────────────────────────────
     const handleSave = async () => {
         const bQ = parseFloat(budgetQ.replace(",", "."));
         const bUSD = parseFloat(budgetUSD.replace(",", "."));
@@ -201,205 +209,145 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     };
 
     const handleDeleteCustomCat = async (id: string) => {
-        Alert.alert("Eliminar categoría", "¿Estás seguro?", [
+        Alert.alert("Eliminar", "¿Borrar esta categoría?", [
             { text: "Cancelar", style: "cancel" },
             {
                 text: "Eliminar", style: "destructive", onPress: async () => {
                     const updated = await StorageService.deleteCustomCategory(id);
                     setCustomCats(updated);
                 }
-            }
+            },
         ]);
+    };
+
+    const handleResetTutorials = async () => {
+        await TutorialService.resetAll();
+        Alert.alert("✅ Listo", "Los tutoriales se reiniciaron. El tour inicial aparecerá la próxima vez que abras la app.");
     };
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
+            <ScrollView style={s.screen} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
                 <View style={s.pageHeader}>
                     <Text style={s.pageTitle}>Configuración</Text>
                     <Text style={s.pageSubtitle}>Personaliza tu experiencia financiera</Text>
                 </View>
 
-                {/* ── PERFIL ─────────────────────────────────────── */}
-                <Section
-                    icon="person-circle-outline"
-                    title="Tu Perfil"
-                    description="¿Cómo quieres que te llamemos en la app?"
-                >
+                {/* PERFIL */}
+                <Section icon="person-circle-outline" title="Tu Perfil" description="¿Cómo querés que te llamemos en la app?">
                     <View style={s.inputRow}>
                         <Ionicons name="person-outline" size={18} color={C.primary} style={{ marginRight: 10 }} />
-                        <TextInput
-                            style={s.input}
-                            value={name}
-                            onChangeText={setName}
-                            placeholder="Tu nombre..."
-                            placeholderTextColor={C.textMuted}
-                        />
+                        <TextInput style={s.input} value={name} onChangeText={setName} placeholder="Tu nombre..." placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
                 </Section>
 
-                {/* ── PRESUPUESTO ────────────────────────────────── */}
-                <Section
-                    icon="wallet-outline"
-                    title="Presupuesto Mensual"
-                    description="Cuánto planeas gastar cada mes. La app te avisará cuando te acerques al límite."
-                >
+                {/* PRESUPUESTO */}
+                <Section icon="wallet-outline" title="Presupuesto Mensual" description="Cuánto planeas gastar cada mes. La app te avisará cuando te acerques al límite.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>
-                        <TextInput
-                            style={s.input}
-                            value={budgetQ}
-                            onChangeText={setBudgetQ}
-                            keyboardType="decimal-pad"
-                            placeholder="6000.00"
-                            placeholderTextColor={C.textMuted}
-                        />
+                        <TextInput style={s.input} value={budgetQ} onChangeText={setBudgetQ} keyboardType="decimal-pad" placeholder="6000.00" placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
-
                     <Text style={[s.subLabel, { marginTop: 12 }]}>EN DÓLARES (USD) — opcional</Text>
-                    <Text style={s.hint}>Si tienes cuentas en dólares, ingresa tu presupuesto mensual en USD.</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>$</Text>
-                        <TextInput
-                            style={s.input}
-                            value={budgetUSD}
-                            onChangeText={setBudgetUSD}
-                            keyboardType="decimal-pad"
-                            placeholder="800.00"
-                            placeholderTextColor={C.textMuted}
-                        />
+                        <TextInput style={s.input} value={budgetUSD} onChangeText={setBudgetUSD} keyboardType="decimal-pad" placeholder="800.00" placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
                 </Section>
 
-                {/* ── MONEDA PRINCIPAL ───────────────────────────── */}
-                <Section
-                    icon="cash-outline"
-                    title="Moneda Principal"
-                    description="La moneda que usas en tu día a día. Los SMS y reportes usarán esta como referencia."
-                >
+                {/* MONEDA PRINCIPAL */}
+                <Section icon="cash-outline" title="Moneda Principal" description="La moneda que usás en tu día a día.">
                     <View style={s.currencyRow}>
-                        {(["Q", "$", "€", "£"] as Currency[]).map(c => (
-                            <TouchableOpacity
-                                key={c}
-                                style={[s.currencyBtn, currency === c && s.currencyBtnActive]}
-                                onPress={() => setCurrency(c)}
-                            >
-                                <Text style={[s.currencyTxt, currency === c && { color: C.primaryLight }]}>{c}</Text>
+                        {([
+                            { value: "Q" as Currency, label: "Q" },
+                            { value: "USD" as Currency, label: "$" },
+                            { value: "EUR" as Currency, label: "€" },
+                            { value: "£" as Currency, label: "£" },
+                        ]).map(({ value, label }) => (
+                            <TouchableOpacity key={value} style={[s.currencyBtn, currency === value && s.currencyBtnActive]} onPress={() => setCurrency(value)}>
+                                <Text style={[s.currencyTxt, currency === value && { color: C.primaryLight }]}>{label}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
                 </Section>
 
-                {/* ── TIPO DE CAMBIO ─────────────────────────────── */}
+                {/* TIPO DE CAMBIO */}
                 <Section
                     icon="swap-horizontal-outline"
                     title="Tipo de Cambio USD → Q"
-                    description="Se usa para calcular el Patrimonio Total en quetzales. Actualízalo según el tipo de cambio del día."
+                    description="Se actualiza automáticamente desde el Banco de Guatemala. También podés editarlo manualmente."
                 >
-                    <View style={s.inputRow}>
-                        <Text style={s.currSymbol}>Q</Text>
-                        <TextInput
-                            style={s.input}
-                            value={exchangeRate}
-                            onChangeText={setExchangeRate}
-                            keyboardType="decimal-pad"
-                            placeholder="7.70"
-                            placeholderTextColor={C.textMuted}
-                        />
-                        <Text style={{ color: C.textMuted, fontSize: 13, marginLeft: 8 }}>por USD 1.00</Text>
+                    <View style={s.rateRow}>
+                        <View style={[s.inputRow, { flex: 1, marginRight: 8 }]}>
+                            <Text style={s.currSymbol}>Q</Text>
+                            <TextInput
+                                style={s.input}
+                                value={exchangeRate}
+                                onChangeText={setExchangeRate}
+                                keyboardType="decimal-pad"
+                                placeholder="7.70000"
+                                placeholderTextColor={C.textMuted}
+                                returnKeyType="done"
+                            />
+                        </View>
+                        <TouchableOpacity style={s.refreshRateBtn} onPress={forceRefreshRate} disabled={loadingRate}>
+                            {loadingRate
+                                ? <ActivityIndicator size="small" color={C.primaryLight} />
+                                : <Ionicons name="refresh-outline" size={18} color={C.primaryLight} />
+                            }
+                        </TouchableOpacity>
                     </View>
+                    {rateSource ? (
+                        <Text style={s.rateSource}>
+                            {loadingRate ? "Actualizando..." : `Fuente: ${rateSource} · Q${parseFloat(exchangeRate).toFixed(5)} por USD 1.00`}
+                        </Text>
+                    ) : null}
+                    <Text style={s.hint}>Se renueva automáticamente cada 6 horas desde el Banguat o mercado internacional.</Text>
                 </Section>
 
-                {/* ── AHORROS EXTERNOS ───────────────────────────── */}
-                <Section
-                    icon="bank-outline"
-                    title="Ahorros Externos"
-                    description="Dinero que tienes guardado fuera de lo que registras en la app (bancos, cuentas de ahorro, efectivo). Se suma al Patrimonio Total."
-                >
+                {/* AHORROS EXTERNOS */}
+                <Section icon="business-outline" title="Ahorros Externos" description="Dinero que tenés guardado fuera de la app. Se suma al Patrimonio Total.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>
-                        <TextInput
-                            style={s.input}
-                            value={extSavingsQ}
-                            onChangeText={setExtSavingsQ}
-                            keyboardType="decimal-pad"
-                            placeholder="0.00"
-                            placeholderTextColor={C.textMuted}
-                        />
+                        <TextInput style={s.input} value={extSavingsQ} onChangeText={setExtSavingsQ} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
-
                     <Text style={[s.subLabel, { marginTop: 12 }]}>EN DÓLARES (USD)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>$</Text>
-                        <TextInput
-                            style={s.input}
-                            value={extSavingsUSD}
-                            onChangeText={setExtSavingsUSD}
-                            keyboardType="decimal-pad"
-                            placeholder="0.00"
-                            placeholderTextColor={C.textMuted}
-                        />
+                        <TextInput style={s.input} value={extSavingsUSD} onChangeText={setExtSavingsUSD} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
                 </Section>
 
-                {/* ── SMS AUTOMÁTICO ─────────────────────────────── */}
-                <Section
-                    icon="chatbubble-outline"
-                    title="Sincronización SMS Automática"
-                    description="Permite que BudgetMaster lea tus mensajes de texto bancarios (BAC, BANRURAL, GTC, BANTRAB, PROMERICA) y registre tus gastos automáticamente. Solo lee SMS de bancos, nunca de contactos personales."
-                >
+                {/* SMS */}
+                <Section icon="chatbubble-outline" title="Sincronización SMS Automática" description="Lee tus SMS de BAC, BANRURAL, GTC, BANTRAB y PROMERICA para registrar gastos automáticamente. Solo lee mensajes bancarios, nunca personales.">
                     <View style={s.switchRow}>
                         <View style={{ flex: 1 }}>
                             <Text style={s.switchLabel}>{smsOpt ? "✅ Activado" : "❌ Desactivado"}</Text>
                             <Text style={s.hint}>
-                                {smsOpt
-                                    ? "La app detectará y registrará tus movimientos bancarios automáticamente."
-                                    : "Puedes seguir registrando gastos manualmente o pegando el SMS en Agregar."}
+                                {smsOpt ? "Detecta y registra movimientos bancarios automáticamente." : "Podés registrar gastos manualmente o pegando el SMS."}
                             </Text>
                         </View>
-                        <Switch
-                            value={smsOpt}
-                            onValueChange={setSmsOpt}
-                            trackColor={{ false: C.bgDeep, true: C.accent }}
-                            thumbColor={C.text}
-                            style={{ marginLeft: 12 }}
-                        />
+                        <Switch value={smsOpt} onValueChange={setSmsOpt} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
                     </View>
                 </Section>
 
-                {/* ── IA GEMINI ──────────────────────────────────── */}
-                <Section
-                    icon="sparkles-outline"
-                    title="Inteligencia Artificial (Gemini)"
-                    description="Ingresa tu API Key de Google Gemini para activar el Asesor IA avanzado. Obtén tu clave gratuita en: aistudio.google.com"
-                >
+                {/* GEMINI IA */}
+                <Section icon="sparkles-outline" title="Inteligencia Artificial (Gemini)" description="Ingresá tu API Key de Google Gemini para activar el Asesor IA avanzado con respuestas en lenguaje natural. Obtené tu clave gratuita en: aistudio.google.com">
                     <View style={s.inputRow}>
                         <Ionicons name="key-outline" size={18} color={C.primary} style={{ marginRight: 10 }} />
-                        <TextInput
-                            style={s.input}
-                            value={apiKey}
-                            onChangeText={setApiKey}
-                            placeholder="AIzaSy..."
-                            placeholderTextColor={C.textMuted}
-                            secureTextEntry
-                        />
+                        <TextInput style={s.input} value={apiKey} onChangeText={setApiKey} placeholder="AIzaSy..." placeholderTextColor={C.textMuted} secureTextEntry returnKeyType="done" />
                     </View>
                     {apiKey.length > 10 && (
-                        <Text style={[s.hint, { color: C.accent, marginTop: 6 }]}>✅ API Key configurada. El Asesor IA usará Gemini.</Text>
+                        <Text style={[s.hint, { color: C.accent, marginTop: 6 }]}>✅ API Key configurada. El Asesor IA usará Gemini en modo chat real.</Text>
                     )}
                 </Section>
 
-                {/* ── CATEGORÍAS CUSTOM ──────────────────────────── */}
-                <Section
-                    icon="pricetag-outline"
-                    title="Mis Categorías"
-                    description="Crea categorías personalizadas para clasificar mejor tus gastos e ingresos. Por ejemplo: Mascotas, Gym, Inversiones, Negocio propio, etc."
-                >
+                {/* CATEGORÍAS CUSTOM */}
+                <Section icon="pricetag-outline" title="Mis Categorías" description="Creá categorías personalizadas para clasificar mejor tus gastos e ingresos.">
                     {customCats.length === 0 ? (
-                        <Text style={s.hint}>Aún no tienes categorías personalizadas. Crea una para empezar.</Text>
+                        <Text style={s.hint}>Aún no tenés categorías personalizadas.</Text>
                     ) : (
                         <View style={s.catList}>
                             {customCats.map(cat => (
@@ -424,33 +372,35 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                     </TouchableOpacity>
                 </Section>
 
-                {/* ── GUARDAR ────────────────────────────────────── */}
+                {/* ACADEMIA / TUTORIALES */}
+                <Section icon="school-outline" title="Academia BudgetMaster" description="Tutoriales interactivos para aprender a usar todas las funciones de la app.">
+                    <TouchableOpacity style={s.tutorialBtn} onPress={handleResetTutorials}>
+                        <Ionicons name="refresh-outline" size={18} color={C.accent} />
+                        <Text style={s.tutorialBtnTxt}>Reiniciar todos los tutoriales</Text>
+                    </TouchableOpacity>
+                    <Text style={s.hint}>Al reiniciar, el tour inicial aparecerá la próxima vez que abras la app. También podés acceder a cualquier tutorial desde el ícono "?" en el header.</Text>
+                </Section>
+
+                {/* GUARDAR */}
                 <TouchableOpacity style={s.saveBtn} onPress={handleSave}>
                     <Ionicons name={saved ? "checkmark-circle" : "save-outline"} size={22} color="#1A0E00" />
                     <Text style={s.saveBtnTxt}>{saved ? "¡Cambios guardados!" : "Guardar Cambios"}</Text>
                 </TouchableOpacity>
 
-                {/* ── ZONA DE PELIGRO ────────────────────────────── */}
+                {/* ZONA DE PELIGRO */}
                 <View style={s.dangerZone}>
                     <Text style={s.dangerTitle}>⚠️ Zona de Peligro</Text>
-                    <Text style={s.dangerDesc}>
-                        Esto borrará TODAS tus transacciones, configuración y categorías personalizadas permanentemente. Esta acción no se puede deshacer.
-                    </Text>
+                    <Text style={s.dangerDesc}>Esto borrará TODAS tus transacciones, cuentas, configuración y categorías personalizadas permanentemente. No se puede deshacer.</Text>
                     <TouchableOpacity
                         style={s.dangerBtn}
                         onPress={() => {
-                            if (Platform.OS === 'web') {
-                                if (window.confirm("¿Borrar todos los datos permanentemente?")) onClearAll();
-                            } else {
-                                Alert.alert(
-                                    "⚠️ Borrar Todo",
-                                    "Esta acción eliminará TODAS tus transacciones y configuración. ¿Estás completamente seguro?",
-                                    [
-                                        { text: "Cancelar", style: "cancel" },
-                                        { text: "Sí, borrar todo", style: "destructive", onPress: onClearAll }
-                                    ]
-                                );
-                            }
+                            Alert.alert("⚠️ Borrar Todo",
+                                "Esta acción eliminará TODOS tus datos. ¿Estás completamente seguro?",
+                                [
+                                    { text: "Cancelar", style: "cancel" },
+                                    { text: "Sí, borrar todo", style: "destructive", onPress: onClearAll }
+                                ]
+                            );
                         }}
                     >
                         <Ionicons name="trash-outline" size={18} color={C.danger} />
@@ -462,10 +412,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             </ScrollView>
 
             {showNewCat && (
-                <NewCategoryModal
-                    onSave={handleAddCustomCat}
-                    onClose={() => setShowNewCat(false)}
-                />
+                <NewCategoryModal onSave={handleAddCustomCat} onClose={() => setShowNewCat(false)} />
             )}
         </KeyboardAvoidingView>
     );
@@ -479,32 +426,25 @@ const s = StyleSheet.create({
     pageHeader: { marginBottom: 24 },
     pageTitle: { color: C.textPrimary, fontSize: 28, fontWeight: "900", letterSpacing: 0.5 },
     pageSubtitle: { color: C.textSub, fontSize: 13, marginTop: 4 },
-
-    // Sección
     section: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.cardBorder, borderTopColor: C.shimmer, padding: 18, marginBottom: 16, ...shadow("#000", 6, 0.3) },
     sectionHeader: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
     sectionIconBg: { width: 36, height: 36, borderRadius: 10, backgroundColor: C.primaryDark + "44", borderWidth: 1, borderColor: C.primary + "55", alignItems: "center", justifyContent: "center", marginRight: 12, marginTop: 2 },
     sectionTitle: { color: C.textPrimary, fontSize: 15, fontWeight: "800" },
     sectionDesc: { color: C.textSub, fontSize: 12, marginTop: 3, lineHeight: 17 },
-
-    // Inputs
     subLabel: { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1, marginBottom: 8 },
-    hint: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 8 },
+    hint: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginTop: 6 },
     inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.bgDeep, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, paddingHorizontal: 14, paddingVertical: 12 },
     input: { flex: 1, color: C.text, fontSize: 15 },
     currSymbol: { color: C.textMuted, fontSize: 16, fontWeight: "700", marginRight: 8 },
-
-    // Moneda
     currencyRow: { flexDirection: "row", gap: 8 },
     currencyBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
     currencyBtnActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.4) },
     currencyTxt: { color: C.textSub, fontSize: 18, fontWeight: "900" },
-
-    // Switch SMS
+    rateRow: { flexDirection: "row", alignItems: "center" },
+    refreshRateBtn: { width: 48, height: 48, borderRadius: 12, backgroundColor: C.primaryDark + "44", borderWidth: 1, borderColor: C.primary + "55", alignItems: "center", justifyContent: "center" },
+    rateSource: { color: C.accent, fontSize: 11, marginTop: 8, fontWeight: "600" },
     switchRow: { flexDirection: "row", alignItems: "center" },
     switchLabel: { color: C.text, fontSize: 14, fontWeight: "700", marginBottom: 4 },
-
-    // Categorías custom
     catList: { marginBottom: 12 },
     catRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.separator },
     catIcon: { width: 36, height: 36, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 12 },
@@ -513,12 +453,10 @@ const s = StyleSheet.create({
     catDeleteBtn: { padding: 8, borderRadius: 8, backgroundColor: C.danger + "11", borderWidth: 1, borderColor: C.danger + "33" },
     addCatBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: C.primary + "44", backgroundColor: C.primaryDark + "22" },
     addCatTxt: { color: C.primaryLight, fontSize: 14, fontWeight: "700" },
-
-    // Guardar
+    tutorialBtn: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: C.accent + "44", backgroundColor: C.accent + "11" },
+    tutorialBtnTxt: { color: C.accentLight, fontSize: 14, fontWeight: "700" },
     saveBtn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 16, paddingVertical: 18, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 8, marginBottom: 8, ...shadow(C.primaryGlow, 12, 0.5) },
     saveBtnTxt: { color: "#1A0E00", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
-
-    // Peligro
     dangerZone: { marginTop: 8, padding: 20, borderRadius: 18, borderWidth: 1, borderColor: C.danger + "44", backgroundColor: C.danger + "0A" },
     dangerTitle: { color: C.danger, fontSize: 18, fontWeight: "800", marginBottom: 8 },
     dangerDesc: { color: C.textSub, fontSize: 13, lineHeight: 19, marginBottom: 16 },
@@ -526,16 +464,13 @@ const s = StyleSheet.create({
     dangerBtnTxt: { color: C.danger, fontWeight: "700", fontSize: 14 },
 });
 
-// ─────────────────────────────────────────────────────────────
-// ESTILOS MODAL NUEVA CATEGORÍA
-// ─────────────────────────────────────────────────────────────
 const nc = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
     sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "55", padding: 24, maxHeight: "90%" },
     header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
     title: { color: C.textPrimary, fontSize: 20, fontWeight: "900" },
     closeBtn: { padding: 8, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-    label: { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10, marginTop: 16 },
+    lbl: { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10, marginTop: 16 },
     input: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, padding: 14, color: C.text, fontSize: 15 },
     typeRow: { flexDirection: "row", gap: 8 },
     typeBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
@@ -544,11 +479,11 @@ const nc = StyleSheet.create({
     colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
     colorDot: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     colorDotActive: { borderWidth: 3, borderColor: "#fff" },
-    iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
     iconBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
-    preview: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 14, borderWidth: 1, marginTop: 16, gap: 14 },
+    preview: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 14, borderWidth: 1, marginTop: 8, marginBottom: 8, gap: 14 },
     previewIcon: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
     previewLabel: { fontSize: 18, fontWeight: "800" },
-    saveBtn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 20, ...shadow(C.primaryGlow, 10, 0.4) },
+    saveBtn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 8, ...shadow(C.primaryGlow, 10, 0.4) },
     saveBtnTxt: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
 });
