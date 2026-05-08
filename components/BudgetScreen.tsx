@@ -318,7 +318,7 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
                             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                                 <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
                                     {CATEGORY_ICONS.slice(0, 16).map(ic => (
-                                        <TouchableOpacity key={ic} style={[md.iconBtn, selectedIcon === ic && { borderColor: selectedColor, backgroundColor: selectedColor + "22" }]} onPress={() => setIcon(ic as string)}>
+                                        <TouchableOpacity key={ic} style={[md.iconBtn, selectedIcon === ic && { borderColor: selectedColor, backgroundColor: selectedColor + "22" }]} onPress={() => setIcon(ic as any)}>
                                             <Ionicons name={ic} size={22} color={selectedIcon === ic ? selectedColor : C.textSub} />
                                         </TouchableOpacity>
                                     ))}
@@ -342,13 +342,14 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
 // SECCIÓN 1 — GASTOS FIJOS
 // ─────────────────────────────────────────────────────────────
 function FixedExpensesTab({
-    fixedExpenses, setFixedExpenses, transactions, setTransactions, settings
+    fixedExpenses, setFixedExpenses, transactions, setTransactions, settings, onRefresh
 }: {
     fixedExpenses: FixedExpense[];
     setFixedExpenses: (e: FixedExpense[]) => void;
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
     settings: UserSettings;
+    onRefresh?: () => void;
 }) {
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<FixedExpense | undefined>();
@@ -378,6 +379,8 @@ function FixedExpensesTab({
             const txAll = await StorageService.addTransaction(tx);
             setTransactions(txAll);
         }
+        // Notificar al padre para que recargue todos los datos
+        onRefresh?.();
     };
 
     const handleSave = async (expense: FixedExpense) => {
@@ -722,7 +725,7 @@ function SavingsGoalsTab({
                     const remaining = goal.targetAmount - goal.currentAmount;
                     const deadline = new Date(goal.deadline);
                     const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
-                    const monthly = daysLeft > 0 ? (remaining / (daysLeft / 30)).toFixed(2) : "0";
+                    const monthly = daysLeft > 0 ? (remaining / Math.max(daysLeft / 30, 0.1)).toFixed(2) : "Meta vencida";
 
                     return (
                         <View key={goal.id} style={[s.goalCard, { borderTopColor: goal.color }]}>
@@ -848,6 +851,7 @@ interface Props {
     setCategoryBudgets: (b: CategoryBudget[]) => void;
     savingsGoals: SavingsGoal[];
     setSavingsGoals: (g: SavingsGoal[]) => void;
+    onRefresh?: () => void;
 }
 
 export default function BudgetScreen({
@@ -855,6 +859,7 @@ export default function BudgetScreen({
     fixedExpenses, setFixedExpenses,
     categoryBudgets, setCategoryBudgets,
     savingsGoals, setSavingsGoals,
+    onRefresh,
 }: Props) {
     const [activeTab, setActiveTab] = useState(0);
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -884,6 +889,7 @@ export default function BudgetScreen({
                         transactions={transactions}
                         setTransactions={setTransactions}
                         settings={settings}
+                        onRefresh={onRefresh}
                     />
                 )}
                 {activeTab === 1 && (

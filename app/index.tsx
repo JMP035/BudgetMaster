@@ -12,7 +12,8 @@ import {
   StorageService, Transaction, UserSettings
 } from "../services/storage";
 import { NotificationService } from "../services/NotificationService";
-import { TutorialService } from "../services/Tutorial";
+import { TutorialService } from "../services/TutorialService";
+import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
 import { C, shadow } from "../theme";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -30,17 +31,9 @@ import SettingsScreen from "../components/SettingsScreen";
 import SplashScreen from "../components/SplashScreen";
 import StatsScreen from "../components/StatsScreen";
 import TransactionsScreen from "../components/Transactions";
-import TutorialOverlay from "../components/TutorialOverlay";
+import TutorialOverlay, { TutorialMenuProvider } from "../components/TutorialOverlay";
 
-export type Tab = "dashboard" | "transactions" | "add" | "budget" | "settings";
-
-const TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
-  { id: "dashboard", icon: "home", label: "Inicio" },
-  { id: "transactions", icon: "list", label: "Movimientos" },
-  { id: "add", icon: "add", label: "Agregar" },
-  { id: "budget", icon: "wallet-outline", label: "Presupuesto" },
-  { id: "settings", icon: "settings", label: "Ajustes" },
-];
+export type Tab = "dashboard" | "transactions" | "add" | "budget" | "stats" | "settings";
 
 // ─────────────────────────────────────────────────────────────
 // ONBOARDING → SETTINGS
@@ -66,12 +59,84 @@ function buildSettingsFromOnboarding(data: any): UserSettings {
 }
 
 // ─────────────────────────────────────────────────────────────
-// COMPONENTE PRINCIPAL
+// TAB BAR — con refs para tutorial
 // ─────────────────────────────────────────────────────────────
-export default function Index() {
+interface TabBarProps {
+  tab: Tab;
+  showAI: boolean;
+  onSwitch: (t: Tab) => void;
+  onToggleAI: () => void;
+}
+
+function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
-  // ── Estado global ─────────────────────────────────────────
+  // Refs para tutorial spotlight
+  const tabAddRef = useTutorialRef('tab_add');
+  const tabBudgetRef = useTutorialRef('tab_budget');
+  const tabAdvisorRef = useTutorialRef('tab_advisor');
+  const tabSettingsRef = useTutorialRef('tab_settings');
+
+  const TABS = [
+    { id: "dashboard" as Tab, icon: "home" as const, label: "Inicio", ref: undefined },
+    { id: "transactions" as Tab, icon: "list" as const, label: "Movimientos", ref: undefined },
+    { id: "add" as Tab, icon: "add" as const, label: "Agregar", ref: tabAddRef },
+    { id: "budget" as Tab, icon: "wallet-outline" as const, label: "Presupuesto", ref: tabBudgetRef },
+    { id: "stats" as Tab, icon: "bar-chart-outline" as const, label: "Estadísticas", ref: undefined },
+    { id: "settings" as Tab, icon: "settings" as const, label: "Ajustes", ref: tabSettingsRef },
+  ];
+
+  return (
+    <View style={[tb.bar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+      {TABS.map(t => {
+        const isActive = tab === t.id && !showAI;
+        const isAdd = t.id === "add";
+        return (
+          <View
+            key={t.id}
+            ref={t.ref as any}
+            collapsable={false}
+            style={[tb.item, isAdd && tb.addItem]}
+          >
+            <TouchableOpacity
+              style={[tb.item, isAdd && tb.addItem]}
+              onPress={() => onSwitch(t.id)}
+            >
+              <View style={[isAdd && tb.addBubble, isActive && !isAdd && tb.tabBg]}>
+                <Ionicons
+                  name={t.icon}
+                  size={isAdd ? 30 : 22}
+                  color={isAdd ? "#1A0E00" : isActive ? C.primaryLight : C.textMuted}
+                />
+              </View>
+              {!isAdd && (
+                <Text style={[tb.label, isActive && { color: C.primaryLight }]}>{t.label}</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        );
+      })}
+
+      {/* ASESOR IA */}
+      <View ref={tabAdvisorRef as any} collapsable={false} style={tb.item}>
+        <TouchableOpacity
+          style={tb.item}
+          onPress={onToggleAI}
+        >
+          <View style={[showAI && tb.tabBg]}>
+            <Ionicons name="sparkles" size={22} color={showAI ? C.primaryLight : C.textMuted} />
+          </View>
+          <Text style={[tb.label, showAI && { color: C.primaryLight }]}>Asesor</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// COMPONENTE RAÍZ — sin provider (se pone afuera)
+// ─────────────────────────────────────────────────────────────
+function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [showSplash, setShowSplash] = useState(true);
   const [txs, setTxs] = useState<Transaction[]>([]);
@@ -85,8 +150,9 @@ export default function Index() {
   const [showAI, setShowAI] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
+  const [showTutorialMenu, setShowTutorialMenu] = useState(false);
 
-  // ── Carga inicial ─────────────────────────────────────────
+  // ── Carga inicial ────────────────────────────────────────
   const loadData = useCallback(async () => {
     const data = await StorageService.loadAllData();
     setTxs(data.transactions);
@@ -103,14 +169,13 @@ export default function Index() {
     loadData();
     NotificationService.requestPermissions();
     NotificationService.scheduleWeeklySummary();
-
     // Tour inicial automático
     TutorialService.isCompleted('tour_inicial').then(done => {
-      if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1500);
+      if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
     });
   }, [loadData]);
 
-  // ── Handlers ──────────────────────────────────────────────
+  // ── Handlers ─────────────────────────────────────────────
   const hRefresh = async () => {
     setRefreshing(true);
     await loadData();
@@ -128,11 +193,10 @@ export default function Index() {
   };
 
   const hAdd = async (tx: Transaction) => {
+    await StorageService.addTransaction(tx);
     setTxs(p => [tx, ...p]);
     try {
-      await NotificationService.onTransactionAdded(
-        tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses,
-      );
+      await NotificationService.onTransactionAdded(tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses);
     } catch { }
     setTab("dashboard");
   };
@@ -158,127 +222,117 @@ export default function Index() {
     setShowAI(false);
   };
 
-  // ── Renders condicionales ─────────────────────────────────
+  const toggleAI = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowAI(v => !v);
+  };
+
+  // ── Renders condicionales ────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
 
   return (
-    <View style={[s.root, { backgroundColor: C.bgDeep }]}>
-      <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
+    <TutorialMenuProvider onOpen={() => setShowTutorialMenu(true)}>
+      <View style={s.root}>
+        <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
 
-      {/* CONTENIDO */}
-      <View style={s.content}>
-        {tab === "dashboard" && !showAI && (
-          <DashboardScreen
-            transactions={txs}
-            settings={settings}
-            fixedExpenses={fixedExpenses}
-            categoryBudgets={categoryBudgets}
-            savingsGoals={savingsGoals}
+        {/* CONTENIDO */}
+        <View style={s.content}>
+          {tab === "dashboard" && !showAI && (
+            <DashboardScreen
+              transactions={txs}
+              settings={settings}
+              fixedExpenses={fixedExpenses}
+              categoryBudgets={categoryBudgets}
+              savingsGoals={savingsGoals}
+              accounts={accounts}
+              creditInstallments={creditInstallments}
+              onRefresh={hRefresh}
+              refreshing={refreshing}
+              onNavigateBudget={() => switchTab("budget")}
+              onNavigateAccounts={() => setShowAccounts(true)}
+            />
+          )}
+          {tab === "transactions" && !showAI && (
+            <TransactionsScreen
+              transactions={txs}
+              settings={settings}
+              onDelete={hDelete}
+              onUpdate={hUpdate}
+            />
+          )}
+          {tab === "add" && !showAI && (
+            <AddScreen onAdd={hAdd} settings={settings} />
+          )}
+          {tab === "budget" && !showAI && (
+            <BudgetScreen
+              transactions={txs}
+              setTransactions={setTxs}
+              settings={settings}
+              fixedExpenses={fixedExpenses}
+              setFixedExpenses={setFixedExpenses}
+              categoryBudgets={categoryBudgets}
+              setCategoryBudgets={setCategoryBudgets}
+              savingsGoals={savingsGoals}
+              setSavingsGoals={setSavingsGoals}
+              onRefresh={hRefresh}
+            />
+          )}
+          {tab === "stats" && !showAI && (
+            <StatsScreen transactions={txs} settings={settings} />
+          )}
+          {tab === "settings" && !showAI && (
+            <SettingsScreen
+              settings={settings}
+              onSave={hSaveSettings}
+              onClearAll={hClearAll}
+            />
+          )}
+          {showAI && (
+            <AIAdvisor transactions={txs} settings={settings} />
+          )}
+        </View>
+
+        {/* TAB BAR */}
+        <TabBar
+          tab={tab}
+          showAI={showAI}
+          onSwitch={switchTab}
+          onToggleAI={toggleAI}
+        />
+
+        {/* CUENTAS */}
+        {showAccounts && (
+          <AccountsScreen
             accounts={accounts}
+            setAccounts={setAccounts}
             creditInstallments={creditInstallments}
-            onRefresh={hRefresh}
-            refreshing={refreshing}
-            onNavigateBudget={() => switchTab("budget")}
-            onNavigateAccounts={() => setShowAccounts(true)}
-          />
-        )}
-        {tab === "transactions" && !showAI && (
-          <TransactionsScreen
-            transactions={txs}
-            settings={settings}
-            onDelete={hDelete}
-            onUpdate={hUpdate}
-          />
-        )}
-        {tab === "add" && !showAI && (
-          <AddScreen onAdd={hAdd} settings={settings} />
-        )}
-        {tab === "budget" && !showAI && (
-          <BudgetScreen
+            setCreditInstallments={setCreditInstallments}
             transactions={txs}
             setTransactions={setTxs}
             settings={settings}
-            fixedExpenses={fixedExpenses}
-            setFixedExpenses={setFixedExpenses}
-            categoryBudgets={categoryBudgets}
-            setCategoryBudgets={setCategoryBudgets}
-            savingsGoals={savingsGoals}
-            setSavingsGoals={setSavingsGoals}
+            onClose={() => { setShowAccounts(false); loadData(); }}
           />
         )}
-        {tab === "settings" && !showAI && (
-          <SettingsScreen
-            settings={settings}
-            onSave={hSaveSettings}
-            onClearAll={hClearAll}
-          />
-        )}
-        {showAI && (
-          <AIAdvisor transactions={txs} settings={settings} />
-        )}
-      </View>
 
-      {/* TAB BAR */}
-      <View style={[s.tabBar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-        {TABS.map(t => {
-          const isActive = tab === t.id && !showAI;
-          const isAdd = t.id === "add";
-          return (
-            <TouchableOpacity
-              key={t.id}
-              style={[s.tabItem, isAdd && s.tabAddItem]}
-              onPress={() => switchTab(t.id)}
-            >
-              <View style={[isAdd && s.addBubble, isActive && !isAdd && s.tabBg]}>
-                <Ionicons
-                  name={t.icon}
-                  size={isAdd ? 30 : 22}
-                  color={isAdd ? "#1A0E00" : isActive ? C.primaryLight : C.textMuted}
-                />
-              </View>
-              {!isAdd && (
-                <Text style={[s.tabLbl, isActive && { color: C.primaryLight }]}>{t.label}</Text>
-              )}
-            </TouchableOpacity>
-          );
-        })}
-
-        {/* ASESOR IA */}
-        <TouchableOpacity
-          style={s.tabItem}
-          onPress={() => {
-            LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-            setShowAI(!showAI);
-          }}
-        >
-          <View style={[showAI && s.tabBg]}>
-            <Ionicons name="sparkles" size={22} color={showAI ? C.primaryLight : C.textMuted} />
-          </View>
-          <Text style={[s.tabLbl, showAI && { color: C.primaryLight }]}>Asesor</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* MODAL CUENTAS */}
-      {showAccounts && (
-        <AccountsScreen
-          accounts={accounts}
-          setAccounts={setAccounts}
-          creditInstallments={creditInstallments}
-          setCreditInstallments={setCreditInstallments}
-          transactions={txs}
-          setTransactions={setTxs}
-          settings={settings}
-          onClose={() => { setShowAccounts(false); loadData(); }}
+        {/* TUTORIAL OVERLAY */}
+        <TutorialOverlay
+          activeTutorialId={autoTutorial}
+          onTutorialEnd={() => setAutoTutorial(undefined)}
         />
-      )}
+      </View>
+    </TutorialMenuProvider>
+  );
+}
 
-      {/* TUTORIAL */}
-      <TutorialOverlay
-        activeTutorialId={autoTutorial}
-        onTutorialEnd={() => setAutoTutorial(undefined)}
-      />
-    </View>
+// ─────────────────────────────────────────────────────────────
+// EXPORT PRINCIPAL — envuelve con TutorialProvider
+// ─────────────────────────────────────────────────────────────
+export default function Index() {
+  return (
+    <TutorialProvider>
+      <AppContent />
+    </TutorialProvider>
   );
 }
 
@@ -288,7 +342,10 @@ export default function Index() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bgDeep },
   content: { flex: 1 },
-  tabBar: {
+});
+
+const tb = StyleSheet.create({
+  bar: {
     flexDirection: "row",
     backgroundColor: C.card,
     borderTopWidth: 1.5,
@@ -297,9 +354,9 @@ const s = StyleSheet.create({
     paddingHorizontal: 4,
     ...shadow(C.primaryGlow, 8, 0.25),
   },
-  tabItem: { flex: 1, alignItems: "center", gap: 3 },
-  tabAddItem: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -18 },
+  item: { flex: 1, alignItems: "center", gap: 3 },
+  addItem: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -18 },
   tabBg: { backgroundColor: C.primaryDark + "44", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "55" },
   addBubble: { width: 56, height: 56, borderRadius: 28, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.primaryLight, borderTopColor: C.accentLight, ...shadow(C.primaryGlow, 12, 0.7) },
-  tabLbl: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 0.3 },
+  label: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 0.3 },
 });

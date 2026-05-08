@@ -35,7 +35,7 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 // BUDGET RING
 // ─────────────────────────────────────────────────────────────
 export function BudgetRing({ spent, limit, currency }: { spent: number; limit: number; currency: string }) {
-    const pct = Math.min(spent / limit, 1);
+    const pct = limit > 0 ? Math.min(spent / limit, 1) : 0;
     const ringColor = spent > limit ? C.danger : pct > 0.8 ? C.warning : C.primaryLight;
     return (
         <View style={{ alignItems: "center" }}>
@@ -371,7 +371,7 @@ export default function DashboardScreen({
             setBriefingLoading(false);
         };
         load();
-    }, [transactions.length]);
+    }, [transactions.length, settings.budgetLimit, settings.userName]);
 
     const handleSmsSync = async () => {
         try {
