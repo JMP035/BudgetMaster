@@ -10,19 +10,15 @@ import { Tutorial, TutorialService, TutorialStep, TUTORIALS } from "../services/
 import { C, shadow } from "../theme";
 
 const { width: SW, height: SH } = Dimensions.get("window");
-const PADDING = 10; // padding extra alrededor del spotlight
+const PADDING = 10;
 
-// ─────────────────────────────────────────────────────────────
-// TIPOS
-// ─────────────────────────────────────────────────────────────
 interface Rect { x: number; y: number; width: number; height: number; }
 
 // ─────────────────────────────────────────────────────────────
-// SPOTLIGHT OVERLAY — dibuja los 4 rectángulos oscuros
+// SPOTLIGHT MASK — 4 rectángulos oscuros alrededor del elemento
 // ─────────────────────────────────────────────────────────────
 function SpotlightMask({ rect, padding = PADDING }: { rect: Rect | null; padding?: number }) {
     if (!rect) {
-        // Sin rect → cubre toda la pantalla
         return <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.82)" }]} />;
     }
 
@@ -34,23 +30,16 @@ function SpotlightMask({ rect, padding = PADDING }: { rect: Rect | null; padding
 
     return (
         <>
-            {/* Arriba */}
             <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: sy, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            {/* Izquierda */}
             <View style={{ position: "absolute", top: sy, left: 0, width: sx, height: sh, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            {/* Derecha */}
             <View style={{ position: "absolute", top: sy, left: sx + sw, right: 0, height: sh, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            {/* Abajo */}
             <View style={{ position: "absolute", top: sy + sh, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            {/* Borde brillante alrededor del spotlight */}
+            {/* Borde brillante */}
             <View style={{
                 position: "absolute",
-                top: sy - 2,
-                left: sx - 2,
-                width: sw + 4,
-                height: sh + 4,
-                borderRadius: 14,
-                borderWidth: 2,
+                top: sy - 2, left: sx - 2,
+                width: sw + 4, height: sh + 4,
+                borderRadius: 14, borderWidth: 2,
                 borderColor: C.primary + "99",
             }} />
         </>
@@ -58,7 +47,7 @@ function SpotlightMask({ rect, padding = PADDING }: { rect: Rect | null; padding
 }
 
 // ─────────────────────────────────────────────────────────────
-// TARJETA DE PASO DEL TUTORIAL
+// STEP CARD
 // ─────────────────────────────────────────────────────────────
 interface StepCardProps {
     tutorial: Tutorial;
@@ -78,12 +67,10 @@ function StepCard({ tutorial, step, stepIndex, rect, onNext, onSkip }: StepCardP
     useEffect(() => {
         slideAnim.setValue(40);
         fadeAnim.setValue(0);
-
         Animated.parallel([
             Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
             Animated.spring(slideAnim, { toValue: 0, friction: 7, tension: 60, useNativeDriver: true }),
         ]).start();
-
         const pulse = Animated.loop(
             Animated.sequence([
                 Animated.timing(pulseAnim, { toValue: 1.1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
@@ -94,76 +81,57 @@ function StepCard({ tutorial, step, stepIndex, rect, onNext, onSkip }: StepCardP
         return () => pulse.stop();
     }, [stepIndex]);
 
-    // Calcular posición de la tarjeta según el elemento iluminado
-    const cardPosition = (): { top?: number; bottom?: number } => {
+    // Posicionar la card según espacio disponible
+    const cardPosition = (): { top?: number } => {
         if (!rect) return { top: SH * 0.35 };
-
+        const cardHeight = 300;
         const spaceBelow = SH - (rect.y + rect.height + PADDING);
         const spaceAbove = rect.y - PADDING;
-        const cardHeight = 280;
 
         if (step.position === 'top' || spaceAbove > cardHeight + 20) {
-            // Tarjeta arriba del elemento
             return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
         }
         if (spaceBelow > cardHeight + 20) {
-            // Tarjeta debajo del elemento
             return { top: rect.y + rect.height + PADDING + 16 };
         }
-        // Centro de la pantalla si no hay espacio
         return { top: SH * 0.32 };
     };
-
-    const pos = cardPosition();
 
     return (
         <Animated.View style={[
             card.container,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }], ...pos },
+            { opacity: fadeAnim, transform: [{ translateY: slideAnim }], ...cardPosition() },
         ]}>
             {/* Progreso */}
             <View style={card.progressRow}>
                 {tutorial.steps.map((_, i) => (
-                    <View
-                        key={i}
-                        style={[
-                            card.progressDot,
-                            {
-                                backgroundColor: i <= stepIndex ? tutorial.color : C.cardBorder,
-                                width: i === stepIndex ? 24 : 8,
-                            }
-                        ]}
-                    />
+                    <View key={i} style={[
+                        card.progressDot,
+                        { backgroundColor: i <= stepIndex ? tutorial.color : C.cardBorder, width: i === stepIndex ? 24 : 8 }
+                    ]} />
                 ))}
             </View>
 
             {/* Ícono */}
-            <Animated.View style={[card.iconWrap, { backgroundColor: tutorial.color + "22", borderColor: tutorial.color + "44", transform: [{ scale: pulseAnim }] }]}>
+            <Animated.View style={[card.iconWrap, {
+                backgroundColor: tutorial.color + "22",
+                borderColor: tutorial.color + "44",
+                transform: [{ scale: pulseAnim }],
+            }]}>
                 <Ionicons name={step.icon as any} size={28} color={tutorial.color} />
             </Animated.View>
 
-            {/* Texto */}
             <Text style={card.title}>{step.title}</Text>
             <Text style={card.desc}>{step.description}</Text>
-
-            {/* Contador */}
             <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
 
-            {/* Botones */}
             <View style={card.btnRow}>
                 <TouchableOpacity style={card.skipBtn} onPress={onSkip}>
                     <Text style={card.skipTxt}>Omitir tutorial</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
-                    style={[card.nextBtn, { backgroundColor: tutorial.color }]}
-                    onPress={onNext}
-                >
+                <TouchableOpacity style={[card.nextBtn, { backgroundColor: tutorial.color }]} onPress={onNext}>
                     <Text style={card.nextTxt}>{isLast ? "¡Listo!" : "Siguiente"}</Text>
-                    <Ionicons
-                        name={isLast ? "checkmark" : "arrow-forward"}
-                        size={18} color="#1A0E00"
-                        style={{ marginLeft: 6 }}
-                    />
+                    <Ionicons name={isLast ? "checkmark" : "arrow-forward"} size={18} color="#1A0E00" style={{ marginLeft: 6 }} />
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -206,7 +174,6 @@ function TutorialMenu({ onSelect, onClose, completed }: MenuProps) {
                         </TouchableOpacity>
                     </View>
                     <Text style={mn.subtitle}>Seleccioná el tutorial que querés ver</Text>
-
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {TUTORIALS.map(tut => {
                             const done = completed.includes(tut.id);
@@ -263,12 +230,10 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Pro
     const [completed, setCompleted] = useState<string[]>([]);
     const [measuring, setMeasuring] = useState(false);
 
-    // Cargar tutoriales completados
     useEffect(() => {
         TutorialService.getCompleted().then(setCompleted);
     }, []);
 
-    // Lanzar tutorial automáticamente
     useEffect(() => {
         if (activeTutorialId) {
             const t = TutorialService.getTutorial(activeTutorialId);
@@ -276,22 +241,20 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Pro
         }
     }, [activeTutorialId]);
 
-    // Medir elemento cuando cambia el paso
     useEffect(() => {
         if (!activeTutorial) return;
-        const step = activeTutorial.steps[stepIndex];
-        measureStep(step);
+        measureStep(activeTutorial.steps[stepIndex]);
     }, [activeTutorial, stepIndex]);
 
+    // FIX: usa step.elementId (antes era step.targetRef)
     const measureStep = useCallback(async (step: TutorialStep) => {
-        if (!step.targetRef) {
+        if (!step.elementId) {
             setSpotlightRect(null);
             return;
         }
         setMeasuring(true);
-        // Pequeño delay para que el layout esté listo
         await new Promise(r => setTimeout(r, 120));
-        const rect = await measureElement(step.targetRef);
+        const rect = await measureElement(step.elementId);
         setSpotlightRect(rect);
         setMeasuring(false);
     }, [measureElement]);
@@ -330,18 +293,12 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Pro
             {activeTutorial && currentStep && (
                 <Modal visible transparent animationType="none" statusBarTranslucent>
                     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-                        {/* Máscara con spotlight */}
-                        <SpotlightMask
-                            rect={spotlightRect}
-                            padding={PADDING}
-                        />
-
-                        {/* Bloqueador de toques — cubre toda la pantalla */}
+                        <SpotlightMask rect={spotlightRect} padding={currentStep.padding ?? PADDING} />
+                        {/* Bloquea todos los toques */}
                         <TouchableWithoutFeedback onPress={() => { }}>
                             <View style={StyleSheet.absoluteFill} />
                         </TouchableWithoutFeedback>
-
-                        {/* Tarjeta del paso — encima del bloqueador */}
+                        {/* Card encima del bloqueador */}
                         {!measuring && (
                             <StepCard
                                 tutorial={activeTutorial}
@@ -364,24 +321,19 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Pro
                     onClose={() => setShowMenu(false)}
                 />
             )}
-
-            {/* BOTÓN "?" — integrado en header, no flotante */}
-            {/* Se expone como función para que cada pantalla lo invoque */}
         </>
     );
 }
 
 // ─────────────────────────────────────────────────────────────
-// HOOK PARA ABRIR EL MENÚ DESDE CUALQUIER PANTALLA
+// EXPORTS AUXILIARES
 // ─────────────────────────────────────────────────────────────
-// Uso: const openTutorials = useTutorialMenu();
-//      <TouchableOpacity onPress={openTutorials}>
 let _openMenu: (() => void) | null = null;
 
 export function TutorialMenuButton() {
     return (
         <TouchableOpacity
-            style={btn.wrap}
+            style={{ padding: 4 }}
             onPress={() => _openMenu?.()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
@@ -390,7 +342,9 @@ export function TutorialMenuButton() {
     );
 }
 
-export function TutorialMenuProvider({ children, onOpen }: { children: React.ReactNode; onOpen: () => void }) {
+export function TutorialMenuProvider({
+    children, onOpen,
+}: { children: React.ReactNode; onOpen: () => void }) {
     _openMenu = onOpen;
     return <>{children}</>;
 }
@@ -398,21 +352,8 @@ export function TutorialMenuProvider({ children, onOpen }: { children: React.Rea
 // ─────────────────────────────────────────────────────────────
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
-
-// Tarjeta del paso
 const card = StyleSheet.create({
-    container: {
-        position: "absolute",
-        left: 20,
-        right: 20,
-        backgroundColor: C.card,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: C.cardBorder,
-        padding: 22,
-        zIndex: 9999,
-        ...shadow("#000", 24, 0.6),
-    },
+    container: { position: "absolute", left: 20, right: 20, backgroundColor: C.card, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder, padding: 22, zIndex: 9999, ...shadow("#000", 24, 0.6) },
     progressRow: { flexDirection: "row", gap: 6, marginBottom: 18, alignItems: "center" },
     progressDot: { height: 6, borderRadius: 3 },
     iconWrap: { width: 58, height: 58, borderRadius: 18, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginBottom: 14 },
@@ -426,7 +367,6 @@ const card = StyleSheet.create({
     nextTxt: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
 });
 
-// Menú
 const mn = StyleSheet.create({
     overlay: { flex: 1, justifyContent: "flex-end" },
     sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "44", padding: 24, maxHeight: SH * 0.85, ...shadow(C.primaryGlow, 20, 0.4) },
@@ -442,9 +382,4 @@ const mn = StyleSheet.create({
     itemSteps: { color: C.textMuted, fontSize: 11, marginTop: 4 },
     doneBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.income + "22", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
     doneTxt: { color: C.income, fontSize: 10, fontWeight: "700" },
-});
-
-// Botón header
-const btn = StyleSheet.create({
-    wrap: { padding: 4 },
 });

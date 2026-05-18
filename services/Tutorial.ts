@@ -5,12 +5,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // ─────────────────────────────────────────────────────────────
 export interface TutorialStep {
     id: string;
+    elementId?: string;   // ID del elemento registrado en TutorialContext (measureInWindow)
     title: string;
     description: string;
-    targetRef?: string;      // Key del ref a iluminar
     position: 'top' | 'bottom' | 'center';
     icon: string;
-    action?: string;      // Texto del botón de acción
+    padding?: number;
 }
 
 export interface Tutorial {
@@ -23,240 +23,214 @@ export interface Tutorial {
 }
 
 // ─────────────────────────────────────────────────────────────
-// DEFINICIÓN DE TUTORIALES
+// TUTORIALES
 // ─────────────────────────────────────────────────────────────
 export const TUTORIALS: Tutorial[] = [
 
-    // ── 1. Tour Inicial ───────────────────────────────────────
     {
-        id: 'tour_inicial',
-        title: 'Tour Inicial',
-        description: 'Conoce las funciones principales de BudgetMaster en 5 minutos.',
-        icon: 'rocket-outline',
-        color: '#B87333',
+        id: 'tour_inicial', title: 'Tour Inicial',
+        description: 'Conoce BudgetMaster en 7 pasos.',
+        icon: 'rocket-outline', color: '#B87333',
         steps: [
             {
-                id: 'tour_1', icon: 'home-outline', position: 'center',
-                title: 'Bienvenido al Dashboard',
-                description: 'Este es tu centro de control financiero. Aquí verás tu patrimonio, balance por moneda, presupuesto mensual y tus últimas transacciones. Tira hacia abajo para refrescar los datos.',
+                id: 'tour_1', elementId: 'briefing_card', position: 'bottom', icon: 'sparkles-outline', padding: 12,
+                title: 'Tu CFO Personal',
+                description: 'Esta tarjeta es tu briefing diario. La IA analiza tus finanzas y te da un resumen cada vez que abrís la app. Con tu API Key de Gemini es mucho más detallado.',
             },
             {
-                id: 'tour_2', icon: 'sparkles-outline', position: 'center',
-                title: 'CFO Intelligence',
-                description: 'La tarjeta dorada en la parte superior es tu briefing diario. Tu asesor IA analiza tu situación financiera cada vez que abres la app y te da un resumen personalizado.',
-            },
-            {
-                id: 'tour_3', icon: 'shield-checkmark-outline', position: 'center',
+                id: 'tour_2', elementId: 'score_card', position: 'bottom', icon: 'shield-checkmark-outline', padding: 12,
                 title: 'Score Financiero',
-                description: 'Tu puntuación del 0 al 100 refleja tu disciplina financiera real. Sube cuando ahorrás, pagás tus gastos fijos a tiempo y no superás tu presupuesto.',
+                description: 'Tu puntuación del 0 al 100. Sube cuando ahorrás, pagás tus compromisos a tiempo y no superás tu presupuesto. Es tu termómetro de disciplina financiera.',
             },
             {
-                id: 'tour_4', icon: 'add-circle-outline', position: 'bottom',
-                title: 'Botón "+" — Agregar',
-                description: 'El botón cobre en el centro de la barra inferior es para agregar nuevas transacciones manualmente. También podés pegar un SMS bancario para que lo detecte automáticamente.',
+                id: 'tour_3', elementId: 'sync_btn', position: 'bottom', icon: 'sync-circle-outline', padding: 16,
+                title: 'Sync SMS',
+                description: 'Este botón lee tus SMS bancarios (BAC, BANRURAL, GTC, BANTRAB) y registra tus gastos automáticamente. Tocalo para sincronizar.',
             },
             {
-                id: 'tour_5', icon: 'list-outline', position: 'bottom',
-                title: 'Movimientos',
-                description: 'Aquí ves todas tus transacciones. Podés filtrar por tipo (gastos/ingresos), moneda (Q/USD), y buscar por descripción o banco. Tocá cualquier transacción para ver el detalle completo.',
+                id: 'tour_4', elementId: 'tab_add', position: 'top', icon: 'add-circle-outline', padding: 12,
+                title: 'Agregar Transacción',
+                description: 'El botón cobre central es para registrar gastos e ingresos manualmente. También podés pegar un SMS bancario para que lo detecte solo.',
             },
             {
-                id: 'tour_6', icon: 'wallet-outline', position: 'bottom',
+                id: 'tour_5', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto',
-                description: 'Tu centro de planificación. Tiene 3 secciones: Gastos Fijos (compromisos mensuales), Categorías (límites por tipo de gasto) y Metas de ahorro.',
+                description: 'Aquí planificás tu mes — gastos fijos, límites por categoría y metas de ahorro. Es donde convertís tus intenciones en un plan real.',
             },
             {
-                id: 'tour_7', icon: 'sparkles-outline', position: 'bottom',
+                id: 'tour_6', elementId: 'tab_advisor', position: 'top', icon: 'sparkles-outline', padding: 8,
                 title: 'Asesor IA',
-                description: 'Tu CFO personal. Pregúntale lo que querás: si podés comprarte algo, cómo mejorar tus finanzas, qué hacer con un excedente. Responde con contexto real de tus datos.',
+                description: 'Tu CFO en modo chat. Preguntale lo que quieras — ¿puedo comprarme X?, ¿cómo voy este mes?, ¿qué hago con este excedente?',
+            },
+            {
+                id: 'tour_7', elementId: 'tab_settings', position: 'top', icon: 'settings-outline', padding: 8,
+                title: 'Ajustes y Academia',
+                description: 'Configurá tu perfil, presupuesto y ciclo de pago. También encontrás todos los tutoriales disponibles en la sección Academia.',
             },
         ],
     },
 
-    // ── 2. Registrar un Gasto ─────────────────────────────────
     {
-        id: 'tutorial_agregar',
-        title: 'Registrar un Gasto o Ingreso',
-        description: 'Aprende a agregar transacciones manualmente o desde SMS.',
-        icon: 'add-circle-outline',
-        color: '#4CB19F',
+        id: 'tutorial_agregar', title: 'Registrar un Gasto o Ingreso',
+        description: 'Aprende a agregar transacciones manualmente.',
+        icon: 'add-circle-outline', color: '#4CB19F',
         steps: [
             {
-                id: 'add_1', icon: 'add-outline', position: 'bottom',
+                id: 'add_1', elementId: 'tab_add', position: 'top', icon: 'add-outline', padding: 12,
                 title: 'Toca el botón "+"',
-                description: 'El botón cobre en el centro de la barra inferior abre la pantalla para agregar una nueva transacción. Tocalo para comenzar.',
-                action: 'Entendido',
+                description: 'El botón cobre en el centro de la barra inferior abre la pantalla para agregar una nueva transacción.',
             },
             {
-                id: 'add_2', icon: 'swap-horizontal-outline', position: 'top',
-                title: 'Selecciona Gasto o Ingreso',
-                description: 'Primero elige si es un gasto (algo que pagaste) o un ingreso (dinero que recibiste). El color de la pantalla cambia para diferenciarlo visualmente.',
+                id: 'add_2', elementId: 'add_type_selector', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
+                title: 'Gasto o Ingreso',
+                description: 'Primero elegí si es un gasto (algo que pagaste) o un ingreso (dinero que recibiste).',
             },
             {
-                id: 'add_3', icon: 'cash-outline', position: 'center',
+                id: 'add_3', elementId: 'add_currency', position: 'bottom', icon: 'cash-outline', padding: 8,
                 title: 'Selecciona la Moneda',
-                description: 'Elige entre Q (Quetzales), USD, EUR o £. Esto es importante — la app lleva balances separados por moneda para que tus reportes sean exactos.',
+                description: 'Elegí entre Q, USD, EUR o £. La app lleva balances separados por moneda.',
             },
             {
-                id: 'add_4', icon: 'calculator-outline', position: 'center',
+                id: 'add_4', elementId: 'add_amount', position: 'bottom', icon: 'calculator-outline', padding: 8,
                 title: 'Ingresa el Monto',
-                description: 'Escribe el monto de la transacción. Usa punto para decimales (ej: 150.50). El campo acepta cualquier cantidad mayor a 0.',
+                description: 'Escribí el monto. Si tenés una cuenta asignada, ese saldo se actualizará automáticamente.',
             },
             {
-                id: 'add_5', icon: 'pricetag-outline', position: 'center',
-                title: 'Elige la Categoría',
-                description: 'Selecciona la categoría que mejor describe este gasto o ingreso. Esto alimenta tus estadísticas y el presupuesto por categoría. Podés crear categorías propias en Ajustes.',
+                id: 'add_5', elementId: 'add_account', position: 'bottom', icon: 'wallet-outline', padding: 8,
+                title: 'Asignar Cuenta (Opcional)',
+                description: 'Podés asignar este gasto a una cuenta bancaria. El saldo se actualiza automáticamente.',
             },
             {
-                id: 'add_6', icon: 'scan-outline', position: 'top',
-                title: 'Leer SMS automáticamente',
-                description: 'Si recibiste un SMS de tu banco, tocá "Leer SMS" en la esquina superior derecha. Copiá el mensaje de tu banco y pegalo ahí — la app detecta el monto, moneda y comercio automáticamente.',
-            },
-        ],
-    },
-
-    // ── 3. SMS Automático ─────────────────────────────────────
-    {
-        id: 'tutorial_sms',
-        title: 'Sincronización SMS Automática',
-        description: 'Aprende a conectar tus SMS bancarios para registro automático.',
-        icon: 'chatbubble-outline',
-        color: '#4A9EE8',
-        steps: [
-            {
-                id: 'sms_1', icon: 'chatbubble-ellipses-outline', position: 'center',
-                title: '¿Qué es la Sincronización SMS?',
-                description: 'BudgetMaster puede leer los mensajes de texto de tus bancos (BAC, BANRURAL, GTC, BANTRAB, PROMERICA) y registrar tus gastos automáticamente, sin que tengas que escribir nada.',
-            },
-            {
-                id: 'sms_2', icon: 'shield-outline', position: 'center',
-                title: 'Privacidad garantizada',
-                description: 'La app SOLO lee mensajes que contienen palabras bancarias (compra, débito, abono, etc.). Nunca lee mensajes de tus contactos personales. Todos los datos quedan en tu celular.',
-            },
-            {
-                id: 'sms_3', icon: 'sync-circle-outline', position: 'top',
-                title: 'Botón de Sync en el Dashboard',
-                description: 'El ícono circular en la esquina superior derecha del Dashboard es el botón de sincronización. Tocalo para leer los últimos 300 SMS bancarios y registrar los que no estén aún en la app.',
-            },
-            {
-                id: 'sms_4', icon: 'settings-outline', position: 'center',
-                title: 'Activar o desactivar',
-                description: 'En Ajustes podés activar o desactivar la sincronización SMS en cualquier momento. También verás qué bancos están soportados.',
-            },
-            {
-                id: 'sms_5', icon: 'pencil-outline', position: 'center',
-                title: 'Editar transacciones detectadas',
-                description: 'Si una transacción detectada tiene la categoría o moneda incorrecta, tocala en Movimientos para editarla. También podés ver el SMS original completo.',
+                id: 'add_6', elementId: 'add_category', position: 'top', icon: 'pricetag-outline', padding: 8,
+                title: 'Elegí la Categoría',
+                description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría.',
             },
         ],
     },
 
-    // ── 4. Presupuesto ────────────────────────────────────────
     {
-        id: 'tutorial_presupuesto',
-        title: 'Cómo usar el Presupuesto',
-        description: 'Gastos fijos, límites por categoría y metas de ahorro.',
-        icon: 'wallet-outline',
-        color: '#E8943A',
+        id: 'tutorial_sms', title: 'Sincronización SMS',
+        description: 'Registra gastos automáticamente desde tus SMS bancarios.',
+        icon: 'chatbubble-outline', color: '#4A9EE8',
         steps: [
             {
-                id: 'budget_1', icon: 'wallet-outline', position: 'bottom',
-                title: 'La pantalla de Presupuesto',
-                description: 'Tocá la tab "Presupuesto" en la barra inferior. Tiene 3 secciones: Gastos Fijos, Categorías y Metas. Deslizá entre ellas con los tabs de arriba.',
+                id: 'sms_1', elementId: 'sync_btn', position: 'bottom', icon: 'sync-outline', padding: 16,
+                title: 'Botón de Sincronización',
+                description: 'Este botón lee los últimos 300 SMS de tu bandeja, detecta los bancarios y los registra automáticamente.',
             },
             {
-                id: 'budget_2', icon: 'calendar-outline', position: 'center',
+                id: 'sms_2', position: 'center', icon: 'shield-outline',
+                title: 'Tu privacidad está protegida',
+                description: 'La app SOLO lee mensajes con palabras bancarias (compra, débito, abono). Nunca lee mensajes personales. Todo queda en tu celular.',
+            },
+            {
+                id: 'sms_3', position: 'center', icon: 'settings-outline',
+                title: 'Configurar en Ajustes',
+                description: 'En Ajustes podés activar o desactivar el SMS automático. Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA.',
+            },
+        ],
+    },
+
+    {
+        id: 'tutorial_presupuesto', title: 'Presupuesto',
+        description: 'Gastos fijos, límites por categoría y metas.',
+        icon: 'wallet-outline', color: '#E8943A',
+        steps: [
+            {
+                id: 'budget_1', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
+                title: 'Tab Presupuesto',
+                description: 'Tocá la tab Presupuesto. Tiene 3 secciones: Gastos Fijos, Categorías y Metas.',
+            },
+            {
+                id: 'budget_2', elementId: 'budget_tab_fixed', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Gastos Fijos',
-                description: 'Acá registrás tus compromisos mensuales fijos: renta, tarjetas, seguros, servicios. Cada mes aparecen con un checkbox. Cuando los pagás, los marcás como pagados ✅.',
+                description: 'Registrá tus compromisos mensuales: renta, internet, seguros. Al marcarlos como pagados se registra la transacción automáticamente.',
             },
             {
-                id: 'budget_3', icon: 'checkmark-circle-outline', position: 'center',
-                title: 'Marcar como pagado',
-                description: 'Al marcar un gasto fijo como pagado, si tenés activado "Registrar automáticamente", se crea una transacción en Movimientos. Si no querés que aparezca en el historial, desactivá esa opción al crearlo.',
-            },
-            {
-                id: 'budget_4', icon: 'bar-chart-outline', position: 'center',
+                id: 'budget_3', elementId: 'budget_tab_categories', position: 'bottom', icon: 'bar-chart-outline', padding: 8,
                 title: 'Presupuesto por Categoría',
-                description: 'En la tab "Categorías" podés asignar un límite mensual a cada categoría (ej: Comida Q1,500). La app te muestra una barra de progreso y te alerta cuando te acercás al límite.',
+                description: 'Asigná un límite a cada categoría. La app te avisa cuando llegás al 80% y te alerta si lo superás.',
             },
             {
-                id: 'budget_5', icon: 'trophy-outline', position: 'center',
+                id: 'budget_4', elementId: 'budget_tab_goals', position: 'bottom', icon: 'trophy-outline', padding: 8,
                 title: 'Metas de Ahorro',
-                description: 'En "Metas" creás objetivos: una laptop, un viaje, un fondo de emergencia. La app calcula cuánto debés ahorrar por mes y te muestra tu progreso. Podés abonar manualmente cuando quieras.',
+                description: 'Creá objetivos con monto y fecha límite. La app calcula cuánto debés ahorrar por mes.',
             },
         ],
     },
 
-    // ── 5. Asesor IA ──────────────────────────────────────────
     {
-        id: 'tutorial_ia',
-        title: 'Cómo usar el Asesor IA',
-        description: 'Tu CFO personal — pregúntale lo que necesitás saber.',
-        icon: 'sparkles-outline',
-        color: '#9B59B6',
+        id: 'tutorial_ia', title: 'Asesor IA',
+        description: 'Tu CFO personal en modo chat.',
+        icon: 'sparkles-outline', color: '#9B59B6',
         steps: [
             {
-                id: 'ia_1', icon: 'sparkles-outline', position: 'bottom',
-                title: '¿Qué es el Asesor IA?',
-                description: 'Es tu CFO personal — un asesor financiero que conoce tus datos reales (gastos, ingresos, presupuesto, metas) y te responde con contexto específico de tu situación.',
+                id: 'ia_1', elementId: 'tab_advisor', position: 'top', icon: 'sparkles-outline', padding: 8,
+                title: 'Abrí el Asesor IA',
+                description: 'Tocá el ícono ✦ Asesor en la barra inferior. Se abre el chat desde cualquier pantalla.',
             },
             {
-                id: 'ia_2', icon: 'chatbubble-ellipses-outline', position: 'center',
-                title: 'Cómo abrirlo',
-                description: 'Tocá el ícono ✦ "Asesor" en la barra inferior. Se abre el chat desde cualquier pantalla sin perder lo que estabas viendo.',
-            },
-            {
-                id: 'ia_3', icon: 'help-circle-outline', position: 'center',
+                id: 'ia_2', position: 'center', icon: 'chatbubble-ellipses-outline',
                 title: 'Qué preguntarle',
-                description: 'Ejemplos:\n• "¿Puedo comprarme un celular de Q3,000?"\n• "¿Cómo voy este mes?"\n• "¿Cuánto debo ahorrar para mi meta de la laptop?"\n• "¿En qué categoría gasté más?"',
+                description: '• "¿Puedo comprarme un celular de Q3,000?"\n• "¿Cómo voy este mes?"\n• "¿En qué gasté más?"\n• "Dame un plan de ahorro para Q15,000"',
             },
             {
-                id: 'ia_4', icon: 'key-outline', position: 'center',
-                title: 'Activar Gemini para respuestas avanzadas',
-                description: 'Sin API Key, el asesor usa lógica local básica. Con tu API Key de Google Gemini (gratuita en aistudio.google.com), las respuestas son mucho más naturales y detalladas. Configúrala en Ajustes.',
+                id: 'ia_3', position: 'center', icon: 'key-outline',
+                title: 'Activar Gemini',
+                description: 'Sin API Key el asesor usa lógica básica. Con tu API Key de Google Gemini (gratuita en aistudio.google.com) las respuestas son mucho más naturales.',
             },
         ],
     },
 
-    // ── 6. Estadísticas ───────────────────────────────────────
     {
-        id: 'tutorial_stats',
-        title: 'Cómo leer las Estadísticas',
-        description: 'Entiende tus 10 indicadores financieros clave.',
-        icon: 'bar-chart-outline',
-        color: '#2ECC71',
+        id: 'tutorial_cuentas', title: 'Módulo de Cuentas',
+        description: 'Registrá tus cuentas bancarias y tarjetas.',
+        icon: 'wallet-outline', color: '#4A9EE8',
         steps: [
             {
-                id: 'stats_1', icon: 'trending-up-outline', position: 'center',
-                title: 'Flujo de Caja Proyectado',
-                description: 'Basado en tu ritmo de gasto actual, la app calcula cuánto vas a gastar al final del mes. Si vas muy rápido, te lo avisa antes de que sea tarde.',
+                id: 'acc_1', position: 'center', icon: 'business-outline',
+                title: '¿Qué son las Cuentas?',
+                description: 'Registrá tu dinero real — efectivo, cuentas bancarias, tarjetas de crédito e inversiones — para tener un patrimonio neto exacto.',
             },
             {
-                id: 'stats_2', icon: 'bar-chart-outline', position: 'center',
-                title: 'Comparativa mes a mes',
-                description: 'Compara tus gastos e ingresos de los últimos 6 meses. Te muestra si estás mejorando o empeorando con el tiempo.',
+                id: 'acc_2', position: 'center', icon: 'card-outline',
+                title: 'Cuentas conectadas',
+                description: 'Cuando asignás una cuenta a un gasto, el saldo se actualiza automáticamente. Si pagás con BAC débito, el saldo de tu cuenta BAC baja al instante.',
             },
             {
-                id: 'stats_3', icon: 'today-outline', position: 'center',
-                title: 'Gasto Promedio Diario',
-                description: 'Cuánto gastás en promedio cada día vs. cuánto deberías gastar para no superar tu presupuesto mensual. Una barra te muestra qué tan bien vas.',
+                id: 'acc_3', position: 'center', icon: 'layers-outline',
+                title: 'Visacuotas',
+                description: 'Registrá compras en cuotas. La app descuenta una cuota cada mes automáticamente y te muestra cuándo terminás de pagar.',
+            },
+        ],
+    },
+
+    {
+        id: 'tutorial_stats', title: 'Estadísticas',
+        description: 'Tus indicadores financieros clave.',
+        icon: 'bar-chart-outline', color: '#2ECC71',
+        steps: [
+            {
+                id: 'stats_1', position: 'center', icon: 'pie-chart-outline',
+                title: 'Gráfica de Pastel',
+                description: 'Muestra en qué categorías gastás más. Tocá cualquier slice para ver el detalle. Filtrá por Este Mes, Este Año o todo el historial.',
             },
             {
-                id: 'stats_4', icon: 'shield-checkmark-outline', position: 'center',
-                title: 'Días Sin Gastar',
-                description: 'Cuenta los días que no registraste ningún gasto. Si tenés una racha de 3+ días aparece un badge especial. Es un indicador de disciplina financiera.',
+                id: 'stats_2', position: 'center', icon: 'trending-up-outline',
+                title: 'Flujo Proyectado',
+                description: 'Basado en tu ritmo actual, calcula cuánto vas a gastar al fin del mes y si te va a sobrar o faltar dinero.',
             },
             {
-                id: 'stats_5', icon: 'rocket-outline', position: 'center',
+                id: 'stats_3', position: 'center', icon: 'rocket-outline',
                 title: 'Proyección de Patrimonio',
-                description: 'Si seguís ahorrando al mismo ritmo, ¿cuánto tendrás en 6 y 12 meses? La gráfica de línea proyecta tu patrimonio futuro basado en tu promedio actual.',
+                description: 'Si seguís ahorrando al mismo ritmo, ¿cuánto tendrás en 6 y 12 meses? La gráfica proyecta tu patrimonio futuro.',
             },
         ],
     },
 ];
 
 // ─────────────────────────────────────────────────────────────
-// STORAGE — cuáles tutoriales ya completó el usuario
+// STORAGE
 // ─────────────────────────────────────────────────────────────
 const KEY = '@bm_completed_tutorials';
 

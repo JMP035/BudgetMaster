@@ -59,7 +59,7 @@ function buildSettingsFromOnboarding(data: any): UserSettings {
 }
 
 // ─────────────────────────────────────────────────────────────
-// TAB BAR — con refs para tutorial
+// TAB BAR — estable con refs para tutorial
 // ─────────────────────────────────────────────────────────────
 interface TabBarProps {
   tab: Tab;
@@ -71,19 +71,18 @@ interface TabBarProps {
 function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
-  // Refs para tutorial spotlight
   const tabAddRef = useTutorialRef('tab_add');
   const tabBudgetRef = useTutorialRef('tab_budget');
   const tabAdvisorRef = useTutorialRef('tab_advisor');
   const tabSettingsRef = useTutorialRef('tab_settings');
 
-  const TABS = [
-    { id: "dashboard" as Tab, icon: "home" as const, label: "Inicio", ref: undefined },
-    { id: "transactions" as Tab, icon: "list" as const, label: "Movimientos", ref: undefined },
-    { id: "add" as Tab, icon: "add" as const, label: "Agregar", ref: tabAddRef },
-    { id: "budget" as Tab, icon: "wallet-outline" as const, label: "Presupuesto", ref: tabBudgetRef },
-    { id: "stats" as Tab, icon: "bar-chart-outline" as const, label: "Estadísticas", ref: undefined },
-    { id: "settings" as Tab, icon: "settings" as const, label: "Ajustes", ref: tabSettingsRef },
+  const TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; label: string; tutRef?: any }[] = [
+    { id: "dashboard", icon: "home", label: "Inicio" },
+    { id: "transactions", icon: "list", label: "Movimientos" },
+    { id: "add", icon: "add", label: "Agregar", tutRef: tabAddRef },
+    { id: "budget", icon: "wallet-outline", label: "Presupuesto", tutRef: tabBudgetRef },
+    { id: "stats", icon: "bar-chart-outline", label: "Estadísticas" },
+    { id: "settings", icon: "settings", label: "Ajustes", tutRef: tabSettingsRef },
   ];
 
   return (
@@ -94,7 +93,7 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
         return (
           <View
             key={t.id}
-            ref={t.ref as any}
+            ref={t.tutRef}
             collapsable={false}
             style={[tb.item, isAdd && tb.addItem]}
           >
@@ -118,11 +117,8 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
       })}
 
       {/* ASESOR IA */}
-      <View ref={tabAdvisorRef as any} collapsable={false} style={tb.item}>
-        <TouchableOpacity
-          style={tb.item}
-          onPress={onToggleAI}
-        >
+      <View ref={tabAdvisorRef} collapsable={false} style={tb.item}>
+        <TouchableOpacity style={tb.item} onPress={onToggleAI}>
           <View style={[showAI && tb.tabBg]}>
             <Ionicons name="sparkles" size={22} color={showAI ? C.primaryLight : C.textMuted} />
           </View>
@@ -134,7 +130,7 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// COMPONENTE RAÍZ — sin provider (se pone afuera)
+// APP CONTENT
 // ─────────────────────────────────────────────────────────────
 function AppContent() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -150,9 +146,8 @@ function AppContent() {
   const [showAI, setShowAI] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
-  const [showTutorialMenu, setShowTutorialMenu] = useState(false);
 
-  // ── Carga inicial ────────────────────────────────────────
+  // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async () => {
     const data = await StorageService.loadAllData();
     setTxs(data.transactions);
@@ -169,13 +164,12 @@ function AppContent() {
     loadData();
     NotificationService.requestPermissions();
     NotificationService.scheduleWeeklySummary();
-    // Tour inicial automático
     TutorialService.isCompleted('tour_inicial').then(done => {
       if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
     });
   }, [loadData]);
 
-  // ── Handlers ─────────────────────────────────────────────
+  // ── Handlers ──────────────────────────────────────────────
   const hRefresh = async () => {
     setRefreshing(true);
     await loadData();
@@ -196,7 +190,9 @@ function AppContent() {
     await StorageService.addTransaction(tx);
     setTxs(p => [tx, ...p]);
     try {
-      await NotificationService.onTransactionAdded(tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses);
+      await NotificationService.onTransactionAdded(
+        tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses
+      );
     } catch { }
     setTab("dashboard");
   };
@@ -227,12 +223,12 @@ function AppContent() {
     setShowAI(v => !v);
   };
 
-  // ── Renders condicionales ────────────────────────────────
+  // ── Renders condicionales ─────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
 
   return (
-    <TutorialMenuProvider onOpen={() => setShowTutorialMenu(true)}>
+    <TutorialMenuProvider onOpen={() => { }}>
       <View style={s.root}>
         <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
 
@@ -262,9 +258,13 @@ function AppContent() {
             />
           )}
           {tab === "add" && !showAI && (
-            <AddScreen onAdd={hAdd} settings={settings} />
+            <AddScreen
+              onAdd={hAdd}
+              settings={settings}
+            />
           )}
           {tab === "budget" && !showAI && (
+            // FIX C: onRefresh pasado correctamente a BudgetScreen
             <BudgetScreen
               transactions={txs}
               setTransactions={setTxs}
@@ -315,7 +315,7 @@ function AppContent() {
           />
         )}
 
-        {/* TUTORIAL OVERLAY */}
+        {/* TUTORIAL */}
         <TutorialOverlay
           activeTutorialId={autoTutorial}
           onTutorialEnd={() => setAutoTutorial(undefined)}
@@ -326,7 +326,7 @@ function AppContent() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// EXPORT PRINCIPAL — envuelve con TutorialProvider
+// EXPORT PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 export default function Index() {
   return (
