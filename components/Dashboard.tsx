@@ -6,9 +6,9 @@ import {
 } from "react-native";
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
-    SavingsGoal, Transaction, UserSettings,
+    FinancialPeriod, SavingsGoal, Transaction, UserSettings,
     calcFinancialScore, calcNetWorthFromAccounts,
-    getDaysUntilNextPayment, getMonthlyInstallmentTotal
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
@@ -357,8 +357,9 @@ export default function DashboardScreen({
     onRefresh, refreshing, onNavigateBudget, onNavigateAccounts,
 }: Props) {
     const now = new Date();
-    const month = now.getMonth();
-    const year = now.getFullYear();
+
+    // ── PERÍODO FINANCIERO REAL ───────────────────────────────
+    const period: FinancialPeriod = getCurrentFinancialPeriod(settings);
 
     const [briefing, setBriefing] = useState("");
     const [briefingLoading, setBriefingLoading] = useState(true);
@@ -395,19 +396,31 @@ export default function DashboardScreen({
         }
     };
 
-    // Transacciones del mes
-    const monthTx = transactions.filter(t => {
+    // ── Transacciones del PERÍODO FINANCIERO (no del mes calendario) ──
+    const inPeriod = (t: { date: string }) => {
         const d = new Date(t.date);
-        return d.getMonth() === month && d.getFullYear() === year;
-    });
+        return d >= period.start && d <= period.end;
+    };
+    const inPrevPeriod = (t: { date: string }) => {
+        const d = new Date(t.date);
+        return d >= period.prevStart && d <= period.prevEnd;
+    };
 
-    const incomeQ = monthTx.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const expenseQ = monthTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const incomeUSD = monthTx.filter(t => t.type === "income" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
-    const expenseUSD = monthTx.filter(t => t.type === "expense" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
+    const periodTx = transactions.filter(inPeriod);
+    const prevTx = transactions.filter(inPrevPeriod);
+
+    const incomeQ = periodTx.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const expenseQ = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const incomeUSD = periodTx.filter(t => t.type === "income" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
+    const expenseUSD = periodTx.filter(t => t.type === "expense" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
     const hasUSD = incomeUSD > 0 || expenseUSD > 0;
 
-    // Patrimonio total — prioriza cuentas si existen, sino usa transacciones
+    // Comparativa con período anterior
+    const prevExpenseQ = prevTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const periodDiff = prevExpenseQ > 0 ? expenseQ - prevExpenseQ : 0;
+    const periodDiffPct = prevExpenseQ > 0 ? Math.abs(periodDiff / prevExpenseQ) * 100 : 0;
+
+    // Patrimonio total
     const hasAccounts = accounts.filter(a => a.isActive).length > 0;
     const { totalQ: accNetQ, totalUSD: accNetUSD } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const allIncQ = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
@@ -418,6 +431,9 @@ export default function DashboardScreen({
     const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
     const daysLeft = getDaysUntilNextPayment(settings);
 
+    // Gráfica: últimos 6 períodos
+    const month = now.getMonth();
+    const year = now.getFullYear();
     const months = Array.from({ length: 6 }, (_, i) => {
         const d = new Date(year, month - (5 - i), 1);
         return { label: d.toLocaleDateString("es-GT", { month: "short" }), month: d.getMonth(), year: d.getFullYear() };
@@ -446,7 +462,10 @@ export default function DashboardScreen({
                     </View>
                     <View>
                         <Text style={s.greeting}>Hola, {settings.userName}</Text>
-                        <Text style={s.month}>{now.toLocaleDateString("es-GT", { month: "long", year: "numeric" }).toUpperCase()}</Text>
+                        <Text style={s.month}>{period.label.toUpperCase()}</Text>
+                        <Text style={s.periodProgress}>
+                            Día {period.daysPassed} de {period.daysTotal} del período
+                        </Text>
                     </View>
                 </View>
                 <View style={{ flexDirection: "row", gap: 8 }}>
@@ -489,9 +508,21 @@ export default function DashboardScreen({
             <CurrencyCard currency="Q" income={incomeQ} expense={expenseQ} />
             {hasUSD && <CurrencyCard currency="USD" income={incomeUSD} expense={expenseUSD} />}
 
+            {/* COMPARATIVA CON PERÍODO ANTERIOR */}
+            {periodDiff !== 0 && prevExpenseQ > 0 && (
+                <View style={[s.periodBadge, { backgroundColor: periodDiff > 0 ? C.danger + "15" : C.income + "15", borderColor: periodDiff > 0 ? C.danger + "44" : C.income + "44" }]}>
+                    <Ionicons name={periodDiff > 0 ? "trending-up" : "trending-down"} size={14} color={periodDiff > 0 ? C.danger : C.income} />
+                    <Text style={{ color: periodDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", flex: 1, marginLeft: 8 }}>
+                        {periodDiff > 0 ? "+" : "-"}Q{Math.abs(periodDiff).toFixed(0)} vs período anterior ({periodDiffPct.toFixed(0)}% {periodDiff > 0 ? "más" : "menos"})
+                    </Text>
+                    <Text style={{ color: C.textMuted, fontSize: 10 }}>{period.prevLabel}</Text>
+                </View>
+            )}
+
             {/* PRESUPUESTO */}
             <View style={[s.card, { alignItems: "center", paddingVertical: 24 }]}>
-                <Text style={[s.sectionTitle, { marginBottom: 16 }]}>PRESUPUESTO MENSUAL Q</Text>
+                <Text style={[s.sectionTitle, { marginBottom: 4 }]}>PRESUPUESTO DEL PERÍODO</Text>
+                <Text style={{ color: C.textMuted, fontSize: 10, marginBottom: 16 }}>{period.label}</Text>
                 <BudgetRing spent={expenseQ} limit={settings.budgetLimit} currency="Q" />
             </View>
 
@@ -560,6 +591,8 @@ const s = StyleSheet.create({
     screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
     logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12 },
+    periodProgress: { color: C.accent, fontSize: 9, marginTop: 1, fontWeight: "700", letterSpacing: 0.5 },
+    periodBadge: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 14, flexWrap: "wrap" },
     greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
     month: { color: C.textPrimary, fontSize: 11, marginTop: 2, letterSpacing: 1.5, fontWeight: "700" },
     daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.card },

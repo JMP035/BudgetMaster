@@ -24,6 +24,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 import AccountsScreen from "../components/AccountsScreen";
 import AddScreen from "../components/AddScreen";
 import AIAdvisor from "../components/AIAdvisor";
+import BiometricGate from "../components/BiometricGate";
 import BudgetScreen from "../components/BudgetScreen";
 import DashboardScreen from "../components/Dashboard";
 import OnboardingScreen from "../components/OnboardingScreen";
@@ -289,7 +290,15 @@ function AppContent() {
             />
           )}
           {showAI && (
-            <AIAdvisor transactions={txs} settings={settings} />
+            <AIAdvisor
+              transactions={txs}
+              settings={settings}
+              accounts={accounts}
+              fixedExpenses={fixedExpenses}
+              categoryBudgets={categoryBudgets}
+              savingsGoals={savingsGoals}
+              creditInstallments={creditInstallments}
+            />
           )}
         </View>
 
@@ -331,7 +340,9 @@ function AppContent() {
 export default function Index() {
   return (
     <TutorialProvider>
-      <AppContent />
+      <BiometricGate>
+        <AppContent />
+      </BiometricGate>
     </TutorialProvider>
   );
 }

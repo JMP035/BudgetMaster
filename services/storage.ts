@@ -140,6 +140,7 @@ export interface UserSettings {
   preferredBanks: string[];
   exchangeRate: number;
   smsEnabled: boolean;
+  biometricEnabled: boolean;
   geminiApiKey?: string;
   customCategories: CustomCategory[];
   onboardingComplete: boolean;
@@ -199,6 +200,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   preferredBanks: [],
   exchangeRate: 7.70,
   smsEnabled: true,
+  biometricEnabled: false,
   geminiApiKey: '',
   customCategories: [],
   onboardingComplete: false,
@@ -234,6 +236,122 @@ export function getDaysUntilNextPayment(settings: UserSettings): number {
     return Math.ceil((nextPay.getTime() - now.getTime()) / 86400000);
   }
   return 0;
+}
+
+// ─────────────────────────────────────────────────────────────
+// PERÍODO FINANCIERO (basado en día de pago, no mes calendario)
+// ─────────────────────────────────────────────────────────────
+export interface FinancialPeriod {
+  start: Date;
+  end: Date;
+  label: string;        // Ej: "15 May – 14 Jun 2026"
+  prevStart: Date;
+  prevEnd: Date;
+  prevLabel: string;    // Ej: "15 Abr – 14 May 2026"
+  daysPassed: number;   // Días transcurridos en el período actual
+  daysTotal: number;    // Duración total del período en días
+}
+
+const fmt_d = (d: Date) =>
+  d.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' });
+
+/** Calcula el período financiero actual y el anterior según el ciclo de pago */
+export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeriod {
+  const now = new Date();
+  const today = now.getDate();
+  const m = now.getMonth();
+  const y = now.getFullYear();
+
+  // ── Ciclo irregular → usa mes calendario ────────────────────
+  if (settings.paymentCycle === 'irregular') {
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0, 23, 59, 59);
+    const prevStart = new Date(y, m - 1, 1);
+    const prevEnd = new Date(y, m, 0, 23, 59, 59);
+    return {
+      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
+      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
+      daysPassed: today, daysTotal: new Date(y, m + 1, 0).getDate(),
+    };
+  }
+
+  // ── Ciclo semanal ────────────────────────────────────────────
+  if (settings.paymentCycle === 'weekly') {
+    const dayOfWeek = now.getDay(); // 0=dom
+    const start = new Date(now); start.setDate(today - dayOfWeek); start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59);
+    const prevStart = new Date(start); prevStart.setDate(start.getDate() - 7);
+    const prevEnd = new Date(start); prevEnd.setDate(start.getDate() - 1); prevEnd.setHours(23, 59, 59);
+    return {
+      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
+      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
+      daysPassed: dayOfWeek + 1, daysTotal: 7,
+    };
+  }
+
+  // ── Ciclo quincenal ──────────────────────────────────────────
+  if (settings.paymentCycle === 'biweekly') {
+    const days = [...settings.paymentDays].sort((a, b) => a - b); // Ej: [15, 30]
+    const d1 = days[0] ?? 15;
+    const d2 = days[1] ?? 30;
+    let start: Date, end: Date, prevStart: Date, prevEnd: Date;
+
+    if (today >= d2 || (d2 > 28 && today >= d2)) {
+      // Segunda quincena: d2 → d1 del mes siguiente
+      start = new Date(y, m, d2);
+      const nextD1 = new Date(y, m + 1, d1);
+      end = new Date(nextD1); end.setDate(nextD1.getDate() - 1); end.setHours(23, 59, 59);
+      prevStart = new Date(y, m, d1);
+      prevEnd = new Date(y, m, d2 - 1); prevEnd.setHours(23, 59, 59);
+    } else if (today >= d1) {
+      // Primera quincena: d1 → d2-1
+      start = new Date(y, m, d1);
+      end = new Date(y, m, d2 - 1, 23, 59, 59);
+      prevStart = new Date(y, m - 1, d2);
+      prevEnd = new Date(y, m, d1 - 1, 23, 59, 59);
+    } else {
+      // Antes del d1: última quincena del mes pasado
+      start = new Date(y, m - 1, d2);
+      end = new Date(y, m, d1 - 1, 23, 59, 59);
+      prevStart = new Date(y, m - 1, d1);
+      prevEnd = new Date(y, m - 1, d2 - 1, 23, 59, 59);
+    }
+    const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+    const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
+    return {
+      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
+      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
+      daysPassed, daysTotal,
+    };
+  }
+
+  // ── Ciclo mensual (default) ──────────────────────────────────
+  const payDay = Math.min(settings.paymentDay, 28); // Máx 28 para evitar Feb
+
+  let start: Date, end: Date, prevStart: Date, prevEnd: Date;
+
+  if (today >= payDay) {
+    // Estamos dentro del período: desde payDay de este mes
+    start = new Date(y, m, payDay, 0, 0, 0);
+    end = new Date(y, m + 1, payDay - 1, 23, 59, 59);
+    prevStart = new Date(y, m - 1, payDay, 0, 0, 0);
+    prevEnd = new Date(y, m, payDay - 1, 23, 59, 59);
+  } else {
+    // Antes del payDay: período empezó el mes pasado
+    start = new Date(y, m - 1, payDay, 0, 0, 0);
+    end = new Date(y, m, payDay - 1, 23, 59, 59);
+    prevStart = new Date(y, m - 2, payDay, 0, 0, 0);
+    prevEnd = new Date(y, m - 1, payDay - 1, 23, 59, 59);
+  }
+
+  const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
+  const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
+
+  return {
+    start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
+    prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
+    daysPassed, daysTotal,
+  };
 }
 
 /** Score financiero 0-100 */

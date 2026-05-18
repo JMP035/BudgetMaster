@@ -5,7 +5,11 @@ import {
     Platform, ScrollView, StyleSheet, Text, TextInput,
     TouchableOpacity, View
 } from "react-native";
-import { Transaction, UserSettings } from "../services/storage";
+import {
+    Account, CategoryBudget, CreditInstallment, FixedExpense,
+    SavingsGoal, Transaction, UserSettings,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment
+} from "../services/storage";
 import { C, shadow } from "../theme";
 
 // ─────────────────────────────────────────────────────────────
@@ -26,104 +30,160 @@ interface GeminiMessage {
 // ─────────────────────────────────────────────────────────────
 // CONSTRUIR CONTEXTO FINANCIERO
 // ─────────────────────────────────────────────────────────────
-function buildFinancialContext(transactions: Transaction[], settings: UserSettings): string {
+function buildFinancialContext(
+    transactions: Transaction[],
+    settings: UserSettings,
+    accounts: Account[] = [],
+    fixedExpenses: FixedExpense[] = [],
+    categoryBudgets: CategoryBudget[] = [],
+    savingsGoals: SavingsGoal[] = [],
+    creditInstallments: CreditInstallment[] = [],
+): string {
     const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
+    const fp = getCurrentFinancialPeriod(settings);
+    const daysLeft = getDaysUntilNextPayment(settings);
 
-    const monthTx = transactions.filter(t => {
-        const d = new Date(t.date);
-        return d.getMonth() === m && d.getFullYear() === y;
-    });
+    // Transacciones del período financiero actual
+    const periodTx = transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; });
+    const prevTx   = transactions.filter(t => { const d = new Date(t.date); return d >= fp.prevStart && d <= fp.prevEnd; });
 
-    const incomeQ = monthTx.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const expenseQ = monthTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const balance = incomeQ - expenseQ;
-    const pct = settings.budgetLimit > 0 ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
+    const incomeQ  = periodTx.filter(t => t.type === "income"  && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const expenseQ = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const prevExpQ = prevTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const balance  = incomeQ - expenseQ;
+    const pct      = settings.budgetLimit > 0 ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
+    const dailyRate   = expenseQ / Math.max(fp.daysPassed, 1);
+    const projected   = dailyRate * fp.daysTotal;
+    const vsLastPeriod = prevExpQ > 0 ? ((expenseQ - prevExpQ) / prevExpQ * 100).toFixed(1) : "N/A";
 
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const daysPassed = now.getDate();
-    const dailyRate = expenseQ / Math.max(daysPassed, 1);
-    const projected = dailyRate * daysInMonth;
-
-    // Top categorías del mes
+    // Top categorías
     const catMap: Record<string, number> = {};
-    monthTx.filter(t => t.type === "expense").forEach(t => {
-        catMap[t.category] = (catMap[t.category] || 0) + t.amount;
-    });
-    const topCats = Object.entries(catMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 3)
-        .map(([cat, amt]) => `${cat}: Q${amt.toFixed(0)}`)
-        .join(", ");
+    periodTx.filter(t => t.type === "expense").forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
+    const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5)
+        .map(([cat, amt]) => `  · ${cat}: Q${amt.toFixed(0)}`).join("\n");
 
-    // Historial últimos 3 meses
+    // Historial últimos 3 períodos por mes calendario
+    const m = now.getMonth(); const y = now.getFullYear();
     const history = Array.from({ length: 3 }, (_, i) => {
         const d = new Date(y, m - (2 - i), 1);
-        const mo = d.getMonth();
-        const yr = d.getFullYear();
-        const exp = transactions
-            .filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
-                new Date(t.date).getMonth() === mo && new Date(t.date).getFullYear() === yr)
+        const mo = d.getMonth(); const yr = d.getFullYear();
+        const exp = transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
+            new Date(t.date).getMonth() === mo && new Date(t.date).getFullYear() === yr)
             .reduce((s, t) => s + t.amount, 0);
-        return `${d.toLocaleDateString("es-GT", { month: "short" })}: Q${exp.toFixed(0)}`;
-    }).join(" | ");
+        const inc = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
+            new Date(t.date).getMonth() === mo && new Date(t.date).getFullYear() === yr)
+            .reduce((s, t) => s + t.amount, 0);
+        return `  ${d.toLocaleDateString("es-GT", { month: "long" })}: gastos Q${exp.toFixed(0)} | ingresos Q${inc.toFixed(0)} | ahorro Q${(inc - exp).toFixed(0)}`;
+    }).join("\n");
+
+    // Cuentas bancarias
+    const activeAccounts = accounts.filter(a => a.isActive);
+    const accountsSummary = activeAccounts.length > 0
+        ? activeAccounts.map(a => `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`).join("\n")
+        : "  · No hay cuentas configuradas";
+    const totalBalance = activeAccounts.reduce((s, a) => s + (a.currency === "USD" ? a.balance * (settings.exchangeRate || 7.7) : a.balance), 0);
+
+    // Gastos fijos
+    const fixedTotal = fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0);
+    const fixedPaid  = fixedExpenses.filter(f => f.isActive && f.isPaid).reduce((s, f) => s + f.amount, 0);
+    const fixedPending = fixedTotal - fixedPaid;
+    const fixedSummary = fixedExpenses.filter(f => f.isActive).slice(0, 5)
+        .map(f => `  · ${f.name}: Q${f.amount.toFixed(0)} [${f.isPaid ? "PAGADO" : "PENDIENTE"}]`).join("\n") || "  · Sin gastos fijos";
+
+    // Presupuestos por categoría
+    const budgetsSummary = categoryBudgets.slice(0, 5)
+        .map(b => { 
+            const spent = transactions.filter(t => t.category === b.categoryId && t.type === "expense" && new Date(t.date) >= fp.start && new Date(t.date) <= fp.end).reduce((s,t)=>s+t.amount, 0);
+            const pctB = Math.round((spent / b.limit) * 100); 
+            return `  · ${b.categoryId}: Q${spent.toFixed(0)} / Q${b.limit.toFixed(0)} (${pctB}%${pctB >= 100 ? " ⚠️ EXCEDIDO" : ""})`; 
+        })
+        .join("\n") || "  · Sin límites por categoría";
+
+    // Metas de ahorro
+    const goalsSummary = savingsGoals.filter(g => !g.isCompleted).slice(0, 3)
+        .map(g => { const pctG = Math.round((g.currentAmount / g.targetAmount) * 100); return `  · ${g.name}: Q${g.currentAmount.toFixed(0)} / Q${g.targetAmount.toFixed(0)} (${pctG}%)`; })
+        .join("\n") || "  · Sin metas activas";
+
+    // Visacuotas
+    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0)
+        .reduce((s, c) => s + c.monthlyPayment, 0);
+    const installSummary = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).slice(0, 3)
+        .map(c => `  · ${c.name}: Q${c.monthlyPayment.toFixed(0)}/mes (${c.totalInstallments - c.paidInstallments} cuotas restantes)`)
+        .join("\n") || "  · Sin cuotas activas";
 
     return `
-=== CONTEXTO FINANCIERO DE ${settings.userName.toUpperCase()} ===
-Fecha: ${now.toLocaleDateString("es-GT", { day: "2-digit", month: "long", year: "numeric" })}
-País: Guatemala
+=== CONTEXTO FINANCIERO COMPLETO DE ${settings.userName.toUpperCase()} ===
+Fecha actual: ${now.toLocaleDateString("es-GT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+País: Guatemala | Moneda principal: ${settings.currency || "Q"}
+Días hasta próximo pago: ${daysLeft}
 
-ESTE MES:
-- Ingresos registrados: Q${incomeQ.toFixed(2)}
-- Gastos registrados: Q${expenseQ.toFixed(2)}
-- Saldo neto: Q${balance.toFixed(2)}
-- Presupuesto mensual: Q${settings.budgetLimit.toFixed(2)}
-- Presupuesto utilizado: ${pct}%
-- Ritmo diario de gasto: Q${dailyRate.toFixed(2)}/día
-- Proyección fin de mes: Q${projected.toFixed(2)}
+── PERÍODO FINANCIERO ACTUAL ──
+Rango: ${fp.label} (día ${fp.daysPassed} de ${fp.daysTotal})
+Ingresos del período: Q${incomeQ.toFixed(2)}
+Gastos del período:   Q${expenseQ.toFixed(2)}
+Saldo libre:          Q${balance.toFixed(2)}
+Presupuesto:          Q${settings.budgetLimit.toFixed(2)} → ${pct}% utilizado
+Ritmo diario:         Q${dailyRate.toFixed(2)}/día | Proyección: Q${projected.toFixed(2)}
+Vs período anterior:  ${vsLastPeriod}% (anterior: Q${prevExpQ.toFixed(0)})
 
-TOP CATEGORÍAS DE GASTO:
-${topCats || "Sin gastos registrados este mes"}
+── GASTOS POR CATEGORÍA (período actual) ──
+${topCats || "  · Sin gastos registrados"}
 
-HISTORIAL (últimos 3 meses):
+── HISTORIAL ÚLTIMOS 3 MESES ──
 ${history}
 
-PERFIL:
-- Ingreso mensual declarado: Q${settings.monthlyIncome || "No especificado"}
-- Ciclo de pago: ${settings.paymentCycle || "mensual"}
-- Deudas activas: Q${settings.activeDebts || 0}
-- Meta de ahorro mensual: Q${settings.monthlySavingsGoal || 0}
-- Ahorros externos: Q${settings.externalSavings || 0}
-================================`.trim();
+── CUENTAS BANCARIAS ──
+${accountsSummary}
+Patrimonio total en cuentas: Q${totalBalance.toFixed(2)}
+
+── GASTOS FIJOS MENSUALES ──
+Total: Q${fixedTotal.toFixed(0)} | Pagado: Q${fixedPaid.toFixed(0)} | Pendiente: Q${fixedPending.toFixed(0)}
+${fixedSummary}
+
+── CUOTAS / VISACUOTAS ──
+Carga mensual total: Q${installTotal.toFixed(0)}
+${installSummary}
+
+── PRESUPUESTOS POR CATEGORÍA ──
+${budgetsSummary}
+
+── METAS DE AHORRO ──
+${goalsSummary}
+
+── PERFIL DEL USUARIO ──
+Ingreso mensual declarado: Q${settings.monthlyIncome || "No especificado"}
+Ciclo de pago: ${settings.paymentCycle || "mensual"} (día ${settings.paymentDay})
+Deudas activas: Q${settings.activeDebts || 0}
+Meta de ahorro mensual: Q${settings.monthlySavingsGoal || 0}
+Ahorros externos: Q${settings.externalSavings || 0}
+======================================`.trim();
 }
 
 // ─────────────────────────────────────────────────────────────
 // SYSTEM PROMPT DEL CFO
 // ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Eres el CFO personal del usuario — un asesor financiero experto, directo y honesto. 
+const SYSTEM_PROMPT = `Sos el CFO personal del usuario — un asesor financiero experto con acceso COMPLETO a sus datos financieros reales.
 
-PERSONALIDAD:
-- Hablás en español latinoamericano de forma natural y conversacional
-- Sos directo y no complaciente — si algo está mal lo decís claramente
-- Usás los datos financieros reales del usuario en cada respuesta
-- Inspiración en Napoleon Hill, Kiyosaki, Dave Ramsey y Warren Buffett
-- Nunca usás emojis en exceso — máximo 1 por mensaje
-- Respuestas concisas — máximo 4 oraciones a menos que el usuario pida más detalle
-- NUNCA inventás datos — si no tenés info, lo decís
+REGLAS ABSOLUTAS:
+1. SIEMPRE usá los números reales del contexto financiero en tus respuestas. Nunca inventes cifras.
+2. Respondé DIRECTAMENTE a lo que pregunta el usuario. No des respuestas genéricas.
+3. Si el usuario pregunta si puede comprar algo, calculá si tiene saldo disponible y decilo con Q exactos.
+4. Si el usuario pregunta en qué gastó, listá las categorías reales con sus montos.
+5. Hablás en español latinoamericano natural — sos un asesor de confianza, no un robot.
+6. Cuando hay un problema financiero, dalo con la solución concreta y números específicos.
+7. Respuestas concisas por defecto (máx 5 oraciones) salvo que pidan análisis detallado.
+8. NUNCA digas "no tengo acceso a tus datos" — tenés acceso completo al contexto proporcionado.
 
 CAPACIDADES:
-- Analizar gastos e ingresos del mes actual
-- Evaluar si una compra es viable según el presupuesto real
-- Dar planes de ahorro concretos con números reales
-- Proyectar patrimonio futuro
-- Identificar patrones de gasto problemáticos
-- Dar consejos accionables y específicos
+- Analizar el período financiero actual (no solo el mes calendario)
+- Evaluar compras contra el saldo real y días hasta el próximo pago
+- Identificar categorías problemáticas y su impacto en el presupuesto
+- Calcular proyecciones realistas basadas en el ritmo actual
+- Analizar gastos fijos vs variables y optimizarlos
+- Evaluar el avance en metas de ahorro con planes concretos
+- Comparar períodos y detectar tendencias de mejora/deterioro
 
-FORMATO:
-- Cuando des números, usá el contexto financiero real del usuario
-- Cuando evalués una compra, considerá el saldo actual y los días hasta el próximo pago
-- Cuando detectés un problema financiero, dalo con la solución concreta`;
+TONO: Directo, honesto, como un buen amigo que sabe de finanzas. Inspirado en Dave Ramsey para la disciplina, Kiyosaki para el activo/pasivo, y Buffett para el largo plazo.`;
 
 // ─────────────────────────────────────────────────────────────
 // LLAMADA A GEMINI CON HISTORIAL
@@ -182,41 +242,71 @@ async function callGemini(
 // ─────────────────────────────────────────────────────────────
 // RESPUESTA LOCAL (fallback sin API Key)
 // ─────────────────────────────────────────────────────────────
-function getLocalResponse(message: string, transactions: Transaction[], settings: UserSettings): string {
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
-    const monthTx = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
-    const expenseQ = monthTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const incomeQ = monthTx.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+function getLocalResponse(
+    message: string, transactions: Transaction[], settings: UserSettings,
+    accounts: Account[] = [], fixedExpenses: FixedExpense[] = [],
+    savingsGoals: SavingsGoal[] = [], creditInstallments: CreditInstallment[] = [],
+): string {
+    const fp = getCurrentFinancialPeriod(settings);
+    const daysLeft = getDaysUntilNextPayment(settings);
+
+    const periodTx  = transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; });
+    const expenseQ  = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const incomeQ   = periodTx.filter(t => t.type === "income"  && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const remaining = settings.budgetLimit - expenseQ;
-    const pct = Math.round((expenseQ / settings.budgetLimit) * 100);
+    const pct       = Math.round((expenseQ / settings.budgetLimit) * 100);
+
+    // Top categorías del período
+    const catMap: Record<string, number> = {};
+    periodTx.filter(t => t.type === "expense").forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
+    const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 3)
+        .map(([cat, amt]) => `${cat} Q${amt.toFixed(0)}`).join(", ");
+
+    const fixedPending = fixedExpenses.filter(f => f.isActive && !f.isPaid).reduce((s, f) => s + f.amount, 0);
+    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + c.monthlyPayment, 0);
+    const totalBalance = accounts.filter(a => a.isActive).reduce((s, a) => s + a.balance, 0);
 
     const msg = message.toLowerCase();
 
-    if (msg.match(/hola|buenos|buenas|hey/)) {
-        return `Hola ${settings.userName}. Llevás el ${pct}% de tu presupuesto este mes — Q${expenseQ.toFixed(2)} gastados de Q${settings.budgetLimit.toFixed(2)}. ¿En qué te puedo ayudar?`;
+    if (msg.match(/hola|buenos|buenas|hey|inicio/)) {
+        return `Hola ${settings.userName}. Período ${fp.label}: llevás Q${expenseQ.toFixed(0)} gastados de Q${settings.budgetLimit.toFixed(0)} (${pct}%). Te quedan Q${remaining.toFixed(0)} y ${daysLeft} días hasta tu próximo ingreso. ¿En qué te ayudo?`;
     }
-    if (msg.match(/como voy|resumen|situacion|estado|analisis/)) {
-        return `Este mes llevás Q${expenseQ.toFixed(2)} en gastos y Q${incomeQ.toFixed(2)} en ingresos. Tu saldo libre es Q${remaining.toFixed(2)} — ${pct}% del presupuesto utilizado. ${pct > 80 ? "Estás en zona de alerta." : pct > 50 ? "Vas en la mitad, controlá el ritmo." : "Buen ritmo por ahora."}`;
+    if (msg.match(/como voy|resumen|situacion|estado|analisis|summary/)) {
+        return `Período ${fp.label} — Gastos: Q${expenseQ.toFixed(0)} (${pct}% del presupuesto), Ingresos: Q${incomeQ.toFixed(0)}, Libre: Q${remaining.toFixed(0)}. Gastos fijos pendientes: Q${fixedPending.toFixed(0)}. Cuotas mensuales: Q${installTotal.toFixed(0)}. ${pct > 80 ? "Estás en zona de alerta." : "Vas bien."}`;
     }
-    if (msg.match(/puedo comprar|puedo gastar|tengo para|alcanza/)) {
+    if (msg.match(/gaste|gaste mas|categor|donde|en que/)) {
+        return topCats
+            ? `Tus mayores gastos del período son: ${topCats}. En total llevás Q${expenseQ.toFixed(0)} gastados.`
+            : `Aún no tenés gastos registrados en este período (${fp.label}).`;
+    }
+    if (msg.match(/puedo comprar|puedo gastar|tengo para|alcanza|cuesta/)) {
         const numMatch = message.match(/[\d,]+(?:\.\d+)?/);
         if (numMatch) {
             const amount = parseFloat(numMatch[0].replace(",", "."));
-            if (amount <= remaining) return `Con Q${remaining.toFixed(2)} disponibles, sí podés hacer esa compra de Q${amount.toFixed(2)}. Te quedarán Q${(remaining - amount).toFixed(2)} hasta fin de mes.`;
-            return `No es recomendable. Tenés Q${remaining.toFixed(2)} disponibles y la compra es Q${amount.toFixed(2)}. Excede tu saldo en Q${(amount - remaining).toFixed(2)}.`;
+            if (amount <= remaining) return `Con Q${remaining.toFixed(0)} disponibles sí podés comprarlo (Q${amount.toFixed(0)}). Te quedarán Q${(remaining - amount).toFixed(0)} y aún faltan ${daysLeft} días hasta tu pago.`;
+            return `No es recomendable. Tenés Q${remaining.toFixed(0)} disponibles pero la compra es Q${amount.toFixed(0)} — excede en Q${(amount - remaining).toFixed(0)}.`;
         }
-        return `Actualmente tenés Q${remaining.toFixed(2)} disponibles en tu presupuesto. Decime cuánto cuesta lo que querés comprar.`;
+        return `Disponés de Q${remaining.toFixed(0)} en tu presupuesto (${100 - pct}% restante). ¿Cuánto cuesta lo que querés comprar?`;
     }
-    if (msg.match(/ahorro|ahorrar|meta|objetivo/)) {
-        return `Tu meta de ahorro mensual es Q${settings.monthlySavingsGoal || 0}. Este mes tu balance neto es Q${(incomeQ - expenseQ).toFixed(2)}. ${(incomeQ - expenseQ) >= (settings.monthlySavingsGoal || 0) ? "Estás en camino de cumplir tu meta." : "Necesitás ajustar tus gastos para alcanzar la meta."}`;
+    if (msg.match(/ahorro|ahorrar|meta|objetivo|guardar/)) {
+        const activeGoals = savingsGoals.filter(g => !g.isCompleted);
+        const goal = activeGoals[0];
+        if (goal) return `Tu meta "${goal.name}" lleva Q${goal.currentAmount.toFixed(0)} de Q${goal.targetAmount.toFixed(0)} (${Math.round(goal.currentAmount / goal.targetAmount * 100)}%). Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}.`;
+        return `Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}. Para mejores consejos de ahorro, configurá una meta en la sección de Presupuesto.`;
     }
-    if (msg.match(/deuda|tarjeta|credito/)) {
-        return `Tenés registradas deudas por Q${settings.activeDebts || 0}. Kiyosaki lo dice claro: la deuda sin estrategia es una cadena. ¿Querés que analicemos un plan para pagarla?`;
+    if (msg.match(/deuda|tarjeta|credito|cuota|visa/)) {
+        return `Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas y Q${settings.activeDebts || 0} en deudas declaradas. Eso representa Q${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
+    }
+    if (msg.match(/cuenta|banco|saldo|billetera/)) {
+        if (accounts.filter(a => a.isActive).length > 0)
+            return `Tus cuentas suman Q${totalBalance.toFixed(2)} en total. ${accounts.filter(a => a.isActive).map(a => `${a.name}: Q${a.balance.toFixed(0)}`).join(", ")}.`;
+        return `No tenés cuentas bancarias configuradas. Podés agregarlas en la sección de Cuentas.`;
+    }
+    if (msg.match(/fijo|recurrente|servicios|pagos fijos/)) {
+        return `Gastos fijos activos: Q${fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0).toFixed(0)}/período. Pendientes de pago: Q${fixedPending.toFixed(0)}.`;
     }
 
-    return `Tenés Q${remaining.toFixed(2)} disponibles este mes (${100 - pct}% del presupuesto). Para respuestas más detalladas y personalizadas, configurá tu API Key de Gemini en Ajustes — es gratuita en aistudio.google.com.`;
+    return `Tenés Q${remaining.toFixed(0)} disponibles este período (${100 - pct}% del presupuesto, ${daysLeft} días hasta tu pago). Para análisis avanzados con IA real, configurá tu API Key de Gemini en Ajustes — es gratuita en aistudio.google.com.`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -278,9 +368,18 @@ const QUICK_SUGGESTIONS = [
 interface Props {
     transactions: Transaction[];
     settings: UserSettings;
+    accounts?: Account[];
+    fixedExpenses?: FixedExpense[];
+    categoryBudgets?: CategoryBudget[];
+    savingsGoals?: SavingsGoal[];
+    creditInstallments?: CreditInstallment[];
 }
 
-export default function AIAdvisor({ transactions, settings }: Props) {
+export default function AIAdvisor({
+    transactions, settings,
+    accounts = [], fixedExpenses = [], categoryBudgets = [],
+    savingsGoals = [], creditInstallments = [],
+}: Props) {
     const hasApiKey = !!(settings.geminiApiKey && settings.geminiApiKey.length > 20);
 
     const [messages, setMessages] = useState<Message[]>([
@@ -319,7 +418,7 @@ export default function AIAdvisor({ transactions, settings }: Props) {
         try {
             if (hasApiKey) {
                 // Chat real con Gemini
-                const context = buildFinancialContext(transactions, settings);
+                const context = buildFinancialContext(transactions, settings, accounts, fixedExpenses, categoryBudgets, savingsGoals, creditInstallments);
                 response = await callGemini(geminiHistory, settings.geminiApiKey!, userText, context);
 
                 // Actualizar historial de Gemini
@@ -331,7 +430,7 @@ export default function AIAdvisor({ transactions, settings }: Props) {
             } else {
                 // Fallback local
                 await new Promise(r => setTimeout(r, 600)); // Simular delay
-                response = getLocalResponse(userText, transactions, settings);
+                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
             }
         } catch (e: any) {
             if (e.message?.includes("429")) {
@@ -339,7 +438,7 @@ export default function AIAdvisor({ transactions, settings }: Props) {
             } else if (e.message?.includes("400")) {
                 response = "Hubo un error con la API Key. Verificá que sea válida en Ajustes.";
             } else {
-                response = getLocalResponse(userText, transactions, settings);
+                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
             }
         }
 

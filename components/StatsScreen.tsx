@@ -5,7 +5,7 @@ import {
     StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import Svg, { Circle, G, Path, Text as SvgText } from "react-native-svg";
-import { Transaction, UserSettings, getDaysUntilNextPayment } from "../services/storage";
+import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
 import { EXPENSE_CATEGORIES, getCat } from "../categories";
 import { C, shadow } from "../theme";
 
@@ -166,19 +166,27 @@ function VertBars({ data, color, labels }: { data: number[]; color: string; labe
 interface Props { transactions: Transaction[]; settings: UserSettings; }
 
 export default function StatsScreen({ transactions, settings }: Props) {
-    const [period, setPeriod] = useState<"month" | "year" | "all">("month");
+    const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
 
     const now = new Date();
     const m = now.getMonth();
     const y = now.getFullYear();
 
+    const fp = getCurrentFinancialPeriod(settings);
+
     // Filtrar por período
-    const filtered = period === "month"
-        ? transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; })
-        : period === "year"
-            ? transactions.filter(t => new Date(t.date).getFullYear() === y)
-            : transactions;
+    const filtered = period === "current"
+        ? transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; })
+        : period === "prev"
+            ? transactions.filter(t => { const d = new Date(t.date); return d >= fp.prevStart && d <= fp.prevEnd; })
+            : period === "year"
+                ? transactions.filter(t => new Date(t.date).getFullYear() === y)
+                : transactions;
+
+    const periodLabel = period === "current" ? fp.label
+        : period === "prev" ? fp.prevLabel
+        : period === "year" ? `Año ${y}` : "Historial completo";
 
     const expensesQ = filtered.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency));
     const incomesQ = filtered.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency));
@@ -278,13 +286,23 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* FILTRO PERÍODO */}
             <View style={s.filterRow}>
-                {(["month", "year", "all"] as const).map(p => (
-                    <TouchableOpacity key={p} style={[s.filterTab, period === p && s.filterTabActive]} onPress={() => { setPeriod(p); setSelectedSlice(null); }}>
-                        <Text style={[s.filterTxt, period === p && s.filterTxtActive]}>
-                            {p === "month" ? "Este Mes" : p === "year" ? "Este Año" : "Todo"}
-                        </Text>
+                {([
+                    { key: "current", label: "Per. Actual" },
+                    { key: "prev",    label: "Per. Anterior" },
+                    { key: "year",    label: "Este Año" },
+                    { key: "all",     label: "Todo" },
+                ] as const).map(p => (
+                    <TouchableOpacity key={p.key} style={[s.filterTab, period === p.key && s.filterTabActive]} onPress={() => { setPeriod(p.key); setSelectedSlice(null); }}>
+                        <Text style={[s.filterTxt, period === p.key && s.filterTxtActive]}>{p.label}</Text>
                     </TouchableOpacity>
                 ))}
+            </View>
+
+            {/* ETIQUETA PERÍODO ACTIVO */}
+            <View style={{ marginBottom: 14, paddingHorizontal: 4 }}>
+                <Text style={{ color: C.textMuted, fontSize: 11, fontWeight: "700" }}>
+                    📅 {periodLabel}
+                </Text>
             </View>
 
             {/* RESUMEN RÁPIDO */}
@@ -313,7 +331,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                             <Ionicons name="pie-chart-outline" size={18} color={C.primaryLight} />
                         </View>
                         <Text style={s.cardTitle}>
-                            Desglose por Categoría — {period === "month" ? "Este Mes" : period === "year" ? "Este Año" : "Historial"}
+                            Desglose por Categoría — {periodLabel}
                         </Text>
                     </View>
 

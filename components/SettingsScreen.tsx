@@ -5,6 +5,7 @@ import {
     ScrollView, StyleSheet, Switch, Text,
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
+import * as LocalAuthentication from "expo-local-authentication";
 import { Currency, CustomCategory, StorageService, UserSettings } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
@@ -140,6 +141,8 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     const [rateSource, setRateSource] = useState<string>("");
     const [loadingRate, setLoadingRate] = useState(false);
     const [smsOpt, setSmsOpt] = useState(settings.smsEnabled ?? true);
+    const [biometricOpt, setBiometricOpt] = useState(settings.biometricEnabled ?? false);
+    const [biometricAvailable, setBiometricAvailable] = useState(false);
     const [apiKey, setApiKey] = useState(settings.geminiApiKey || "");
     const [saved, setSaved] = useState(false);
     const [showNewCat, setShowNewCat] = useState(false);
@@ -148,7 +151,16 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     // ── Cargar tipo de cambio automático al abrir ────────────
     useEffect(() => {
         loadExchangeRate();
+        checkBiometricAvailability();
     }, []);
+
+    const checkBiometricAvailability = async () => {
+        try {
+            const hasHW = await LocalAuthentication.hasHardwareAsync();
+            const enrolled = await LocalAuthentication.isEnrolledAsync();
+            setBiometricAvailable(hasHW && enrolled);
+        } catch { }
+    };
 
     const loadExchangeRate = async () => {
         setLoadingRate(true);
@@ -190,6 +202,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             budgetLimitUSD: isNaN(bUSD) ? 800 : bUSD,
             currency,
             smsEnabled: smsOpt,
+            biometricEnabled: biometricOpt,
             externalSavings: isNaN(sQ) ? 0 : sQ,
             externalSavingsUSD: isNaN(sUSD) ? 0 : sUSD,
             exchangeRate: isNaN(rate) ? 7.70 : rate,
@@ -319,6 +332,27 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                         <TextInput style={s.input} value={extSavingsUSD} onChangeText={setExtSavingsUSD} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={C.textMuted} returnKeyType="done" />
                     </View>
                 </Section>
+
+                {/* BIOMETRÍA */}
+                {biometricAvailable && (
+                    <Section icon="finger-print-outline" title="Seguridad Biométrica" description="Protegé tu información financiera con huella digital o Face ID al abrir la app.">
+                        <View style={s.switchRow}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={s.switchLabel}>{biometricOpt ? "✅ Activado" : "🔓 Desactivado"}</Text>
+                                <Text style={s.hint}>
+                                    {biometricOpt ? "La app pedirá autenticación biométrica al abrirse." : "La app abre directamente sin solicitar biometría."}
+                                </Text>
+                            </View>
+                            <Switch
+                                value={biometricOpt}
+                                onValueChange={setBiometricOpt}
+                                trackColor={{ false: C.bgDeep, true: C.accent }}
+                                thumbColor={C.text}
+                                style={{ marginLeft: 12 }}
+                            />
+                        </View>
+                    </Section>
+                )}
 
                 {/* SMS */}
                 <Section icon="chatbubble-outline" title="Sincronización SMS Automática" description="Lee tus SMS de BAC, BANRURAL, GTC, BANTRAB y PROMERICA para registrar gastos automáticamente. Solo lee mensajes bancarios, nunca personales.">

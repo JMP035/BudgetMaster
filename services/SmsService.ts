@@ -231,11 +231,11 @@ export const SmsService = {
           const newTransactions: Transaction[] = [];
 
           const now = new Date();
-          const twoMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+          const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
 
           for (const sms of messages) {
             try {
-              if (sms.date < twoMonthsAgo) continue;
+              if (sms.date < threeMonthsAgo) continue;
               const body = sms.body;
               if (!msgContainsBankKeywords(body)) continue;
               totalMatched++;
