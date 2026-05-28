@@ -77,30 +77,34 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
   const tabAdvisorRef = useTutorialRef('tab_advisor');
   const tabSettingsRef = useTutorialRef('tab_settings');
 
-  const TABS: { id: Tab; icon: keyof typeof Ionicons.glyphMap; label: string; tutRef?: any }[] = [
+  const TABS: { id: Tab | "advisor"; icon: keyof typeof Ionicons.glyphMap; label: string; tutRef?: any; isAdvisor?: boolean }[] = [
     { id: "dashboard", icon: "home", label: "Inicio" },
     { id: "transactions", icon: "list", label: "Movimientos" },
-    { id: "add", icon: "add", label: "Agregar", tutRef: tabAddRef },
     { id: "budget", icon: "wallet-outline", label: "Presupuesto", tutRef: tabBudgetRef },
+    { id: "add", icon: "add", label: "Agregar", tutRef: tabAddRef },
     { id: "stats", icon: "bar-chart-outline", label: "Estadísticas" },
+    { id: "advisor", icon: "sparkles", label: "Asesor", tutRef: tabAdvisorRef, isAdvisor: true },
     { id: "settings", icon: "settings", label: "Ajustes", tutRef: tabSettingsRef },
   ];
 
   return (
     <View style={[tb.bar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
       {TABS.map(t => {
-        const isActive = tab === t.id && !showAI;
         const isAdd = t.id === "add";
+        const isAdvisor = t.isAdvisor;
+        const isActive = isAdvisor ? showAI : (tab === t.id && !showAI);
+
         return (
           <View
             key={t.id}
             ref={t.tutRef}
             collapsable={false}
-            style={[tb.item, isAdd && tb.addItem]}
+            style={tb.item}
           >
             <TouchableOpacity
-              style={[tb.item, isAdd && tb.addItem]}
-              onPress={() => onSwitch(t.id)}
+              style={isAdd ? tb.addButton : tb.button}
+              onPress={() => isAdvisor ? onToggleAI() : onSwitch(t.id as Tab)}
+              activeOpacity={0.7}
             >
               <View style={[isAdd && tb.addBubble, isActive && !isAdd && tb.tabBg]}>
                 <Ionicons
@@ -116,16 +120,6 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
           </View>
         );
       })}
-
-      {/* ASESOR IA */}
-      <View ref={tabAdvisorRef} collapsable={false} style={tb.item}>
-        <TouchableOpacity style={tb.item} onPress={onToggleAI}>
-          <View style={[showAI && tb.tabBg]}>
-            <Ionicons name="sparkles" size={22} color={showAI ? C.primaryLight : C.textMuted} />
-          </View>
-          <Text style={[tb.label, showAI && { color: C.primaryLight }]}>Asesor</Text>
-        </TouchableOpacity>
-      </View>
     </View>
   );
 }
@@ -363,11 +357,28 @@ const tb = StyleSheet.create({
     borderTopColor: C.primary + "55",
     paddingTop: 8,
     paddingHorizontal: 4,
+    overflow: "visible",
     ...shadow(C.primaryGlow, 8, 0.25),
   },
-  item: { flex: 1, alignItems: "center", gap: 3 },
-  addItem: { flex: 1, alignItems: "center", justifyContent: "center", marginTop: -18 },
+  item: { 
+    flex: 1, 
+    alignItems: "center", 
+    justifyContent: "flex-end" 
+  },
+  button: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
+    width: "100%",
+    gap: 3,
+  },
+  addButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    bottom: 14,
+    zIndex: 10,
+  },
   tabBg: { backgroundColor: C.primaryDark + "44", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "55" },
   addBubble: { width: 56, height: 56, borderRadius: 28, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.primaryLight, borderTopColor: C.accentLight, ...shadow(C.primaryGlow, 12, 0.7) },
-  label: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 0.3 },
+  label: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 0.2 },
 });
