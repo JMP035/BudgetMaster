@@ -48,21 +48,56 @@ function detectTransactionType(body: string): 'income' | 'expense' {
 function detectCategory(body: string, type: 'income' | 'expense'): string {
   if (type === 'income') return 'salary';
   const b = body.toLowerCase();
-  if (b.match(/pizza|mcdon|burger|pollo|kfc|subway|irtra|restauran|comida|food|domino/)) return 'food';
-  if (b.match(/walmart|despensa|hiper|supermercado|grocery|maxi/)) return 'groceries';
-  if (b.match(/uber|taxi|gasolina|combustible|puma|shell|texaco/)) return 'fuel';
+
+  // ── Combustible / Gasolineras / Estaciones de servicio ───────
+  // Reconoce: "est. de serv.", "estacion de servicio", "gasolinera",
+  // Shell, Texaco, Puma, Uno, Redipsa, G&G, Esso, Petrox, Total, Zeta Gas
+  if (b.match(/gasolina|combustible|estaci[oó]n\s+de\s+serv|est\.?\s*de\s*serv|gasolinera|surtidor/)) return 'fuel';
+  if (b.match(/\bshell\b|\btexaco\b|\bpuma\b|\buno\b|\besso\b|\bredipsa\b|\bzeta\s*gas\b|\bpetrogas\b|\btotal\s*gas\b/)) return 'fuel';
+  if (b.match(/uber|taxi|combustible/)) return 'fuel';
+
+  // ── Comida / Restaurantes ─────────────────────────────────────
+  if (b.match(/pizza|mcdon|mcdonald|burger|pollo\s*campero|kfc|subway|irtra|restauran|comida|food|domino|wendy|denny|applebee|chili|friday|sushi|tacos|burritos/)) return 'food';
+
+  // ── Supermercados ─────────────────────────────────────────────
+  if (b.match(/walmart|despensa|hiper\s*paiz|paiz|supermercado|grocery|maxi\s*despensa|la\s*torre|chedraui/)) return 'groceries';
+
+  // ── Seguros ───────────────────────────────────────────────────
   if (b.match(/seguro|insurance|asegura/)) return 'insurance';
-  if (b.match(/atm|retiro de atm/)) return 'atm';
-  if (b.match(/netflix|spotify|disney|hbo|youtube|prime|paramount|streaming/)) return 'streaming';
-  if (b.match(/steam|playstation|xbox|nintendo|game|juego/)) return 'entertainment';
-  if (b.match(/farmacia|galeno|meykos|medicina|pharmacy/)) return 'pharmacy';
-  if (b.match(/hospital|medico|doctor|clinica|salud/)) return 'health';
-  if (b.match(/amazon|ebay|aliexpress|mercado libre/)) return 'shopping';
-  if (b.match(/claro|tigo|movistar|internet|wifi|telefon/)) return 'internet';
-  if (b.match(/agua|luz|eegsa|empagua|electricidad/)) return 'utilities';
-  if (b.match(/google|apple|microsoft|cloud/)) return 'subscriptions';
-  if (b.match(/hotel|airbnb|vuelo|aeropuerto|avianca|volaris/)) return 'travel';
+
+  // ── ATM ───────────────────────────────────────────────────────
+  if (b.match(/\batm\b|retiro\s+de\s+atm|cajero\s+autom/)) return 'atm';
+
+  // ── Streaming ─────────────────────────────────────────────────
+  if (b.match(/netflix|spotify|disney|hbo|youtube\s+premium|prime\s+video|paramount|crunchyroll/)) return 'streaming';
+
+  // ── Entretenimiento ───────────────────────────────────────────
+  if (b.match(/steam|playstation|xbox|nintendo|game|juego|cine|cinepolis|pradera/)) return 'entertainment';
+
+  // ── Farmacia ──────────────────────────────────────────────────
+  if (b.match(/farmacia|galeno|meykos|medicina|pharmacy|farmacias\s+cruz\s+verde|similar/)) return 'pharmacy';
+
+  // ── Salud ─────────────────────────────────────────────────────
+  if (b.match(/hospital|medico|doctor|clinica|salud|laboratorio|radiologia/)) return 'health';
+
+  // ── Compras online ────────────────────────────────────────────
+  if (b.match(/amazon|ebay|aliexpress|mercado\s+libre|shein|temu/)) return 'shopping';
+
+  // ── Internet / Telecomunicaciones ─────────────────────────────
+  if (b.match(/claro|tigo|movistar|internet|wifi|telefon|fibernet/)) return 'internet';
+
+  // ── Servicios básicos ─────────────────────────────────────────
+  if (b.match(/agua|luz\b|eegsa|empagua|electricidad|energuate|recibo\s+de/)) return 'utilities';
+
+  // ── Suscripciones ─────────────────────────────────────────────
+  if (b.match(/google\s*(pay|one|play)|apple|microsoft|dropbox|adobe|cloud/)) return 'subscriptions';
+
+  // ── Viajes ────────────────────────────────────────────────────
+  if (b.match(/hotel|airbnb|vuelo|aeropuerto|avianca|volaris|united|american\s+airlines|la\s+aurora/)) return 'travel';
+
+  // ── Transferencias ────────────────────────────────────────────
   if (b.match(/transferencia|tif|inmediata/)) return 'transfer';
+
   return 'other';
 }
 
@@ -115,23 +150,45 @@ function buildSmartDescription(body: string, bank: string, type: 'income' | 'exp
 
   // Detectar comercios conocidos en el texto
   const knownPlaces: [RegExp, string][] = [
+    // Gasolineras / Estaciones de Servicio
+    [/\bshell\b/i, "Shell (Est. de Servicio)"],
+    [/\btexaco\b/i, "Texaco (Est. de Servicio)"],
+    [/\bpuma\b/i, "Puma (Est. de Servicio)"],
+    [/\besso\b/i, "Esso (Est. de Servicio)"],
+    [/\bredipsa\b/i, "Redipsa (Est. de Servicio)"],
+    [/\bzeta\s*gas\b/i, "Zeta Gas"],
+    [/estaci[oó]n\s+de\s+serv|est\.?\s*de\s*serv|gasolinera/i, "Estación de Servicio"],
+    // Restaurantes
     [/mcdon|mcdonald/i, "McDonald's"],
     [/pizza\s*hut/i, "Pizza Hut"],
-    [/kfc/i, "KFC"],
-    [/subway/i, "Subway"],
+    [/pollo\s*campero/i, "Pollo Campero"],
+    [/\bkfc\b/i, "KFC"],
+    [/\bsubway\b/i, "Subway"],
+    [/\bwendy/i, "Wendy's"],
+    [/\bdomino/i, "Domino's Pizza"],
+    // Supermercados
     [/walmart/i, "Walmart"],
     [/despensa/i, "Despensa Familiar"],
+    [/hiper\s*paiz|\bpaiz\b/i, "Hiper Paiz"],
+    [/maxi\s*despensa/i, "Maxi Despensa"],
+    // Streaming
     [/netflix/i, "Netflix"],
     [/spotify/i, "Spotify"],
     [/disney/i, "Disney+"],
     [/paramount/i, "Paramount+"],
-    [/google/i, "Google"],
-    [/apple/i, "Apple"],
+    [/hbo\s*max/i, "HBO Max"],
+    // Tech
+    [/\bgoogle\b/i, "Google"],
+    [/\bapple\b/i, "Apple"],
     [/amazon/i, "Amazon"],
-    [/uber/i, "Uber"],
-    [/tigo/i, "Tigo"],
-    [/claro/i, "Claro"],
-    [/irtra/i, "IRTRA"],
+    // Transporte
+    [/\buber\b/i, "Uber"],
+    [/\bindriver\b/i, "InDriver"],
+    // Telecomunicaciones
+    [/\btigo\b/i, "Tigo"],
+    [/\bclaro\b/i, "Claro"],
+    // Guatemala
+    [/\birtra\b/i, "IRTRA"],
   ];
 
   for (const [regex, name] of knownPlaces) {

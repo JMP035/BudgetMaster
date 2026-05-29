@@ -13,6 +13,14 @@ const { width, height } = Dimensions.get("window");
 // ─────────────────────────────────────────────────────────────
 // TIPOS
 // ─────────────────────────────────────────────────────────────
+interface DebtEntry {
+    id: string;
+    name: string;
+    type: 'credit' | 'loan' | 'installment' | 'other';
+    monthlyPayment: string;
+    totalAmount: string;
+}
+
 interface OnboardingData {
     name: string;
     monthlyIncome: string;
@@ -21,6 +29,7 @@ interface OnboardingData {
     paymentDays: string;
     biggestExpense: string;
     activeDebts: string;
+    activeDebtsList: DebtEntry[];
     monthlySavings: string;
     preferredBanks: string[];
     externalSavings: string;
@@ -166,11 +175,51 @@ export default function OnboardingScreen({ onComplete }: Props) {
         paymentDays: "15,30",
         biggestExpense: "",
         activeDebts: "0",
+        activeDebtsList: [],
         monthlySavings: "",
         preferredBanks: [],
         externalSavings: "0",
         currency: "Q",
     });
+
+    // Estado temporal para agregar una deuda
+    const [newDebtName, setNewDebtName] = useState("");
+    const [newDebtType, setNewDebtType] = useState<DebtEntry['type']>("credit");
+    const [newDebtMonthly, setNewDebtMonthly] = useState("");
+    const [newDebtTotal, setNewDebtTotal] = useState("");
+    const [showDebtForm, setShowDebtForm] = useState(false);
+
+    const addDebt = () => {
+        if (!newDebtName.trim() || !newDebtMonthly.trim()) return;
+        const debt: DebtEntry = {
+            id: `debt_${Date.now()}`,
+            name: newDebtName.trim(),
+            type: newDebtType,
+            monthlyPayment: newDebtMonthly,
+            totalAmount: newDebtTotal || "0",
+        };
+        const updatedList = [...data.activeDebtsList, debt];
+        const totalMonthly = updatedList.reduce((s, d) => s + parseFloat(d.monthlyPayment || "0"), 0);
+        setData(d => ({
+            ...d,
+            activeDebtsList: updatedList,
+            activeDebts: totalMonthly.toFixed(2),
+        }));
+        setNewDebtName("");
+        setNewDebtMonthly("");
+        setNewDebtTotal("");
+        setShowDebtForm(false);
+    };
+
+    const removeDebt = (id: string) => {
+        const updatedList = data.activeDebtsList.filter(d => d.id !== id);
+        const totalMonthly = updatedList.reduce((s, d) => s + parseFloat(d.monthlyPayment || "0"), 0);
+        setData(d => ({
+            ...d,
+            activeDebtsList: updatedList,
+            activeDebts: totalMonthly.toFixed(2),
+        }));
+    };
 
     const TOTAL_STEPS = 8;
 
@@ -299,7 +348,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             </ScrollView>
         </AnimatedCard>,
 
-        // PASO 5 — Deudas
+        // PASO 5 — Deudas múltiples
         <AnimatedCard key={5} direction={dir}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={s.stepHeader}>
@@ -307,9 +356,122 @@ export default function OnboardingScreen({ onComplete }: Props) {
                         <Ionicons name="alert-circle-outline" size={28} color={C.danger} />
                     </View>
                     <Text style={s.stepTitle}>¿Tenés deudas activas?</Text>
-                    <Text style={s.stepSubtitle}>Tarjetas de crédito, préstamos, cuotas pendientes. Monto total aproximado. Si no tenés, ingresá 0.{"\n\n"}"La deuda sin plan es una cadena invisible." — Dave Ramsey</Text>
+                    <Text style={s.stepSubtitle}>
+                        Registra cada deuda por separado: tarjetas de crédito, préstamos, visacuotas. Así podré ayudarte a eliminarlas estratégicamente.{"\n\n"}"La deuda sin plan es una cadena invisible." — Dave Ramsey
+                    </Text>
                 </View>
-                <StyledInput value={data.activeDebts} onChangeText={v => setData(d => ({ ...d, activeDebts: v }))} placeholder="0.00" keyboardType="decimal-pad" prefix="Q" autoFocus />
+
+                {/* Lista de deudas agregadas */}
+                {data.activeDebtsList.length === 0 && !showDebtForm && (
+                    <View style={s.noDebtBox}>
+                        <Ionicons name="checkmark-circle-outline" size={28} color={C.income} />
+                        <Text style={s.noDebtTxt}>Sin deudas registradas</Text>
+                    </View>
+                )}
+
+                {data.activeDebtsList.map(debt => (
+                    <View key={debt.id} style={s.debtCard}>
+                        <View style={s.debtCardLeft}>
+                            <Ionicons
+                                name={debt.type === 'credit' ? 'card-outline' : debt.type === 'loan' ? 'cash-outline' : debt.type === 'installment' ? 'receipt-outline' : 'ellipsis-circle-outline'}
+                                size={20}
+                                color={C.danger}
+                                style={{ marginRight: 10 }}
+                            />
+                            <View style={{ flex: 1 }}>
+                                <Text style={s.debtName}>{debt.name}</Text>
+                                <Text style={s.debtType}>
+                                    {debt.type === 'credit' ? 'Tarjeta de crédito' :
+                                     debt.type === 'loan' ? 'Préstamo bancario' :
+                                     debt.type === 'installment' ? 'Visacuota / Cuotas' : 'Otra deuda'}
+                                </Text>
+                            </View>
+                        </View>
+                        <View style={{ alignItems: 'flex-end' }}>
+                            <Text style={s.debtAmount}>{data.currency} {parseFloat(debt.monthlyPayment).toFixed(2)}/mes</Text>
+                            <TouchableOpacity onPress={() => removeDebt(debt.id)}>
+                                <Ionicons name="trash-outline" size={16} color={C.danger} />
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ))}
+
+                {/* Resumen total */}
+                {data.activeDebtsList.length > 0 && (
+                    <View style={s.debtTotal}>
+                        <Text style={s.debtTotalLbl}>TOTAL MENSUAL EN DEUDAS</Text>
+                        <Text style={s.debtTotalVal}>{data.currency} {parseFloat(data.activeDebts || "0").toFixed(2)}</Text>
+                        {parseFloat(data.activeDebts) > parseFloat(data.monthlyIncome) * 0.3 && (
+                            <Text style={s.debtWarning}>⚠️ Superas el 30% de tu ingreso en deudas. Zona de alerta.</Text>
+                        )}
+                    </View>
+                )}
+
+                {/* Formulario para agregar deuda */}
+                {showDebtForm ? (
+                    <View style={s.debtForm}>
+                        <Text style={s.debtFormTitle}>Nueva Deuda</Text>
+
+                        <Text style={s.debtFormLbl}>NOMBRE DE LA DEUDA</Text>
+                        <TextInput
+                            style={s.debtInput}
+                            value={newDebtName}
+                            onChangeText={setNewDebtName}
+                            placeholder="Ej: Visa BAC, Préstamo Banrural..."
+                            placeholderTextColor={C.textMuted}
+                            autoFocus
+                        />
+
+                        <Text style={s.debtFormLbl}>TIPO DE DEUDA</Text>
+                        <View style={s.debtTypeRow}>
+                            {([['credit', 'card-outline', 'Tarjeta'], ['loan', 'cash-outline', 'Préstamo'], ['installment', 'receipt-outline', 'Visacuota'], ['other', 'ellipsis-circle-outline', 'Otra']] as [DebtEntry['type'], any, string][]).map(([type, icon, label]) => (
+                                <TouchableOpacity
+                                    key={type}
+                                    style={[s.debtTypeBtn, newDebtType === type && s.debtTypeBtnActive]}
+                                    onPress={() => setNewDebtType(type)}
+                                >
+                                    <Ionicons name={icon} size={16} color={newDebtType === type ? C.primaryLight : C.textMuted} />
+                                    <Text style={[s.debtTypeTxt, newDebtType === type && { color: C.primaryLight }]}>{label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+
+                        <Text style={s.debtFormLbl}>CUOTA MENSUAL</Text>
+                        <StyledInput
+                            value={newDebtMonthly}
+                            onChangeText={setNewDebtMonthly}
+                            placeholder="0.00"
+                            keyboardType="decimal-pad"
+                            prefix={data.currency}
+                        />
+
+                        <View style={s.debtFormBtns}>
+                            <TouchableOpacity style={s.debtCancelBtn} onPress={() => setShowDebtForm(false)}>
+                                <Text style={{ color: C.textMuted, fontWeight: '700' }}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[s.debtAddConfirmBtn, (!newDebtName.trim() || !newDebtMonthly.trim()) && { opacity: 0.5 }]}
+                                onPress={addDebt}
+                                disabled={!newDebtName.trim() || !newDebtMonthly.trim()}
+                            >
+                                <Ionicons name="checkmark" size={18} color="#1A0E00" />
+                                <Text style={s.debtAddConfirmTxt}>Agregar</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                ) : (
+                    <TouchableOpacity style={s.addDebtBtn} onPress={() => setShowDebtForm(true)}>
+                        <Ionicons name="add-circle-outline" size={20} color={C.primaryLight} />
+                        <Text style={s.addDebtTxt}>Agregar deuda</Text>
+                    </TouchableOpacity>
+                )}
+
+                {data.activeDebtsList.length === 0 && !showDebtForm && (
+                    <TouchableOpacity style={s.noDebtBtn} onPress={() => setData(d => ({...d, activeDebts: "0"}))}>
+                        <Ionicons name="thumbs-up-outline" size={18} color={C.income} />
+                        <Text style={s.noDebtBtnTxt}>No tengo deudas 🎉</Text>
+                    </TouchableOpacity>
+                )}
             </ScrollView>
         </AnimatedCard>,
 
@@ -426,4 +588,33 @@ const s = StyleSheet.create({
     backBtn: { width: 52, height: 52, borderRadius: 16, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", justifyContent: "center" },
     nextBtn: { flex: 1, flexDirection: "row", backgroundColor: C.primary, borderRadius: 16, paddingVertical: 18, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.primaryLight, ...shadow(C.primaryGlow, 12, 0.5) },
     nextTxt: { color: "#1A0E00", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
+
+    // Estilos del sistema de deudas
+    noDebtBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, backgroundColor: C.income + '11', borderRadius: 12, borderWidth: 1, borderColor: C.income + '33', marginTop: 8 },
+    noDebtTxt: { color: C.income, fontSize: 14, fontWeight: '700', flex: 1 },
+    debtCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.danger + '33', padding: 14, marginTop: 10, justifyContent: 'space-between' },
+    debtCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+    debtName: { color: C.text, fontSize: 14, fontWeight: '700' },
+    debtType: { color: C.textMuted, fontSize: 11, marginTop: 2 },
+    debtAmount: { color: C.danger, fontSize: 13, fontWeight: '800' },
+    debtTotal: { marginTop: 14, padding: 14, backgroundColor: C.danger + '11', borderRadius: 12, borderWidth: 1, borderColor: C.danger + '33', alignItems: 'center' },
+    debtTotalLbl: { color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+    debtTotalVal: { color: C.danger, fontSize: 22, fontWeight: '900', marginTop: 4 },
+    debtWarning: { color: C.warning, fontSize: 11, fontWeight: '700', marginTop: 6, textAlign: 'center' },
+    addDebtBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: C.primary + '44', backgroundColor: C.primaryDark + '22', justifyContent: 'center' },
+    addDebtTxt: { color: C.primaryLight, fontSize: 14, fontWeight: '700' },
+    noDebtBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.income + '44', backgroundColor: C.income + '11', justifyContent: 'center' },
+    noDebtBtnTxt: { color: C.income, fontSize: 14, fontWeight: '700' },
+    debtForm: { marginTop: 14, padding: 16, backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder },
+    debtFormTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '900', marginBottom: 12 },
+    debtFormLbl: { color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginTop: 12, marginBottom: 4 },
+    debtInput: { backgroundColor: C.bgDeep, borderRadius: 10, borderWidth: 1.5, borderColor: C.cardBorder, padding: 12, color: C.text, fontSize: 14, fontWeight: '600' },
+    debtTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+    debtTypeBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
+    debtTypeBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + '33' },
+    debtTypeTxt: { color: C.textMuted, fontSize: 11, fontWeight: '700' },
+    debtFormBtns: { flexDirection: 'row', gap: 10, marginTop: 14 },
+    debtCancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder },
+    debtAddConfirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 10, backgroundColor: C.primary },
+    debtAddConfirmTxt: { color: '#1A0E00', fontSize: 14, fontWeight: '900' },
 });

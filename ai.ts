@@ -81,6 +81,11 @@ export async function getAIResponse(
         return `Principio de Babilonia: Se debe conservar al menos el 10% de lo ganado. En su caso, debería separar ${fmt(settings.budgetLimit * 0.1, cur)} inmediatamente para su fondo de riqueza personal.`;
     }
 
+    // PRIORIDAD 1.5: Combustible / Estaciones de Servicio
+    if (msg.includes("est de serv") || msg.includes("estacion de servicio") || msg.includes("gasolinera") || msg.includes("shell") || msg.includes("puma") || msg.includes("texaco") || msg.includes("combustible")) {
+        return `Asesoría de Combustible: "Est. de Serv." o "Estación de Servicio" se refiere a tus consumos de combustible (como gasolineras Shell, Puma o Texaco). BudgetMaster los clasifica automáticamente bajo la categoría "Combustible". Te sugiero presupuestar este gasto mensualmente para evitar sorpresas.`;
+    }
+
     // PRIORIDAD 2: Metas de Ahorro y Compras (Lógica Dinámica)
     if (amount > 0 && months >= 1 && (msg.includes("ahoro") || msg.includes("meta") || msg.includes("tener") || msg.includes("lograr"))) {
         const mensual = amount / months;

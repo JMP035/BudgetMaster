@@ -146,6 +146,7 @@ export interface UserSettings {
   onboardingComplete: boolean;
   tutorialComplete: boolean;
   financialScoreHistory: { month: string; score: number }[];
+  activeDebtsList?: any[];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -206,6 +207,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   onboardingComplete: false,
   tutorialComplete: false,
   financialScoreHistory: [],
+  activeDebtsList: [],
 };
 
 // ─────────────────────────────────────────────────────────────

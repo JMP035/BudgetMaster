@@ -162,17 +162,34 @@ Ahorros externos: Q${settings.externalSavings || 0}
 // ─────────────────────────────────────────────────────────────
 // SYSTEM PROMPT DEL CFO
 // ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Sos el CFO personal del usuario — un asesor financiero experto con acceso COMPLETO a sus datos financieros reales.
+const SYSTEM_PROMPT = `Sos el CFO personal del usuario — un asesor financiero experto con acceso COMPLETO a sus datos financieros reales. Contexto: Guatemala (moneda principal Quetzales).
 
 REGLAS ABSOLUTAS:
 1. SIEMPRE usá los números reales del contexto financiero en tus respuestas. Nunca inventes cifras.
 2. Respondé DIRECTAMENTE a lo que pregunta el usuario. No des respuestas genéricas.
 3. Si el usuario pregunta si puede comprar algo, calculá si tiene saldo disponible y decilo con Q exactos.
 4. Si el usuario pregunta en qué gastó, listá las categorías reales con sus montos.
-5. Hablás en español latinoamericano natural — sos un asesor de confianza, no un robot.
+5. Hablás en español guatemalteco natural — sos un asesor de confianza, no un robot.
 6. Cuando hay un problema financiero, dalo con la solución concreta y números específicos.
 7. Respuestas concisas por defecto (máx 5 oraciones) salvo que pidan análisis detallado.
 8. NUNCA digas "no tengo acceso a tus datos" — tenés acceso completo al contexto proporcionado.
+9. ORIENTACIÓN A FINANZAS: Eres un asesor financiero. Si el usuario te pregunta sobre temas no financieros (como recetas de cocina, chistes, deportes, programación, etc.), debes redirigir la conversación con ingenio de vuelta al ámbito financiero y económico personal (ej. "Como tu CFO personal, no sé cocinar eso, pero sí sé cómo puedes ahorrar Q50 en los ingredientes en el supermercado..."). Nunca respondas temas ajenos a finanzas.
+
+CONTEXTO GUATEMALTECO — RECONOCIMIENTO DE GASTOS:
+- "Est. de Serv.", "Estación de Servicio", "Shell", "Texaco", "Puma", "Esso", "Redipsa", "gasolinera" = COMBUSTIBLE (categoría: fuel)
+- "Pollo Campero" = comida guatemalteca icónica
+- "Despensa Familiar", "Hiper Paiz", "Maxi Despensa" = supermercados GT
+- "BANRURAL", "BAC", "GTC", "BANTRAB", "BI", "PROMERICA" = bancos guatemaltecos
+- "Visacuota", "cuota", "cuotas" = compra a plazos en tarjeta de crédito
+- "IRTRA" = parque de diversiones guatemalteco
+- Canasta básica GT ≈ Q3,950/mes. Salario mínimo GT ≈ Q3,500/mes
+- Tipo de cambio aproximado: Q7.70 por USD
+
+SISTEMA DE DEUDAS Y CUOTAS:
+- Las "visacuotas" son compras financiadas a través de la tarjeta de crédito en cuotas mensuales
+- Si el usuario tiene visacuotas activas, incluílas en el análisis de flujo de caja mensual
+- La deuda de tarjeta de crédito reduce el patrimonio neto
+- Un ratio deuda/ingreso mayor al 30% es zona de alerta
 
 CAPACIDADES:
 - Analizar el período financiero actual (no solo el mes calendario)
@@ -182,6 +199,7 @@ CAPACIDADES:
 - Analizar gastos fijos vs variables y optimizarlos
 - Evaluar el avance en metas de ahorro con planes concretos
 - Comparar períodos y detectar tendencias de mejora/deterioro
+- Entender abreviaturas guatemaltecas de comercios (est. de serv. = gasolinera, etc.)
 
 TONO: Directo, honesto, como un buen amigo que sabe de finanzas. Inspirado en Dave Ramsey para la disciplina, Kiyosaki para el activo/pasivo, y Buffett para el largo plazo.`;
 
@@ -306,6 +324,9 @@ function getLocalResponse(
         return `Gastos fijos activos: Q${fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0).toFixed(0)}/período. Pendientes de pago: Q${fixedPending.toFixed(0)}.`;
     }
 
+    if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
+        return `Disponés de Q${remaining.toFixed(0)} en tu presupuesto para este período (${100 - pct}% restante) y quedan ${daysLeft} días para tu próximo pago. ¿Deseas que analicemos algún movimiento o meta de ahorro específica?`;
+    }
     return `Tenés Q${remaining.toFixed(0)} disponibles este período (${100 - pct}% del presupuesto, ${daysLeft} días hasta tu pago). Para análisis avanzados con IA real, configurá tu API Key de Gemini en Ajustes — es gratuita en aistudio.google.com.`;
 }
 
@@ -401,6 +422,21 @@ export default function AIAdvisor({
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }, [messages]);
 
+    useEffect(() => {
+        setMessages(prev => {
+            if (prev.length > 0 && (prev[0].id === "welcome" || prev[0].id === "welcome_new")) {
+                const updatedWelcome = {
+                    ...prev[0],
+                    text: hasApiKey
+                        ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
+                        : `¡Hola ${settings.userName}! Soy tu asesor financiero. Para respuestas avanzadas con IA real, configurá tu API Key de Gemini en Ajustes (es gratuita). Por ahora puedo responderte con análisis básico de tus datos.`,
+                };
+                return [updatedWelcome, ...prev.slice(1)];
+            }
+            return prev;
+        });
+    }, [hasApiKey, settings.userName]);
+
     const handleSend = async (text?: string) => {
         const userText = (text || input).trim();
         if (!userText || loading) return;
@@ -419,26 +455,43 @@ export default function AIAdvisor({
             if (hasApiKey) {
                 // Chat real con Gemini
                 const context = buildFinancialContext(transactions, settings, accounts, fixedExpenses, categoryBudgets, savingsGoals, creditInstallments);
-                response = await callGemini(geminiHistory, settings.geminiApiKey!, userText, context);
+
+                // Limitar historial a los últimos 20 pares (40 mensajes) para no exceder tokens
+                const MAX_HISTORY_PAIRS = 20;
+                const trimmedHistory = geminiHistory.length > MAX_HISTORY_PAIRS * 2
+                    ? geminiHistory.slice(-(MAX_HISTORY_PAIRS * 2))
+                    : geminiHistory;
+
+                response = await callGemini(trimmedHistory, settings.geminiApiKey!, userText, context);
 
                 // Actualizar historial de Gemini
-                setGeminiHistory(prev => [
-                    ...prev,
-                    { role: "user", parts: [{ text: userText }] },
-                    { role: "model", parts: [{ text: response }] },
-                ]);
+                setGeminiHistory(prev => {
+                    const updated = [
+                        ...prev,
+                        { role: "user" as const, parts: [{ text: userText }] },
+                        { role: "model" as const, parts: [{ text: response }] },
+                    ];
+                    // Mantener máximo 40 entradas en memoria
+                    return updated.length > 40 ? updated.slice(-40) : updated;
+                });
             } else {
                 // Fallback local
                 await new Promise(r => setTimeout(r, 600)); // Simular delay
                 response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
             }
         } catch (e: any) {
-            if (e.message?.includes("429")) {
-                response = "Límite de requests de Gemini alcanzado. Esperá unos segundos e intentá de nuevo.";
-            } else if (e.message?.includes("400")) {
-                response = "Hubo un error con la API Key. Verificá que sea válida en Ajustes.";
+            const errStr = e.message || "";
+            if (errStr.includes("429")) {
+                response = "⚠️ Límite de solicitudes alcanzado en Gemini. Espera unos segundos e intenta de nuevo.";
+            } else if (errStr.includes("400")) {
+                response = "⚠️ Error 400 (Solicitud incorrecta): Verifica que tu API Key de Gemini en Ajustes esté bien escrita y no contenga espacios adicionales.";
+            } else if (errStr.includes("403")) {
+                response = "⚠️ Error 403 (Acceso denegado): La API Key ingresada no es válida para Gemini. Por favor, asegúrate de haber copiado la clave completa en Ajustes.";
+            } else if (errStr.includes("404")) {
+                response = "⚠️ Error 404 (Modelo no encontrado): El modelo de Gemini configurado no está disponible actualmente.";
             } else {
-                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
+                const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
+                response = `🔌 (Asistente local sin conexión) ${offlineResp}`;
             }
         }
 
@@ -575,9 +628,46 @@ const s = StyleSheet.create({
     suggestionsRow: { maxHeight: 48, marginBottom: 8 },
     suggestionChip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.primaryDark + "33", borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
     suggestionTxt: { color: C.primaryLight, fontSize: 13, fontWeight: "600" },
-    inputContainer: { flexDirection: "row", alignItems: "flex-end", padding: 12, paddingBottom: 16, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.shimmer, gap: 10, ...shadow("#000", 8, 0.3) },
-    input: { flex: 1, backgroundColor: C.bgDeep, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder, paddingHorizontal: 16, paddingVertical: 10, color: C.text, fontSize: 15, maxHeight: 100 },
-    sendBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", ...shadow(C.primaryGlow, 8, 0.5) },
+    // INPUT — el contenedor siempre visible, el input se contrae si el nombre es largo
+    inputContainer: {
+        flexDirection: "row",
+        alignItems: "flex-end",
+        padding: 12,
+        paddingBottom: 16,
+        backgroundColor: C.card,
+        borderTopWidth: 1,
+        borderTopColor: C.shimmer,
+        gap: 8,
+        ...shadow("#000", 8, 0.3),
+        // Asegurar que el contenedor no desborde
+        flexWrap: "nowrap",
+        overflow: "hidden",
+    },
+    input: {
+        flex: 1,
+        // minWidth: 0 es clave para que el TextInput se contraiga cuando hay poco espacio
+        minWidth: 0,
+        backgroundColor: C.bgDeep,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: C.cardBorder,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        color: C.text,
+        fontSize: 15,
+        maxHeight: 100,
+    },
+    // El botón siempre tiene tamaño fijo, NUNCA sale de pantalla
+    sendBtn: {
+        width: 44,
+        height: 44,
+        flexShrink: 0,
+        borderRadius: 22,
+        backgroundColor: C.primary,
+        alignItems: "center",
+        justifyContent: "center",
+        ...shadow(C.primaryGlow, 8, 0.5),
+    },
 });
 
 const bs = StyleSheet.create({

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
-    Alert, KeyboardAvoidingView, Modal, Platform, ScrollView,
+    Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import { Currency, StorageService, Transaction, UserSettings } from "../services/storage";
@@ -266,7 +266,8 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
     const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<Transaction | null>(null);
 
-    const filtered = transactions
+    // Memoizar el filtrado para no recalcular en cada render
+    const filtered = useMemo(() => transactions
         .filter(t => filter === "all" || t.type === filter)
         .filter(t => currency === "all" || (t.currency || 'Q') === currency)
         .filter(t => !search ||
@@ -274,10 +275,23 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
             getCat(t.category, settings.customCategories).label.toLowerCase().includes(search.toLowerCase()) ||
             (t.bank || '').toLowerCase().includes(search.toLowerCase())
         )
-        .sort((a, b) => +new Date(b.date) - +new Date(a.date));
+        .sort((a, b) => +new Date(b.date) - +new Date(a.date)),
+    [transactions, filter, currency, search, settings.customCategories]);
 
     const hasUSD = transactions.some(t => t.currency === 'USD');
     const hasEUR = transactions.some(t => t.currency === 'EUR');
+
+    // Renderizador memoizado para FlatList (evita re-renders innecesarios)
+    const renderItem = useCallback(({ item }: { item: Transaction }) => (
+        <TxCard
+            tx={item}
+            settings={settings}
+            onDelete={onDelete}
+            onPress={setSelected}
+        />
+    ), [settings, onDelete]);
+
+    const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
@@ -329,26 +343,26 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     </View>
                 )}
 
-                {/* LISTA */}
-                <ScrollView showsVerticalScrollIndicator={false}>
-                    {filtered.length === 0 ? (
+                {/* LISTA — FlatList para rendimiento óptimo con 500+ registros */}
+                <FlatList
+                    data={filtered}
+                    renderItem={renderItem}
+                    keyExtractor={keyExtractor}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={20}
+                    maxToRenderPerBatch={15}
+                    windowSize={10}
+                    removeClippedSubviews={true}
+                    getItemLayout={(_data, index) => ({ length: 84, offset: 84 * index, index })}
+                    ListEmptyComponent={
                         <View style={s.empty}>
                             <Ionicons name="search-outline" size={48} color={C.textMuted} />
                             <Text style={s.emptyTxt}>No hay resultados</Text>
                         </View>
-                    ) : (
-                        filtered.map(tx => (
-                            <TxCard
-                                key={tx.id}
-                                tx={tx}
-                                settings={settings}
-                                onDelete={onDelete}
-                                onPress={setSelected}
-                            />
-                        ))
-                    )}
-                    <View style={{ height: 120 }} />
-                </ScrollView>
+                    }
+                    ListFooterComponent={<View style={{ height: 120 }} />}
+                    keyboardShouldPersistTaps="handled"
+                />
             </View>
 
             {/* MODAL DETALLE */}

@@ -490,7 +490,30 @@ export default function DashboardScreen({
 
             {/* PATRIMONIO TOTAL */}
             <View style={s.netWorthCard}>
-                <Text style={s.netWorthTitle}>PATRIMONIO TOTAL</Text>
+                <View style={s.netWorthTitleRow}>
+                    <Text style={s.netWorthTitle}>PATRIMONIO TOTAL</Text>
+                    <TouchableOpacity
+                        onPress={() => Alert.alert(
+                            "🏛️ Patrimonio Total",
+                            "El Patrimonio Neto es la diferencia entre lo que tenés y lo que debés.\n\n" +
+                            "✅ ACTIVOS (lo que tenés):\n" +
+                            "  • Saldo en cuentas de ahorro\n" +
+                            "  • Efectivo disponible\n" +
+                            "  • Saldo positivo en cuentas bancarias\n\n" +
+                            "❌ PASIVOS (lo que debés):\n" +
+                            "  • Deuda en tarjetas de crédito\n" +
+                            "  • Préstamos pendientes\n\n" +
+                            "PATRIMONIO = Activos − Pasivos\n\n" +
+                            "Si es positivo → tenés más de lo que debés. 📈\n" +
+                            "Si es negativo → tus deudas superan tus activos. Plan de deuda urgente. 🚨",
+                            [{ text: "Entendido", style: "default" }]
+                        )}
+                        style={s.netWorthInfoBtn}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                        <Ionicons name="information-circle-outline" size={18} color={C.textMuted} />
+                    </TouchableOpacity>
+                </View>
                 <Text style={[s.netWorthVal, { color: netQ >= 0 ? C.textPrimary : C.danger }]}>
                     {netQ < 0 ? "-" : ""}Q {Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                 </Text>
@@ -500,7 +523,10 @@ export default function DashboardScreen({
                     </Text>
                 )}
                 {hasAccounts && (
-                    <Text style={s.netWorthSource}>Basado en tus cuentas registradas</Text>
+                    <Text style={s.netWorthSource}>Activos menos deudas • basado en tus cuentas</Text>
+                )}
+                {!hasAccounts && (
+                    <Text style={s.netWorthSource}>Estimado por ingresos/gastos • agrega cuentas para mayor precisión</Text>
                 )}
             </View>
 
@@ -618,7 +644,9 @@ const s = StyleSheet.create({
     scoreHint: { color: C.textMuted, fontSize: 12, marginTop: 8 },
 
     netWorthCard: { backgroundColor: C.cardHigh, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44", padding: 24, alignItems: "center", marginBottom: 14, ...shadow(C.primaryGlow, 15, 0.2) },
-    netWorthTitle: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1.5, marginBottom: 8 },
+    netWorthTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+    netWorthTitle: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
+    netWorthInfoBtn: { opacity: 0.7 },
     netWorthVal: { fontSize: 34, fontWeight: "900" },
     netWorthValSub: { fontSize: 18, fontWeight: "700", marginTop: 4 },
     netWorthSource: { color: C.textMuted, fontSize: 10, marginTop: 6, letterSpacing: 0.5 },

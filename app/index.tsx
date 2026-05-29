@@ -40,6 +40,10 @@ export type Tab = "dashboard" | "transactions" | "add" | "budget" | "stats" | "s
 // ONBOARDING → SETTINGS
 // ─────────────────────────────────────────────────────────────
 function buildSettingsFromOnboarding(data: any): UserSettings {
+  const totalDebts = data.activeDebtsList?.length > 0
+    ? data.activeDebtsList.reduce((s: number, d: any) => s + parseFloat(d.monthlyPayment || "0"), 0)
+    : parseFloat(data.activeDebts || "0");
+
   return {
     ...DEFAULT_SETTINGS,
     userName: data.name || "Usuario",
@@ -50,12 +54,13 @@ function buildSettingsFromOnboarding(data: any): UserSettings {
     paymentDay: parseInt(data.paymentDay || "30"),
     paymentDays: data.paymentDays?.split(",").map((d: string) => parseInt(d.trim())) || [15, 30],
     budgetLimit: parseFloat(data.monthlyIncome || "6000") * 0.8,
-    activeDebts: parseFloat(data.activeDebts || "0"),
+    activeDebts: totalDebts,
     monthlySavingsGoal: parseFloat(data.monthlySavings || "0"),
     preferredBanks: data.preferredBanks || [],
     externalSavings: parseFloat(data.externalSavings || "0"),
     onboardingComplete: true,
     tutorialComplete: true,
+    activeDebtsList: data.activeDebtsList || [],
   };
 }
 
@@ -204,6 +209,37 @@ function AppContent() {
     const newSettings = buildSettingsFromOnboarding(data);
     await StorageService.saveSettings(newSettings);
     setSettings(newSettings);
+
+    // Crear CreditInstallments desde las deudas declaradas en el onboarding
+    if (data.activeDebtsList && data.activeDebtsList.length > 0) {
+      let allInstallments = [...creditInstallments];
+      for (const debt of data.activeDebtsList) {
+        const monthly = parseFloat(debt.monthlyPayment || "0");
+        if (monthly <= 0) continue;
+
+        const newInstallment: CreditInstallment = {
+          id: `onb_${debt.id}`,
+          accountId: "",  // Sin cuenta asociada inicialmente
+          name: debt.name,
+          totalAmount: parseFloat(debt.totalAmount || "0") || monthly * 12,
+          monthlyPayment: monthly,
+          totalInstallments: parseFloat(debt.totalAmount || "0") > 0
+            ? Math.ceil(parseFloat(debt.totalAmount) / monthly)
+            : 12,
+          paidInstallments: 0,
+          startDate: new Date().toISOString(),
+          currency: data.currency || "Q",
+          category: debt.type === 'credit' ? 'transfer' :
+                    debt.type === 'loan' ? 'other' : 'subscriptions',
+          isActive: true,
+          notes: `Registrado en onboarding (${debt.type === 'credit' ? 'Tarjeta de crédito' : debt.type === 'loan' ? 'Préstamo' : debt.type === 'installment' ? 'Visacuota' : 'Otra deuda'})`,
+        };
+        const updated = await StorageService.addCreditInstallment(newInstallment);
+        allInstallments = updated;
+      }
+      setCreditInstallments(allInstallments);
+    }
+
     setTimeout(() => setAutoTutorial('tour_inicial'), 800);
   };
 
