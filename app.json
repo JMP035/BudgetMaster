@@ -4,7 +4,7 @@
     "slug": "BudgetMaster",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/app_icon.png",
     "scheme": "budgetmaster",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -13,7 +13,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/app_icon.png",
         "backgroundColor": "#0A0A0A"
       },
       "package": "com.jakov11035.BudgetMaster",

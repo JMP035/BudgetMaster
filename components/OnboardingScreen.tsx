@@ -373,7 +373,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     <View key={debt.id} style={s.debtCard}>
                         <View style={s.debtCardLeft}>
                             <Ionicons
-                                name={debt.type === 'credit' ? 'card-outline' : debt.type === 'loan' ? 'cash-outline' : debt.type === 'installment' ? 'receipt-outline' : 'ellipsis-circle-outline'}
+                                name={debt.type === 'credit' ? 'card-outline' : debt.type === 'loan' ? 'cash-outline' : debt.type === 'installment' ? 'receipt-outline' : 'help-circle-outline'}
                                 size={20}
                                 color={C.danger}
                                 style={{ marginRight: 10 }}
@@ -424,7 +424,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
                         <Text style={s.debtFormLbl}>TIPO DE DEUDA</Text>
                         <View style={s.debtTypeRow}>
-                            {([['credit', 'card-outline', 'Tarjeta'], ['loan', 'cash-outline', 'Préstamo'], ['installment', 'receipt-outline', 'Visacuota'], ['other', 'ellipsis-circle-outline', 'Otra']] as [DebtEntry['type'], any, string][]).map(([type, icon, label]) => (
+                            {([['credit', 'card-outline', 'Tarjeta'], ['loan', 'cash-outline', 'Préstamo'], ['installment', 'receipt-outline', 'Visacuota'], ['other', 'help-circle-outline', 'Otra']] as [DebtEntry['type'], any, string][]).map(([type, icon, label]) => (
                                 <TouchableOpacity
                                     key={type}
                                     style={[s.debtTypeBtn, newDebtType === type && s.debtTypeBtnActive]}
