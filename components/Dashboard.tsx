@@ -456,12 +456,12 @@ export default function DashboardScreen({
         >
             {/* HEADER */}
             <View style={s.header}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 }}>
                     <View style={s.logoBox}>
                         <Ionicons name="wallet-outline" size={26} color="#1A0E00" />
                     </View>
-                    <View>
-                        <Text style={s.greeting}>Hola, {settings.userName}</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={s.greeting} numberOfLines={1}>Hola, {settings.userName}</Text>
                         <Text style={s.month}>{period.label.toUpperCase()}</Text>
                         <Text style={s.periodProgress}>
                             Día {period.daysPassed} de {period.daysTotal} del período

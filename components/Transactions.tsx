@@ -294,55 +294,8 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
     const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
             <View style={s.screen}>
-
-                <View style={s.header}>
-                    <Text style={s.title}>Movimientos</Text>
-                    <Text style={s.sub}>{filtered.length} registros</Text>
-                </View>
-
-                {/* BÚSQUEDA */}
-                <View style={s.searchBox}>
-                    <Ionicons name="search" size={18} color={C.textMuted} style={{ marginRight: 8 }} />
-                    <TextInput
-                        style={s.searchInput}
-                        value={search}
-                        onChangeText={setSearch}
-                        placeholder="Buscar por descripción, banco, categoría..."
-                        placeholderTextColor={C.textMuted}
-                    />
-                    {search.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearch("")}>
-                            <Ionicons name="close-circle" size={18} color={C.textMuted} />
-                        </TouchableOpacity>
-                    )}
-                </View>
-
-                {/* FILTRO TIPO */}
-                <View style={s.filterRow}>
-                    {(["all", "expense", "income"] as const).map(f => (
-                        <TouchableOpacity key={f} style={[s.filterTab, filter === f && s.filterTabActive]} onPress={() => setFilter(f)}>
-                            <Text style={[s.filterTxt, filter === f && s.filterTxtActive]}>
-                                {f === "all" ? "Todos" : f === "expense" ? "Gastos" : "Ingresos"}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                {/* FILTRO MONEDA (solo si hay múltiples) */}
-                {(hasUSD || hasEUR) && (
-                    <View style={[s.filterRow, { marginBottom: 10 }]}>
-                        {(["all", "Q", ...(hasUSD ? ["USD"] : []), ...(hasEUR ? ["EUR"] : [])] as const).map((cur: any) => (
-                            <TouchableOpacity key={cur} style={[s.filterTab, currency === cur && s.filterTabActive]} onPress={() => setCurrency(cur)}>
-                                <Text style={[s.filterTxt, currency === cur && s.filterTxtActive]}>
-                                    {cur === "all" ? "Todas" : cur}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
-                )}
-
                 {/* LISTA — FlatList para rendimiento óptimo con 500+ registros */}
                 <FlatList
                     data={filtered}
@@ -353,6 +306,55 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     maxToRenderPerBatch={15}
                     windowSize={10}
                     removeClippedSubviews={true}
+                    ListHeaderComponent={
+                        <View style={{ paddingBottom: 10 }}>
+                            <View style={s.header}>
+                                <Text style={s.title}>Movimientos</Text>
+                                <Text style={s.sub}>{filtered.length} registros</Text>
+                            </View>
+
+                            {/* BÚSQUEDA */}
+                            <View style={s.searchBox}>
+                                <Ionicons name="search" size={18} color={C.textMuted} style={{ marginRight: 8 }} />
+                                <TextInput
+                                    style={s.searchInput}
+                                    value={search}
+                                    onChangeText={setSearch}
+                                    placeholder="Buscar por descripción, banco, categoría..."
+                                    placeholderTextColor={C.textMuted}
+                                />
+                                {search.length > 0 && (
+                                    <TouchableOpacity onPress={() => setSearch("")}>
+                                        <Ionicons name="close-circle" size={18} color={C.textMuted} />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            {/* FILTRO TIPO */}
+                            <View style={s.filterRow}>
+                                {(["all", "expense", "income"] as const).map(f => (
+                                    <TouchableOpacity key={f} style={[s.filterTab, filter === f && s.filterTabActive]} onPress={() => setFilter(f)}>
+                                        <Text style={[s.filterTxt, filter === f && s.filterTxtActive]}>
+                                            {f === "all" ? "Todos" : f === "expense" ? "Gastos" : "Ingresos"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            {/* FILTRO MONEDA (solo si hay múltiples) */}
+                            {(hasUSD || hasEUR) && (
+                                <View style={[s.filterRow, { marginBottom: 10 }]}>
+                                    {(["all", "Q", ...(hasUSD ? ["USD"] : []), ...(hasEUR ? ["EUR"] : [])] as const).map((cur: any) => (
+                                        <TouchableOpacity key={cur} style={[s.filterTab, currency === cur && s.filterTabActive]} onPress={() => setCurrency(cur)}>
+                                            <Text style={[s.filterTxt, currency === cur && s.filterTxtActive]}>
+                                                {cur === "all" ? "Todas" : cur}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                        </View>
+                    }
                     getItemLayout={(_data, index) => ({ length: 84, offset: 84 * index, index })}
                     ListEmptyComponent={
                         <View style={s.empty}>

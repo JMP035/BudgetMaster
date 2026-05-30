@@ -407,34 +407,35 @@ function FixedExpensesTab({
 
     return (
         <View style={{ flex: 1 }}>
-            {/* RESUMEN */}
-            <View style={s.summaryCard}>
-                <View style={s.summaryItem}>
-                    <Text style={s.summaryVal}>{paid}/{active.length}</Text>
-                    <Text style={s.summaryLbl}>PAGADOS</Text>
+            {/* LISTA Y RESUMEN */}
+            <ScrollView showsVerticalScrollIndicator={false}>
+                {/* RESUMEN */}
+                <View style={s.summaryCard}>
+                    <View style={s.summaryItem}>
+                        <Text style={s.summaryVal}>{paid}/{active.length}</Text>
+                        <Text style={s.summaryLbl}>PAGADOS</Text>
+                    </View>
+                    <View style={s.summaryDivider} />
+                    <View style={s.summaryItem}>
+                        <Text style={[s.summaryVal, { color: C.income }]}>Q {paidQ.toFixed(0)}</Text>
+                        <Text style={s.summaryLbl}>CUBIERTO</Text>
+                    </View>
+                    <View style={s.summaryDivider} />
+                    <View style={s.summaryItem}>
+                        <Text style={[s.summaryVal, { color: C.warning }]}>Q {(totalQ - paidQ).toFixed(0)}</Text>
+                        <Text style={s.summaryLbl}>PENDIENTE</Text>
+                    </View>
+                    <View style={s.summaryDivider} />
+                    <View style={s.summaryItem}>
+                        <Text style={[s.summaryVal, { color: daysLeft <= 5 ? C.danger : C.accent }]}>{daysLeft}d</Text>
+                        <Text style={s.summaryLbl}>PRÓX. PAGO</Text>
+                    </View>
                 </View>
-                <View style={s.summaryDivider} />
-                <View style={s.summaryItem}>
-                    <Text style={[s.summaryVal, { color: C.income }]}>Q {paidQ.toFixed(0)}</Text>
-                    <Text style={s.summaryLbl}>CUBIERTO</Text>
-                </View>
-                <View style={s.summaryDivider} />
-                <View style={s.summaryItem}>
-                    <Text style={[s.summaryVal, { color: C.warning }]}>Q {(totalQ - paidQ).toFixed(0)}</Text>
-                    <Text style={s.summaryLbl}>PENDIENTE</Text>
-                </View>
-                <View style={s.summaryDivider} />
-                <View style={s.summaryItem}>
-                    <Text style={[s.summaryVal, { color: daysLeft <= 5 ? C.danger : C.accent }]}>{daysLeft}d</Text>
-                    <Text style={s.summaryLbl}>PRÓX. PAGO</Text>
-                </View>
-            </View>
 
-            <AnimatedBar pct={active.length > 0 ? (paid / active.length) * 100 : 0} color={C.income} height={6} />
-            <Text style={s.barLabel}>{Math.round(active.length > 0 ? (paid / active.length) * 100 : 0)}% de gastos fijos cubiertos este mes</Text>
-
-            {/* LISTA */}
-            <ScrollView style={{ marginTop: 16 }} showsVerticalScrollIndicator={false}>
+                <AnimatedBar pct={active.length > 0 ? (paid / active.length) * 100 : 0} color={C.income} height={6} />
+                <Text style={s.barLabel}>{Math.round(active.length > 0 ? (paid / active.length) * 100 : 0)}% de gastos fijos cubiertos este mes</Text>
+                
+                <View style={{ marginTop: 16 }}>
                 {active.length === 0 ? (
                     <View style={s.empty}>
                         <Ionicons name="calendar-outline" size={48} color={C.textMuted} />
@@ -486,6 +487,7 @@ function FixedExpensesTab({
                         })
                 )}
                 <View style={{ height: 100 }} />
+                </View>
             </ScrollView>
 
             {/* FAB */}
