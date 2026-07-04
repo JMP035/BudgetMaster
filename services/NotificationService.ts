@@ -111,7 +111,7 @@ Meta de ahorro mensual: Q${settings.monthlySavingsGoal}
 async function getGeminiMessage(prompt: string, apiKey: string): Promise<string | null> {
     try {
         const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -186,7 +186,8 @@ export const NotificationService = {
                 t.type === 'expense' && t.currency === 'Q';
         });
 
-        const totalSpent = monthTx.reduce((s, t) => s + t.amount, 0) + tx.amount;
+        // "transactions" ya incluye la transacción recién agregada (tx)
+        const totalSpent = monthTx.reduce((s, t) => s + t.amount, 0);
         const pct = (totalSpent / settings.budgetLimit) * 100;
         const remaining = settings.budgetLimit - totalSpent;
         const daysLeft = getDaysUntilNextPayment(settings);
@@ -197,7 +198,7 @@ export const NotificationService = {
         if (catBudget) {
             const catSpent = monthTx
                 .filter(t => t.category === tx.category)
-                .reduce((s, t) => s + t.amount, 0) + tx.amount;
+                .reduce((s, t) => s + t.amount, 0);
             const catPct = (catSpent / catBudget.limit) * 100;
 
             if (catPct >= 100) {
@@ -321,8 +322,12 @@ Responde SOLO el texto, sin encabezados ni formato.
     // ── Resumen semanal — trigger corregido ──────────────────
     async scheduleWeeklySummary(): Promise<void> {
         try {
-            // Cancela el anterior para no duplicar
-            await Notifications.cancelAllScheduledNotificationsAsync();
+            // Si ya hay un resumen semanal programado, no reprogramar:
+            // reprogramarlo reiniciaría el temporizador de 7 días en cada
+            // apertura y cancelar TODO borraría los recordatorios de gastos fijos.
+            const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+            const exists = scheduled.some(n => n.content?.title?.includes('Resumen Semanal'));
+            if (exists) return;
 
             await Notifications.scheduleNotificationAsync({
                 content: {

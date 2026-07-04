@@ -57,10 +57,11 @@ function detectActiveSubscriptions(transactions: Transaction[]): { name: string;
     );
 
     for (const sub of SUBSCRIPTIONS_MERCHANTS) {
+        // Normalizar también la keyword: normalizeText colapsa letras repetidas
+        // ("google" → "gogle"), si no, nunca coincidiría con la descripción.
+        const keyword = normalizeText(sub.keyword);
         const hits = recentExpenses.filter(t =>
-            normalizeText(t.description || "").includes(sub.keyword) ||
-            normalizeText(t.category || "").includes("streaming") ||
-            normalizeText(t.category || "").includes("subscriptions")
+            normalizeText(t.description || "").includes(keyword)
         );
         if (hits.length > 0) {
             const avg = hits.reduce((s, t) => s + t.amount, 0) / hits.length;
@@ -110,7 +111,7 @@ export async function getAIResponse(
             const { spent, income, projected } = calcCashFlowProjection(transactions, settings);
             const balance = income - spent;
             const prompt = `Eres el ASESOR SMITH — CFO personal experto en finanzas guatemaltecas. Contexto: ${context.label}. Período actual: Gastos=${fmt(spent, cur)}, Ingresos=${fmt(income, cur)}, Saldo libre=${fmt(balance, cur)}, Proyección fin de mes=${fmt(projected, cur)}, Presupuesto=${fmt(settings.budgetLimit, cur)}. Ingreso mensual declarado=${fmt(settings.monthlyIncome || 0, cur)}. Responde de forma directa, sobria y sin emojis. Responde a: "${rawMsg}"`;
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiApiKey}`, {
+            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${settings.geminiApiKey}`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
             });
@@ -237,7 +238,7 @@ Estado: Esta meta es ${viabilidad}. Le recomiendo recortar en la categoría ${to
 
     // ── PRIORIDAD 3: Reportes y Saludos ──────────────────────
     if (msg.match(/(voy|como|va|resumen|situacion|estado|analiza|reporte)/)) {
-        const pct = (spent / settings.budgetLimit) * 100;
+        const pct = settings.budgetLimit > 0 ? (spent / settings.budgetLimit) * 100 : 0;
         return `Reporte Financiero:
 Presupuesto utilizado: ${pct.toFixed(1)}%.
 Categoría de mayor impacto: ${topCat?.label || "General"}.
@@ -255,8 +256,12 @@ Proyección fin de mes: ${fmt(projection.projected, cur)}.`;
 // DETECCIÓN DE BANCO (para SmsService y otros)
 // ─────────────────────────────────────────────────────────────
 export function detectBankName(text: string): string {
-    const t = normalizeText(text).toUpperCase();
+    // Coincidencia por palabra completa: con includes(), "BI" coincidía con
+    // "reciBIda" y "BAC" con palabras que lo contienen, etiquetando mal el banco.
+    const t = text.toUpperCase();
     const banks = ["BANRURAL", "BAC", "BAMER", "BI", "INDUSTRIAL", "GYT", "CONTINENTAL", "PROMERICA", "BANTRAB", "CHASE", "BOFA", "SANTANDER", "BBVA", "CITI"];
-    for (const b of banks) { if (t.includes(b)) return b; }
+    for (const b of banks) {
+        if (new RegExp(`\\b${b}\\b`).test(t)) return b;
+    }
     return "Banco";
 }

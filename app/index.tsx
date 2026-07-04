@@ -149,6 +149,9 @@ function AppContent() {
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async () => {
+    // El reset mensual debe correr ANTES de leer los datos,
+    // si no la UI muestra gastos fijos/cuotas del mes anterior.
+    await StorageService.checkAndRunMonthlyReset();
     const data = await StorageService.loadAllData();
     setTxs(data.transactions);
     setSettings(data.settings);
@@ -157,7 +160,6 @@ function AppContent() {
     setSavingsGoals(data.savingsGoals);
     setAccounts(data.accounts);
     setCreditInstallments(data.creditInstallments);
-    await StorageService.checkAndRunMonthlyReset();
   }, []);
 
   useEffect(() => {

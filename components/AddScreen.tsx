@@ -39,6 +39,7 @@ export default function AddScreen({ onAdd, settings }: Props) {
         const smsUpper = smsText.toUpperCase();
         if (smsUpper.includes('USD') || smsUpper.includes('US$')) setCurrency('USD');
         else if (smsUpper.includes('EUR')) setCurrency('EUR');
+        else if (smsUpper.includes('GBP') || smsUpper.includes('£')) setCurrency('£');
         else setCurrency('Q');
 
         // Extraer monto

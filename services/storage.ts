@@ -224,7 +224,7 @@ export function getDaysUntilNextPayment(settings: UserSettings): number {
   if (settings.paymentCycle === 'weekly') return 7 - now.getDay();
 
   if (settings.paymentCycle === 'biweekly') {
-    const days = settings.paymentDays.sort((a, b) => a - b);
+    const days = [...settings.paymentDays].sort((a, b) => a - b);
     const next = days.find(d => d > today);
     if (next) return next - today;
     const firstNext = new Date(year, month + 1, days[0]);
@@ -298,7 +298,7 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
     const d2 = days[1] ?? 30;
     let start: Date, end: Date, prevStart: Date, prevEnd: Date;
 
-    if (today >= d2 || (d2 > 28 && today >= d2)) {
+    if (today >= d2) {
       // Segunda quincena: d2 → d1 del mes siguiente
       start = new Date(y, m, d2);
       const nextD1 = new Date(y, m + 1, d1);

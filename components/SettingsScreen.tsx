@@ -226,8 +226,10 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             { text: "Cancelar", style: "cancel" },
             {
                 text: "Eliminar", style: "destructive", onPress: async () => {
-                    const updated = await StorageService.deleteCustomCategory(id);
-                    setCustomCats(updated);
+                    // Filtrar sobre el estado local: la clave @bm_custom_categories
+                    // puede estar desincronizada con settings.customCategories.
+                    await StorageService.deleteCustomCategory(id);
+                    setCustomCats(prev => prev.filter(c => c.id !== id));
                 }
             },
         ]);
