@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc --noEmit)",
+      "PowerShell(npx tsc --noEmit)",
+      "Bash(npx expo start)",
+      "PowerShell(npx expo start)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "PowerShell(git status)",
+      "PowerShell(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "PowerShell(git diff)",
+      "PowerShell(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "PowerShell(git log)",
+      "PowerShell(git log *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/post-edit-tsc-check.cjs",
+            "timeout": 60,
+            "statusMessage": "Verificando tipos con tsc --noEmit..."
+          }
+        ]
+      }
+    ]
+  }
+}

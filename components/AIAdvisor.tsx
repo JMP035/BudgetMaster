@@ -8,7 +8,7 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     SavingsGoal, Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment
+    calcNetWorthFromAccounts, getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
 import { C, shadow } from "../theme";
 
@@ -81,7 +81,8 @@ function buildFinancialContext(
     const accountsSummary = activeAccounts.length > 0
         ? activeAccounts.map(a => `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`).join("\n")
         : "  · No hay cuentas configuradas";
-    const totalBalance = activeAccounts.reduce((s, a) => s + (a.currency === "USD" ? a.balance * (settings.exchangeRate || 7.7) : a.balance), 0);
+    const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(activeAccounts, settings.exchangeRate);
+    const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
 
     // Gastos fijos
     const fixedTotal = fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0);
@@ -283,7 +284,8 @@ function getLocalResponse(
 
     const fixedPending = fixedExpenses.filter(f => f.isActive && !f.isPaid).reduce((s, f) => s + f.amount, 0);
     const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + c.monthlyPayment, 0);
-    const totalBalance = accounts.filter(a => a.isActive).reduce((s, a) => s + a.balance, 0);
+    const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
+    const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
 
     const msg = message.toLowerCase();
 

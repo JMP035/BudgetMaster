@@ -52,7 +52,10 @@ function buildSettingsFromOnboarding(data: any): UserSettings {
     monthlyIncomeUSD: data.currency === "USD" ? parseFloat(data.monthlyIncome || "0") : 0,
     paymentCycle: data.paymentCycle || "monthly",
     paymentDay: parseInt(data.paymentDay || "30"),
-    paymentDays: data.paymentDays?.split(",").map((d: string) => parseInt(d.trim())) || [15, 30],
+    paymentDays: (() => {
+      const parsed = (data.paymentDays || "").split(",").map((d: string) => parseInt(d.trim())).filter((n: number) => !isNaN(n));
+      return parsed.length > 0 ? parsed : [15, 30];
+    })(),
     budgetLimit: parseFloat(data.monthlyIncome || "6000") * 0.8,
     activeDebts: totalDebts,
     monthlySavingsGoal: parseFloat(data.monthlySavings || "0"),
@@ -294,6 +297,7 @@ function AppContent() {
             <AddScreen
               onAdd={hAdd}
               settings={settings}
+              accounts={accounts}
             />
           )}
           {tab === "budget" && !showAI && (

@@ -360,14 +360,20 @@ function FixedExpensesTab({
     const paidQ = active.filter(e => e.isPaid && e.currency === 'Q').reduce((s, e) => s + e.amount, 0);
 
     const handleTogglePaid = async (expense: FixedExpense) => {
-        const updated = { ...expense, isPaid: !expense.isPaid, paidDate: !expense.isPaid ? new Date().toISOString() : undefined };
-        const all = await StorageService.updateFixedExpense(updated);
-        setFixedExpenses(all);
+        const willBePaid = !expense.isPaid;
+        let lastTxId = expense.lastTxId;
 
-        // Auto-registrar transacción si está activado
-        if (!expense.isPaid && updated.autoRecord) {
+        if (!willBePaid) {
+            // Al desmarcar: revertir la transacción auto-generada (si existe) ANTES de actualizar el gasto fijo
+            if (expense.lastTxId) {
+                const txAll = await StorageService.deleteTransaction(expense.lastTxId);
+                setTransactions(txAll);
+            }
+            lastTxId = undefined;
+        } else if (expense.autoRecord) {
+            // Al marcar como pagado con auto-registro: usar id determinístico y reversible
             const tx: Transaction = {
-                id: `fe_tx_${expense.id}_${Date.now()}`,
+                id: `fe_tx_${expense.id}`,
                 amount: expense.amount,
                 description: expense.name,
                 category: expense.category,
@@ -378,7 +384,18 @@ function FixedExpensesTab({
             };
             const txAll = await StorageService.addTransaction(tx);
             setTransactions(txAll);
+            lastTxId = tx.id;
         }
+
+        const updated: FixedExpense = {
+            ...expense,
+            isPaid: willBePaid,
+            paidDate: willBePaid ? new Date().toISOString() : undefined,
+            lastTxId,
+        };
+        const all = await StorageService.updateFixedExpense(updated);
+        setFixedExpenses(all);
+
         // Notificar al padre para que recargue todos los datos
         onRefresh?.();
     };

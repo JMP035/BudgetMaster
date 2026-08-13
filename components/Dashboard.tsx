@@ -7,7 +7,7 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     FinancialPeriod, SavingsGoal, Transaction, UserSettings,
-    calcFinancialScore, calcNetWorthFromAccounts,
+    calcFinancialScore, calcNetWorthFromAccounts, convertAmount,
     getCurrentFinancialPeriod, getDaysUntilNextPayment, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
@@ -160,9 +160,9 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
     settings: UserSettings; onPress: () => void;
 }) {
     const active = accounts.filter(a => a.isActive);
-    const { totalQ, totalUSD } = calcNetWorthFromAccounts(active, settings.exchangeRate);
+    const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(active, settings.exchangeRate);
     const monthlyInst = getMonthlyInstallmentTotal(installments);
-    const totalDebt = active.filter(a => a.type === "credit").reduce((s, a) => s + a.balance, 0);
+    const totalDebt = active.filter(a => a.type === "credit").reduce((s, a) => s + convertAmount(a.balance, a.currency, "Q", settings.exchangeRate), 0);
     const creditCards = active.filter(a => a.type === "credit");
 
     return (
@@ -188,6 +188,28 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                             <Text style={s.accountsLbl}>NETO USD</Text>
                             <Text style={[s.accountsVal, { color: totalUSD >= 0 ? "#4A9EE8" : C.danger }]}>
                                 {totalUSD < 0 ? "-" : ""}USD {Math.abs(totalUSD).toFixed(0)}
+                            </Text>
+                        </View>
+                    </>
+                )}
+                {totalEUR !== 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>NETO EUR</Text>
+                            <Text style={[s.accountsVal, { color: totalEUR >= 0 ? "#4A9EE8" : C.danger }]}>
+                                {totalEUR < 0 ? "-" : ""}EUR {Math.abs(totalEUR).toFixed(0)}
+                            </Text>
+                        </View>
+                    </>
+                )}
+                {totalGBP !== 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>NETO £</Text>
+                            <Text style={[s.accountsVal, { color: totalGBP >= 0 ? "#4A9EE8" : C.danger }]}>
+                                {totalGBP < 0 ? "-" : ""}£ {Math.abs(totalGBP).toFixed(0)}
                             </Text>
                         </View>
                     </>
@@ -377,13 +399,16 @@ export default function DashboardScreen({
     const handleSmsSync = async () => {
         try {
             const result = await SmsService.syncBankSms();
-            if (result.transactions.length > 0) {
-                Alert.alert("✅ Sincronización Exitosa",
+            if (result.transactions.length > 0 || result.installments.length > 0) {
+                let msg =
                     `Se importaron ${result.transactions.length} transacción(es).\n\n` +
                     `📨 SMS leídos: ${result.totalRead}\n` +
                     `🏦 Bancarios: ${result.totalMatched}\n` +
-                    `⏭ Ya registrados: ${result.totalSkipped}`
-                );
+                    `⏭ Ya registrados: ${result.totalSkipped}`;
+                if (result.installments.length > 0) {
+                    msg += `\n🔁 Compras a cuotas detectadas: ${result.installments.length} (revisa Cuentas → Visacuotas)`;
+                }
+                Alert.alert("✅ Sincronización Exitosa", msg);
                 onRefresh();
             } else {
                 Alert.alert("📭 Al día",
@@ -422,11 +447,13 @@ export default function DashboardScreen({
 
     // Patrimonio total
     const hasAccounts = accounts.filter(a => a.isActive).length > 0;
-    const { totalQ: accNetQ, totalUSD: accNetUSD } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
+    const { totalQ: accNetQ, totalUSD: accNetUSD, totalEUR: accNetEUR, totalGBP: accNetGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const allIncQ = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const allExpQ = transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const netQ = hasAccounts ? accNetQ : (settings.externalSavings || 0) + (allIncQ - allExpQ);
     const netUSD = hasAccounts ? accNetUSD : (settings.externalSavingsUSD || 0);
+    const netEUR = hasAccounts ? accNetEUR : 0;
+    const netGBP = hasAccounts ? accNetGBP : 0;
 
     const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
     const daysLeft = getDaysUntilNextPayment(settings);
@@ -520,6 +547,16 @@ export default function DashboardScreen({
                 {netUSD !== 0 && (
                     <Text style={[s.netWorthValSub, { color: netUSD >= 0 ? "#4A9EE8" : C.danger }]}>
                         {netUSD < 0 ? "-" : "+"}USD {Math.abs(netUSD).toFixed(2)}
+                    </Text>
+                )}
+                {netEUR !== 0 && (
+                    <Text style={[s.netWorthValSub, { color: netEUR >= 0 ? "#4A9EE8" : C.danger }]}>
+                        {netEUR < 0 ? "-" : "+"}EUR {Math.abs(netEUR).toFixed(2)}
+                    </Text>
+                )}
+                {netGBP !== 0 && (
+                    <Text style={[s.netWorthValSub, { color: netGBP >= 0 ? "#4A9EE8" : C.danger }]}>
+                        {netGBP < 0 ? "-" : "+"}£ {Math.abs(netGBP).toFixed(2)}
                     </Text>
                 )}
                 {hasAccounts && (

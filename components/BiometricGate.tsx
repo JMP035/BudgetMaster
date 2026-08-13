@@ -32,15 +32,18 @@ export default function BiometricGate({ children }: Props) {
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
     const glowAnim  = useRef(new Animated.Value(0)).current;
 
-    // Pulso del ícono
+    // Pulso del ícono — solo corre mientras la pantalla de bloqueo está visible
     useEffect(() => {
-        Animated.loop(
+        if (authState !== "locked") return;
+        const loop = Animated.loop(
             Animated.sequence([
                 Animated.timing(glowAnim, { toValue: 1, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
                 Animated.timing(glowAnim, { toValue: 0, duration: 1500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
             ])
-        ).start();
-    }, []);
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [authState]);
 
     useEffect(() => {
         initAuth();

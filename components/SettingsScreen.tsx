@@ -218,7 +218,9 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     const handleAddCustomCat = async (cat: CustomCategory) => {
         const updated = [...customCats, cat];
         setCustomCats(updated);
-        await StorageService.saveCustomCategory(cat);
+        const newSettings: UserSettings = { ...settings, customCategories: updated };
+        await StorageService.saveSettings(newSettings);
+        onSave(newSettings);
     };
 
     const handleDeleteCustomCat = async (id: string) => {
@@ -226,10 +228,11 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             { text: "Cancelar", style: "cancel" },
             {
                 text: "Eliminar", style: "destructive", onPress: async () => {
-                    // Filtrar sobre el estado local: la clave @bm_custom_categories
-                    // puede estar desincronizada con settings.customCategories.
-                    await StorageService.deleteCustomCategory(id);
-                    setCustomCats(prev => prev.filter(c => c.id !== id));
+                    const updated = customCats.filter(c => c.id !== id);
+                    setCustomCats(updated);
+                    const newSettings: UserSettings = { ...settings, customCategories: updated };
+                    await StorageService.saveSettings(newSettings);
+                    onSave(newSettings);
                 }
             },
         ]);

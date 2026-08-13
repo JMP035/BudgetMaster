@@ -4,17 +4,18 @@ import {
     Alert, KeyboardAvoidingView, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
-import { Currency, Transaction, UserSettings } from "../services/storage";
+import { Account, Currency, Transaction, UserSettings } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { C, shadow } from "../theme";
-import { detectBankName } from "../ai";
+import { SmsService } from "../services/SmsService";
 
 interface Props {
     onAdd: (tx: Transaction) => void;
     settings: UserSettings;
+    accounts?: Account[];
 }
 
-export default function AddScreen({ onAdd, settings }: Props) {
+export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [type, setType] = useState<"expense" | "income">("expense");
     const [amount, setAmount] = useState("");
     const [desc, setDesc] = useState("");
@@ -33,37 +34,33 @@ export default function AddScreen({ onAdd, settings }: Props) {
     const handleParseSms = () => {
         if (!smsText.trim()) { Alert.alert("Error", "Pega el texto de tu SMS primero."); return; }
 
-        const bank = detectBankName(smsText);
+        const parsed = SmsService.parseSimpleSms(smsText, undefined, accounts);
 
-        // Detectar moneda del SMS
-        const smsUpper = smsText.toUpperCase();
-        if (smsUpper.includes('USD') || smsUpper.includes('US$')) setCurrency('USD');
-        else if (smsUpper.includes('EUR')) setCurrency('EUR');
-        else if (smsUpper.includes('GBP') || smsUpper.includes('£')) setCurrency('£');
-        else setCurrency('Q');
-
-        // Extraer monto
-        const patterns = [
-            /[Mm]onto\s*:\s*(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/,
-            /[Aa]probada\s+por\s+(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/i,
-            /por\s+(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/i,
-            /(?:Q\.?|GTQ|USD?|EUR?)\s*([\d,]+(?:\.\d{1,2})?)/i,
-        ];
-        for (const pattern of patterns) {
-            const match = smsText.match(pattern);
-            if (match) {
-                setAmount(match[1].replace(/,/g, ''));
-                break;
-            }
+        if (!parsed) {
+            Alert.alert("No detectado", "No se reconoció como un mensaje transaccional (puede ser promocional o un formato no soportado). Ingresa la transacción manualmente.");
+            return;
         }
 
-        // Detectar tipo
-        const isIncome = smsText.toLowerCase().match(/abono|deposito|acredito|acreditado|recibida/);
-        setType(isIncome ? "income" : "expense");
-        setDesc(`${bank}: ${smsText.slice(0, 30)}...`);
+        if (parsed.kind === "installment") {
+            const inst = parsed.installment!;
+            Alert.alert(
+                "Compra a cuotas detectada",
+                `${inst.name}\nTotal: ${inst.currency} ${inst.totalAmount.toFixed(2)}\nCuotas: ${inst.totalInstallments}\nPago mensual: ${inst.currency} ${inst.monthlyPayment.toFixed(2)}\n\nRegístrala desde Cuentas → Visacuotas.`
+            );
+            setShowSmsInput(false);
+            setSmsText("");
+            return;
+        }
+
+        const tx = parsed.transaction!;
+        setCurrency(tx.currency);
+        setAmount(tx.amount.toString());
+        setType(tx.type === "income" ? "income" : "expense");
+        setCategory(tx.category);
+        setDesc(tx.description);
         setShowSmsInput(false);
         setSmsText("");
-        Alert.alert("¡Detectado!", `Mensaje de ${bank} analizado correctamente.`);
+        Alert.alert("¡Detectado!", `Mensaje de ${tx.bank || "tu banco"} analizado correctamente.`);
     };
 
     const handleAdd = async () => {

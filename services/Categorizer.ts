@@ -42,7 +42,6 @@ export function detectCategory(body: string, type: 'income' | 'expense'): string
   // ── Combustible / Gasolineras / Estaciones de servicio ───────
   if (b.match(/gasolina|combustible|estaci[oó]n\s+de\s+serv|est\.?\s*de\s*serv|gasolinera|surtidor/)) return 'fuel';
   if (b.match(/\bshell\b|\btexaco\b|\bpuma\b|\buno\b|\besso\b|\bredipsa\b|\bzeta\s*gas\b|\bpetrogas\b|\btotal\s*gas\b/)) return 'fuel';
-  if (b.match(/uber|taxi/)) return 'fuel';
 
   // ── Comida / Restaurantes ─────────────────────────────────────
   if (b.match(/pizza|mcdon|mcdonald|burger|pollo\s*campero|kfc|subway|irtra|restauran|comida|food|domino|wendy|denny|applebee|chili|friday|sushi|tacos|burritos/)) return 'food';
@@ -52,6 +51,9 @@ export function detectCategory(body: string, type: 'income' | 'expense'): string
 
   // ── ATM / Cajeros ─────────────────────────────────────────────
   if (b.match(/\batm\b|retiro\s+de\s+atm|cajero\s+autom/)) return 'atm';
+
+  // ── Transporte ────────────────────────────────────────────────
+  if (b.match(/uber|taxi/)) return 'transport';
 
   // ── Streaming ─────────────────────────────────────────────────
   if (b.match(/netflix|spotify|disney|hbo|youtube\s+premium|prime\s+video|paramount|crunchyroll/)) return 'streaming';
@@ -86,48 +88,36 @@ export function detectCategory(body: string, type: 'income' | 'expense'): string
   return 'other';
 }
 
-/** Limpia y formatea el nombre del comercio a partir del texto del SMS */
-export function buildSmartDescription(body: string, bank: string, type: 'income' | 'expense'): string {
+/**
+ * Extrae el nombre del comercio a partir del texto del SMS, probando (en orden)
+ * el patrón BAC (`en X el/DD`), BANRURAL (`en: X`), GTC (`Localidad: X`) y la
+ * lista de comercios conocidos. Limpia sufijos de cuotas ("10 PAG") y números
+ * de referencia ("REF.:0000544") antes de aplicar TitleCase, para que el
+ * nombre no arrastre ese ruido hacia visacuotas/transacciones.
+ */
+export function extractMerchantName(body: string): string | null {
   const b = body;
+
+  const cleanRaw = (raw: string): string => {
+    const cleaned = raw
+      .replace(/\s*\d{1,3}\s*(PAG(?:OS)?|CUOTAS?|MSI)\s*$/i, '')
+      .replace(/REF\.?:?\s*[A-Z0-9]{4,}/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return toTitleCase(cleaned);
+  };
 
   // BAC: "compra Aprobada por Q X.XX en NOMBRE_COMERCIO el DD/MM/YY"
   const bacMatch = b.match(/en\s+([A-Z][A-Z0-9\s]+?)\s+(?:el|El|\d{2}\/)/);
-  if (bacMatch) {
-    const place = toTitleCase(bacMatch[1].trim());
-    return `${bank} · Compra en ${place}`;
-  }
+  if (bacMatch) return cleanRaw(bacMatch[1].trim());
 
   // BANRURAL: "se debito de tu Cuenta X en: DESCRIPCION"
   const banruralDebit = b.match(/en:\s+([A-Z][A-Z0-9\s\-]+)/i);
-  if (banruralDebit) {
-    const desc = toTitleCase(banruralDebit[1].trim());
-    return `${bank} · ${desc}`;
-  }
-
-  // BANRURAL ingreso
-  if (b.toLowerCase().includes('se acredito') || b.toLowerCase().includes('acreditado')) {
-    return `${bank} · Abono recibido`;
-  }
+  if (banruralDebit) return cleanRaw(banruralDebit[1].trim());
 
   // GTC: "Consumo tarjeta de debito ... Localidad: LUGAR CIUDAD"
   const gtcLocalidad = b.match(/[Ll]ocalidad:\s*([A-Z][A-Z0-9\s]+?)(?:\s{2,}|\n|GT|$)/);
-  if (gtcLocalidad) {
-    const place = toTitleCase(gtcLocalidad[1].trim());
-    return `${bank} · Consumo en ${place}`;
-  }
-
-  if (b.toLowerCase().includes('retiro de atm')) {
-    return `${bank} · Retiro en cajero automático`;
-  }
-
-  if (b.toLowerCase().includes('debito ift')) {
-    return `${bank} · Débito por transferencia`;
-  }
-  if (b.toLowerCase().includes('transferencia')) {
-    return type === 'income'
-      ? `${bank} · Transferencia recibida`
-      : `${bank} · Transferencia enviada`;
-  }
+  if (gtcLocalidad) return cleanRaw(gtcLocalidad[1].trim());
 
   // Detectar comercios conocidos
   const knownPlaces: [RegExp, string][] = [
@@ -172,11 +162,39 @@ export function buildSmartDescription(body: string, bank: string, type: 'income'
   ];
 
   for (const [regex, name] of knownPlaces) {
-    if (regex.test(b)) {
-      return type === 'income'
-        ? `${bank} · Pago recibido de ${name}`
-        : `${bank} · Compra en ${name}`;
-    }
+    if (regex.test(b)) return name;
+  }
+
+  return null;
+}
+
+/** Limpia y formatea la descripción de una transacción a partir del texto del SMS */
+export function buildSmartDescription(body: string, bank: string, type: 'income' | 'expense'): string {
+  const b = body;
+
+  // BANRURAL ingreso
+  if (b.toLowerCase().includes('se acredito') || b.toLowerCase().includes('acreditado')) {
+    return `${bank} · Abono recibido`;
+  }
+
+  if (b.toLowerCase().includes('retiro de atm')) {
+    return `${bank} · Retiro en cajero automático`;
+  }
+
+  if (b.toLowerCase().includes('debito ift')) {
+    return `${bank} · Débito por transferencia`;
+  }
+  if (b.toLowerCase().includes('transferencia')) {
+    return type === 'income'
+      ? `${bank} · Transferencia recibida`
+      : `${bank} · Transferencia enviada`;
+  }
+
+  const merchant = extractMerchantName(body);
+  if (merchant) {
+    return type === 'income'
+      ? `${bank} · Pago recibido de ${merchant}`
+      : `${bank} · Compra en ${merchant}`;
   }
 
   return type === 'income'

@@ -137,10 +137,10 @@ export async function getAIResponse(
     if (numMatch) {
         amount = parseFloat(numMatch[0].replace(/,/g, ""));
         if (msg.includes("milon")) amount *= 1000000;
-        if (msg.includes("mil") || msg.includes(" k ")) amount *= 1000;
+        else if (msg.includes("mil") || msg.includes(" k ")) amount *= 1000;
     }
     let months = 1;
-    const timeMatch = rawMsg.match(/(\d+)\s*(mes|mess|ano|semana)/);
+    const timeMatch = msg.match(/(\d+)\s*(mes|mess|ano|semana)/);
     if (timeMatch) {
         months = parseInt(timeMatch[1]);
         if (timeMatch[2].includes("ano"))    months *= 12;

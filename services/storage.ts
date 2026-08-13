@@ -24,6 +24,7 @@ export interface Transaction {
   location?: string;
   fromAccountId?: string;   // Para transferencias
   toAccountId?: string;   // Para transferencias
+  bankRef?: string;        // Número de referencia bancaria (si el SMS lo trae)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ export interface FixedExpense {
   autoRecord: boolean;
   notes?: string;
   isActive: boolean;
+  lastTxId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -171,7 +173,6 @@ const K = {
   TRANSACTIONS: '@bm_transactions',
   SETTINGS: '@bm_settings',
   LAST_RESET: '@bm_last_reset',
-  CUSTOM_CATEGORIES: '@bm_custom_categories',
   FIXED_EXPENSES: '@bm_fixed_expenses',
   CATEGORY_BUDGETS: '@bm_category_budgets',
   SAVINGS_GOALS: '@bm_savings_goals',
@@ -397,9 +398,11 @@ export function calcFinancialScore(
 }
 
 /** Patrimonio neto total desde cuentas */
-export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: number): { totalQ: number; totalUSD: number } {
+export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: number): { totalQ: number; totalUSD: number; totalEUR: number; totalGBP: number } {
   let totalQ = 0;
   let totalUSD = 0;
+  let totalEUR = 0;
+  let totalGBP = 0;
 
   for (const acc of accounts) {
     if (!acc.isActive) continue;
@@ -408,9 +411,23 @@ export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: numb
 
     if (acc.currency === 'Q') totalQ += amount;
     if (acc.currency === 'USD') totalUSD += amount;
+    if (acc.currency === 'EUR') totalEUR += amount;
+    if (acc.currency === '£') totalGBP += amount;
   }
 
-  return { totalQ, totalUSD };
+  return { totalQ, totalUSD, totalEUR, totalGBP };
+}
+
+/**
+ * Convierte un monto entre monedas usando Q como moneda puente.
+ * Para EUR/£ no hay tasa de cambio disponible en la app: se asumen 1:1
+ * respecto a Q (misma limitación que el resto del código; no se introduce
+ * infraestructura nueva de FX).
+ */
+export function convertAmount(amount: number, from: Currency, to: Currency, exchangeRate: number): number {
+  if (from === to) return amount;
+  const q = from === 'USD' ? amount * exchangeRate : amount;
+  return to === 'USD' ? q / exchangeRate : q;
 }
 
 /** Cuota mensual pendiente de visacuotas */
@@ -470,28 +487,6 @@ export const StorageService = {
 
   async saveSettings(s: UserSettings): Promise<void> {
     try { await AsyncStorage.setItem(K.SETTINGS, JSON.stringify(s)); } catch { }
-  },
-
-  // ── Categorías custom ─────────────────────────────────────
-  async getCustomCategories(): Promise<CustomCategory[]> {
-    try {
-      const data = await AsyncStorage.getItem(K.CUSTOM_CATEGORIES);
-      return data ? JSON.parse(data) : [];
-    } catch { return []; }
-  },
-
-  async saveCustomCategory(cat: CustomCategory): Promise<CustomCategory[]> {
-    const all = await this.getCustomCategories();
-    const updated = [...all, cat];
-    await AsyncStorage.setItem(K.CUSTOM_CATEGORIES, JSON.stringify(updated));
-    return updated;
-  },
-
-  async deleteCustomCategory(id: string): Promise<CustomCategory[]> {
-    const all = await this.getCustomCategories();
-    const updated = all.filter(c => c.id !== id);
-    await AsyncStorage.setItem(K.CUSTOM_CATEGORIES, JSON.stringify(updated));
-    return updated;
   },
 
   // ── Gastos Fijos ──────────────────────────────────────────
@@ -673,15 +668,22 @@ export const StorageService = {
   /** Avanza un mes en todas las cuotas activas */
   async processMonthlyInstallments(): Promise<void> {
     const all = await this.getCreditInstallments();
-    const updated = all.map(item => {
-      if (!item.isActive || item.paidInstallments >= item.totalInstallments) return item;
+    const updated: CreditInstallment[] = [];
+    for (const item of all) {
+      if (!item.isActive || item.paidInstallments >= item.totalInstallments) {
+        updated.push(item);
+        continue;
+      }
+      if (item.accountId) {
+        await this.adjustAccountBalance(item.accountId, -item.monthlyPayment);
+      }
       const newPaid = item.paidInstallments + 1;
-      return {
+      updated.push({
         ...item,
         paidInstallments: newPaid,
         isActive: newPaid < item.totalInstallments,
-      };
-    });
+      });
+    }
     await this.saveCreditInstallments(updated);
   },
 

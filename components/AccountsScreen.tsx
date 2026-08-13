@@ -8,7 +8,7 @@ import {
 import {
   Account, AccountType, CreditInstallment,
   Currency, StorageService, Transaction, UserSettings,
-  calcNetWorthFromAccounts, getMonthlyInstallmentTotal
+  calcNetWorthFromAccounts, convertAmount, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
@@ -324,25 +324,29 @@ function InstallmentModal({ accounts, onSave, onClose, existing }: {
 // ─────────────────────────────────────────────────────────────
 // MODAL — TRANSFERENCIA ENTRE CUENTAS
 // ─────────────────────────────────────────────────────────────
-function TransferModal({ accounts, onSave, onClose }: {
+function TransferModal({ accounts, settings, onSave, onClose }: {
   accounts: Account[];
-  onSave: (from: string, to: string, amount: number, currency: Currency) => void;
+  settings: UserSettings;
+  onSave: (from: string, to: string, amount: number) => void;
   onClose: () => void;
 }) {
   const [fromId, setFromId] = useState(accounts[0]?.id || '');
   const [toId, setToId] = useState(accounts[1]?.id || '');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState<Currency>('Q');
 
   const fromAcc = accounts.find(a => a.id === fromId);
   const toAcc = accounts.find(a => a.id === toId);
+
+  const previewAmt = parseFloat(amount.replace(',', '.'));
+  const showPreview = !!fromAcc && !!toAcc && toAcc.currency !== fromAcc.currency && !isNaN(previewAmt) && previewAmt > 0;
+  const convertedPreview = showPreview ? convertAmount(previewAmt, fromAcc!.currency, toAcc!.currency, settings.exchangeRate) : 0;
 
   const handleSave = () => {
     if (fromId === toId) { Alert.alert('Error', 'Las cuentas deben ser diferentes.'); return; }
     const amt = parseFloat(amount.replace(',', '.'));
     if (isNaN(amt) || amt <= 0) { Alert.alert('Error', 'Ingresa un monto válido.'); return; }
     if (!fromAcc || fromAcc.balance < amt) { Alert.alert('Error', 'Saldo insuficiente en la cuenta origen.'); return; }
-    onSave(fromId, toId, amt, currency);
+    onSave(fromId, toId, amt);
     onClose();
   };
 
@@ -384,17 +388,15 @@ function TransferModal({ accounts, onSave, onClose }: {
           ))}
 
           <Text style={[md.lbl, { marginTop: 16 }]}>MONTO</Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
-            {(['Q', 'USD'] as Currency[]).map(c => (
-              <TouchableOpacity key={c} style={[md.currBtn, currency === c && md.currBtnActive]} onPress={() => setCurrency(c)}>
-                <Text style={[md.currTxt, currency === c && { color: C.primaryLight }]}>{c}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
           <View style={md.amtRow}>
-            <Text style={md.cur}>{currency}</Text>
+            <Text style={md.cur}>{fromAcc?.currency || 'Q'}</Text>
             <TextInput style={md.amtInput} value={amount} onChangeText={setAmount} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" autoFocus />
           </View>
+          {showPreview && (
+            <Text style={md.hint}>
+              Se acreditarán {toAcc!.currency} {convertedPreview.toFixed(2)} en {toAcc!.name} (tipo de cambio Q {settings.exchangeRate}/USD)
+            </Text>
+          )}
 
           <TouchableOpacity style={[md.saveBtn, { marginTop: 20 }]} onPress={handleSave}>
             <Ionicons name="swap-horizontal-outline" size={20} color="#1A0E00" />
@@ -435,8 +437,8 @@ export default function AccountsScreen({
     `${cur} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 
   // ── Patrimonio neto ──────────────────────────────────────
-  const { totalQ, totalUSD } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
-  const totalDebt = accounts.filter(a => a.type === 'credit' && a.isActive).reduce((s, a) => s + a.balance, 0);
+  const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
+  const totalDebt = accounts.filter(a => a.type === 'credit' && a.isActive).reduce((s, a) => s + convertAmount(a.balance, a.currency, 'Q', settings.exchangeRate), 0);
   const totalAssets = accounts.filter(a => a.type !== 'credit' && a.isActive).reduce((s, a) => {
     if (a.currency === 'Q') return s + a.balance;
     if (a.currency === 'USD') return s + a.balance * settings.exchangeRate;
@@ -454,12 +456,21 @@ export default function AccountsScreen({
   };
 
   const handleDeleteAccount = (id: string) => {
-    Alert.alert('Eliminar', '¿Borrar esta cuenta?', [
+    Alert.alert('Eliminar', '¿Borrar esta cuenta? Las visacuotas asociadas se desactivarán.', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive', onPress: async () => {
           const updated = await StorageService.deleteAccount(id);
           setAccounts(updated);
+
+          const affected = creditInstallments.filter(i => i.accountId === id && i.isActive);
+          let updatedInstallments = creditInstallments;
+          for (const inst of affected) {
+            updatedInstallments = await StorageService.updateCreditInstallment({ ...inst, isActive: false });
+          }
+          if (affected.length > 0) {
+            setCreditInstallments(updatedInstallments);
+          }
         }
       },
     ]);
@@ -467,49 +478,86 @@ export default function AccountsScreen({
 
   // ── Handlers Visacuotas ───────────────────────────────────
   const handleSaveInstallment = async (item: CreditInstallment) => {
-    const isNew = !creditInstallments.find(i => i.id === item.id);
+    const existing = creditInstallments.find(i => i.id === item.id);
+    const isNew = !existing;
     const updated = isNew
       ? await StorageService.addCreditInstallment(item)
       : await StorageService.updateCreditInstallment(item);
     setCreditInstallments(updated);
 
-    // Actualizar saldo de la tarjeta
+    // Actualizar saldo de la(s) tarjeta(s) involucradas
     if (isNew) {
-      await StorageService.adjustAccountBalance(item.accountId, item.totalAmount);
-      const accs = await StorageService.getAccounts();
-      setAccounts(accs);
+      if (item.accountId) {
+        await StorageService.adjustAccountBalance(item.accountId, item.totalAmount);
+      }
+    } else if (existing) {
+      if (item.accountId === existing.accountId) {
+        if (item.accountId && item.totalAmount !== existing.totalAmount) {
+          const delta = item.totalAmount - existing.totalAmount;
+          await StorageService.adjustAccountBalance(item.accountId, delta);
+        }
+      } else {
+        // Cambió de tarjeta (o de/hacia sin tarjeta): revertir remanente en la anterior, aplicar en la nueva
+        if (existing.accountId) {
+          const remainingOld = existing.totalAmount - existing.monthlyPayment * existing.paidInstallments;
+          await StorageService.adjustAccountBalance(existing.accountId, -remainingOld);
+        }
+        if (item.accountId) {
+          const remainingNew = item.totalAmount - item.monthlyPayment * item.paidInstallments;
+          await StorageService.adjustAccountBalance(item.accountId, remainingNew);
+        }
+      }
     }
+
+    const accs = await StorageService.getAccounts();
+    setAccounts(accs);
   };
 
   const handleDeleteInstallment = (id: string) => {
+    const item = creditInstallments.find(i => i.id === id);
     Alert.alert('Eliminar', '¿Borrar esta visacuota?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive', onPress: async () => {
           const updated = await StorageService.deleteCreditInstallment(id);
           setCreditInstallments(updated);
+
+          if (item?.accountId) {
+            const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
+            await StorageService.adjustAccountBalance(item.accountId, -remaining);
+            const accs = await StorageService.getAccounts();
+            setAccounts(accs);
+          }
         }
       },
     ]);
   };
 
   // ── Handler Transferencia ─────────────────────────────────
-  const handleTransfer = async (fromId: string, toId: string, amount: number, currency: Currency) => {
+  const handleTransfer = async (fromId: string, toId: string, amount: number) => {
+    const fromAcc = accounts.find(a => a.id === fromId);
+    const toAcc = accounts.find(a => a.id === toId);
+    if (!fromAcc || !toAcc) return;
+
     await StorageService.adjustAccountBalance(fromId, -amount);
-    await StorageService.adjustAccountBalance(toId, amount);
+    const amountToCredit = convertAmount(amount, fromAcc.currency, toAcc.currency, settings.exchangeRate);
+    await StorageService.adjustAccountBalance(toId, amountToCredit);
     const accs = await StorageService.getAccounts();
     setAccounts(accs);
 
     // Registrar como transacción de transferencia
+    const description = fromAcc.currency !== toAcc.currency
+      ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${fromAcc.currency} ${amount.toFixed(2)} → ${toAcc.currency} ${amountToCredit.toFixed(2)})`
+      : `Transferencia: ${fromAcc.name} → ${toAcc.name}`;
     const tx: Transaction = {
       id: `transfer_${Date.now()}`,
       amount,
-      description: `Transferencia: ${accounts.find(a => a.id === fromId)?.name} → ${accounts.find(a => a.id === toId)?.name}`,
+      description,
       category: 'transfer',
       date: new Date().toISOString(),
       type: 'transfer',
       source: 'manual',
-      currency,
+      currency: fromAcc.currency,
       fromAccountId: fromId,
       toAccountId: toId,
     };
@@ -570,6 +618,27 @@ export default function AccountsScreen({
                 <Text style={s.summaryLbl}>TIPO CAMBIO</Text>
                 <Text style={[s.summaryVal, { color: C.textMuted, fontSize: 13 }]}>Q {settings.exchangeRate}/USD</Text>
               </View>
+            </View>
+          )}
+          {(totalEUR !== 0 || totalGBP !== 0) && (
+            <View style={[s.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.separator }]}>
+              {totalEUR !== 0 && (
+                <View style={s.summaryItem}>
+                  <Text style={s.summaryLbl}>NETO EUR</Text>
+                  <Text style={[s.summaryVal, { color: totalEUR >= 0 ? '#4A9EE8' : C.danger }]}>
+                    {totalEUR < 0 ? '-' : ''}EUR {Math.abs(totalEUR).toFixed(2)}
+                  </Text>
+                </View>
+              )}
+              {totalEUR !== 0 && totalGBP !== 0 && <View style={s.summaryDivider} />}
+              {totalGBP !== 0 && (
+                <View style={s.summaryItem}>
+                  <Text style={s.summaryLbl}>NETO £</Text>
+                  <Text style={[s.summaryVal, { color: totalGBP >= 0 ? '#4A9EE8' : C.danger }]}>
+                    {totalGBP < 0 ? '-' : ''}£ {Math.abs(totalGBP).toFixed(2)}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -723,7 +792,7 @@ export default function AccountsScreen({
           <InstallmentModal accounts={accounts} existing={editingInst} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
         )}
         {showTransfer && accounts.length >= 2 && (
-          <TransferModal accounts={accounts.filter(a => a.isActive)} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />
+          <TransferModal accounts={accounts.filter(a => a.isActive)} settings={settings} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />
         )}
       </View>
     </Modal>
