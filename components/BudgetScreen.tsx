@@ -13,6 +13,7 @@ import {
 import { EXPENSE_CATEGORIES, getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
+import { useTutorialRef } from "../context/TutorialContext";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -54,6 +55,11 @@ const TAB_LABELS = ["Gastos Fijos", "Categorías", "Metas"];
 function InternalTabs({ active, onChange }: { active: number; onChange: (i: number) => void }) {
     const indicatorX = useRef(new Animated.Value(0)).current;
 
+    const fixedRef = useTutorialRef('budget_tab_fixed');
+    const categoriesRef = useTutorialRef('budget_tab_categories');
+    const goalsRef = useTutorialRef('budget_tab_goals');
+    const tabRefs = [fixedRef, categoriesRef, goalsRef];
+
     const handlePress = (i: number) => {
         Animated.spring(indicatorX, {
             toValue: i,
@@ -73,9 +79,11 @@ function InternalTabs({ active, onChange }: { active: number; onChange: (i: numb
         <View style={t.container}>
             <Animated.View style={[t.indicator, { left }]} />
             {TAB_LABELS.map((label, i) => (
-                <TouchableOpacity key={i} style={t.tab} onPress={() => handlePress(i)}>
-                    <Text style={[t.label, active === i && t.labelActive]}>{label}</Text>
-                </TouchableOpacity>
+                <View key={i} ref={tabRefs[i]} collapsable={false} style={{ flex: 1 }}>
+                    <TouchableOpacity style={t.tab} onPress={() => handlePress(i)}>
+                        <Text style={[t.label, active === i && t.labelActive]}>{label}</Text>
+                    </TouchableOpacity>
+                </View>
             ))}
         </View>
     );

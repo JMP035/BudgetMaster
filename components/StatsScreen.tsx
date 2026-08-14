@@ -410,9 +410,9 @@ export default function StatsScreen({ transactions, settings }: Props) {
                 )}
             </StatCard>
 
-            {/* STAT 3 — Patrimonio histórico */}
-            <StatCard icon="diamond-outline" title="Patrimonio Neto Histórico" value={`Q ${(netWorthByMonth[netWorthByMonth.length - 1] || 0).toFixed(0)}`} color={C.primaryLight}
-                subtitle="Evolución acumulada de tu patrimonio en Q en los últimos 6 meses."
+            {/* STAT 3 — Ahorro acumulado (flujo de transacciones, no saldo de cuentas) */}
+            <StatCard icon="diamond-outline" title="Ahorro Acumulado" value={`Q ${(netWorthByMonth[netWorthByMonth.length - 1] || 0).toFixed(0)}`} color={C.primaryLight}
+                subtitle="Ingresos menos gastos registrados en Q, acumulado en los últimos 6 meses. No es el saldo de tus cuentas (eso lo ves en Cuentas y en el Dashboard) — es tu tendencia de ahorro según lo que fuiste registrando."
             >
                 <View style={{ marginTop: 12 }}>
                     <VertBars data={netWorthByMonth} color={C.primaryLight} labels={last6Months.map(m => m.label)} />
@@ -464,9 +464,9 @@ export default function StatsScreen({ transactions, settings }: Props) {
                 subtitle={velocityDiff > 0 ? `Gastás Q${velocityDiff.toFixed(0)} más que el mes pasado (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás Q${Math.abs(velocityDiff).toFixed(0)} menos que el mes pasado. ¡Buen trabajo!` : "Sin datos para comparar."}
             />
 
-            {/* STAT 9 — Proyección patrimonio */}
-            <StatCard icon="rocket-outline" title="Proyección de Patrimonio" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
-                subtitle={`A tu ritmo actual de ahorro (Q${avgMonthlySav.toFixed(0)}/mes), tu patrimonio en 12 meses sería Q${Math.max(proj12, 0).toFixed(0)}.${avgMonthlySav < 0 ? " ⚠️ Estás en negativo." : ""}`}
+            {/* STAT 9 — Proyección de ahorro (misma métrica de flujo que la tarjeta de arriba) */}
+            <StatCard icon="rocket-outline" title="Proyección de Ahorro" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
+                subtitle={`A tu ritmo actual de ahorro (Q${avgMonthlySav.toFixed(0)}/mes), tu ahorro acumulado en 12 meses sería Q${Math.max(proj12, 0).toFixed(0)}.${avgMonthlySav < 0 ? " ⚠️ Estás en negativo." : ""} (Basado en transacciones registradas, no en el saldo de tus cuentas.)`}
             />
 
             <View style={{ height: 120 }} />

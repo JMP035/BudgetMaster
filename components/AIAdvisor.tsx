@@ -8,7 +8,7 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     SavingsGoal, Transaction, UserSettings,
-    calcNetWorthFromAccounts, getCurrentFinancialPeriod, getDaysUntilNextPayment
+    calcCreditCommitments, calcNetWorthFromAccounts, getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
 import { C, shadow } from "../theme";
 
@@ -84,6 +84,12 @@ function buildFinancialContext(
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(activeAccounts, settings.exchangeRate);
     const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
 
+    // Compromisos de crédito (separados del patrimonio: tarjetas + visacuotas pendientes)
+    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(activeAccounts, creditInstallments, settings.exchangeRate);
+    const creditCommitmentsSummary = activeAccounts.filter(a => a.type === 'credit').length > 0
+        ? activeAccounts.filter(a => a.type === 'credit').map(a => `  · ${a.name}: Q${a.balance.toFixed(2)}`).join("\n")
+        : "  · Sin tarjetas de crédito registradas";
+
     // Gastos fijos
     const fixedTotal = fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0);
     const fixedPaid  = fixedExpenses.filter(f => f.isActive && f.isPaid).reduce((s, f) => s + f.amount, 0);
@@ -135,7 +141,13 @@ ${history}
 
 ── CUENTAS BANCARIAS ──
 ${accountsSummary}
-Patrimonio total en cuentas: Q${totalBalance.toFixed(2)}
+Patrimonio total en cuentas (sin incluir tarjetas de crédito): Q${totalBalance.toFixed(2)}
+
+── COMPROMISOS DE CRÉDITO (separados del patrimonio) ──
+${creditCommitmentsSummary}
+Saldo deudor total en tarjetas: Q${cardBalanceQ.toFixed(2)}
+Pendiente total en visacuotas: Q${installmentsPendingQ.toFixed(2)}
+Nota: estos compromisos NO se restan del patrimonio total. Se analizan aparte para no mezclar activos con deuda de tarjeta.
 
 ── GASTOS FIJOS MENSUALES ──
 Total: Q${fixedTotal.toFixed(0)} | Pagado: Q${fixedPaid.toFixed(0)} | Pendiente: Q${fixedPending.toFixed(0)}
@@ -189,7 +201,7 @@ CONTEXTO GUATEMALTECO — RECONOCIMIENTO DE GASTOS:
 SISTEMA DE DEUDAS Y CUOTAS:
 - Las "visacuotas" son compras financiadas a través de la tarjeta de crédito en cuotas mensuales
 - Si el usuario tiene visacuotas activas, incluílas en el análisis de flujo de caja mensual
-- La deuda de tarjeta de crédito reduce el patrimonio neto
+- El patrimonio total y los compromisos de crédito (saldo de tarjetas + pendiente de visacuotas) se muestran SEPARADOS en el contexto: el patrimonio NO resta la deuda de tarjeta. Nunca digas que la deuda de tarjeta "reduce" el patrimonio neto — son cosas distintas que no deben mezclarse. Si el usuario pregunta por su situación completa, mencioná ambos por separado.
 - Un ratio deuda/ingreso mayor al 30% es zona de alerta
 
 CAPACIDADES:
@@ -231,32 +243,43 @@ async function callGemini(
     ];
 
     const trimmedKey = apiKey.trim();
-    const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmedKey}`,
-        {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                contents: messages,
-                generationConfig: {
-                    maxOutputTokens: 400,
-                    temperature: 0.7,
-                    topP: 0.9,
-                },
-            }),
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 14000);
+
+    try {
+        const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmedKey}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    contents: messages,
+                    generationConfig: {
+                        maxOutputTokens: 400,
+                        temperature: 0.7,
+                        topP: 0.9,
+                    },
+                }),
+                signal: controller.signal,
+            }
+        );
+
+        clearTimeout(timeoutId);
+
+        if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+
+        const data = await res.json();
+        if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
+            return data.candidates[0].content.parts[0].text
+                .replace(/\*\*/g, "")
+                .replace(/\*/g, "")
+                .trim();
         }
-    );
-
-    if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
-
-    const data = await res.json();
-    if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        return data.candidates[0].content.parts[0].text
-            .replace(/\*\*/g, "")
-            .replace(/\*/g, "")
-            .trim();
+        throw new Error("Respuesta vacía de Gemini");
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
     }
-    throw new Error("Respuesta vacía de Gemini");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -286,6 +309,8 @@ function getLocalResponse(
     const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + c.monthlyPayment, 0);
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
+    // Compromisos de crédito (separados del patrimonio: tarjetas + visacuotas pendientes)
+    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(accounts.filter(a => a.isActive), creditInstallments, settings.exchangeRate);
 
     const msg = message.toLowerCase();
 
@@ -316,7 +341,7 @@ function getLocalResponse(
         return `Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}. Para mejores consejos de ahorro, configurá una meta en la sección de Presupuesto.`;
     }
     if (msg.match(/deuda|tarjeta|credito|cuota|visa/)) {
-        return `Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas y Q${settings.activeDebts || 0} en deudas declaradas. Eso representa Q${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
+        return `Compromisos de crédito (separados de tu patrimonio): Q${cardBalanceQ.toFixed(0)} de saldo en tarjetas y Q${installmentsPendingQ.toFixed(0)} pendientes en visacuotas. Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas, lo que representa ${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
     }
     if (msg.match(/cuenta|banco|saldo|billetera/)) {
         if (accounts.filter(a => a.isActive).length > 0)
@@ -484,7 +509,10 @@ export default function AIAdvisor({
             }
         } catch (e: any) {
             const errStr = e.message || "";
-            if (errStr.includes("429")) {
+            if (e.name === "AbortError" || errStr.toLowerCase().includes("abort")) {
+                const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
+                response = `⏱️ Gemini tardó demasiado en responder (más de 14s). Te respondo en modo local mientras tanto: ${offlineResp}`;
+            } else if (errStr.includes("429")) {
                 response = "⚠️ Límite de solicitudes alcanzado en Gemini. Espera unos segundos e intenta de nuevo.";
             } else if (errStr.includes("400")) {
                 response = "⚠️ Error 400 (Solicitud incorrecta): Verifica que tu API Key de Gemini en Ajustes esté bien escrita y no contenga espacios adicionales.";

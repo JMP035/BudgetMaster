@@ -103,7 +103,7 @@ Si no querés dar permiso de SMS (o usás iPhone), tocá **"Leer SMS"** arriba a
 
 Tocá el botón **⟳** del Dashboard. La app:
 
-1. Lee hasta los últimos **300 SMS** de tu bandeja de entrada (máximo 3 meses hacia atrás).
+1. Lee hasta los últimos **2000 SMS** de tu bandeja de entrada (máximo 3 meses hacia atrás).
 2. Filtra **solo los mensajes con palabras bancarias** (compra, débito, abono, retiro, transferencia, etc.). Nunca procesa mensajes personales.
 3. Detecta monto, moneda, tipo, banco (BAC, BANRURAL, GTC, BANTRAB, PROMERICA…) y categoría (ej. "SHELL" → Combustible, "WALMART" → Supermercado, "NETFLIX" → Streaming).
 4. Genera una descripción limpia (ej. "BAC · Compra en Walmart").

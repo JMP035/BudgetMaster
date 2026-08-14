@@ -218,12 +218,13 @@ function TutorialMenu({ onSelect, onClose, completed }: MenuProps) {
 interface Props {
     activeTutorialId?: string;
     onTutorialEnd?: () => void;
+    showMenu?: boolean;
+    onCloseMenu?: () => void;
 }
 
-export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Props) {
+export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu }: Props) {
     const { measureElement } = useTutorial();
 
-    const [showMenu, setShowMenu] = useState(false);
     const [activeTutorial, setActiveTutorial] = useState<Tutorial | null>(null);
     const [stepIndex, setStepIndex] = useState(0);
     const [spotlightRect, setSpotlightRect] = useState<Rect | null>(null);
@@ -317,8 +318,8 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd }: Pro
             {showMenu && (
                 <TutorialMenu
                     completed={completed}
-                    onSelect={t => { setShowMenu(false); startTutorial(t); }}
-                    onClose={() => setShowMenu(false)}
+                    onSelect={t => { onCloseMenu?.(); startTutorial(t); }}
+                    onClose={() => onCloseMenu?.()}
                 />
             )}
         </>

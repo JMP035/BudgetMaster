@@ -65,7 +65,7 @@ export const SmsService = {
       return { transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 };
     }
 
-    const filter = { box: 'inbox', indexFrom: 0, maxCount: 300 };
+    const filter = { box: 'inbox', indexFrom: 0, maxCount: 2000 };
     const accounts = await StorageService.getAccounts();
 
     return new Promise((resolve, reject) => {

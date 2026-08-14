@@ -149,6 +149,7 @@ function AppContent() {
   const [showAI, setShowAI] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
+  const [showTutorialMenu, setShowTutorialMenu] = useState(false);
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -189,6 +190,14 @@ function AppContent() {
   const hUpdate = async (tx: Transaction) => {
     const updated = await StorageService.updateTransaction(tx);
     setTxs(updated);
+  };
+
+  const hConvertToInstallment = async (item: CreditInstallment, originalTxId: string) => {
+    const { installments, accounts: accs } = await StorageService.addInstallmentAndAdjustBalance(item);
+    setCreditInstallments(installments);
+    setAccounts(accs);
+    const updatedTxs = await StorageService.deleteTransaction(originalTxId);
+    setTxs(updatedTxs);
   };
 
   const hAdd = async (tx: Transaction) => {
@@ -264,7 +273,7 @@ function AppContent() {
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
 
   return (
-    <TutorialMenuProvider onOpen={() => { }}>
+    <TutorialMenuProvider onOpen={() => setShowTutorialMenu(true)}>
       <View style={s.root}>
         <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
 
@@ -291,6 +300,8 @@ function AppContent() {
               settings={settings}
               onDelete={hDelete}
               onUpdate={hUpdate}
+              accounts={accounts}
+              onConvertToInstallment={hConvertToInstallment}
             />
           )}
           {tab === "add" && !showAI && (
@@ -364,6 +375,8 @@ function AppContent() {
         <TutorialOverlay
           activeTutorialId={autoTutorial}
           onTutorialEnd={() => setAutoTutorial(undefined)}
+          showMenu={showTutorialMenu}
+          onCloseMenu={() => setShowTutorialMenu(false)}
         />
       </View>
     </TutorialMenuProvider>

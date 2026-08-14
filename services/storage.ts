@@ -397,7 +397,13 @@ export function calcFinancialScore(
   return Math.max(0, Math.min(100, score));
 }
 
-/** Patrimonio neto total desde cuentas */
+/**
+ * Patrimonio neto total desde cuentas.
+ * Las cuentas de tipo 'credit' (tarjetas) se EXCLUYEN por completo: no son
+ * activos ni se restan como pasivo aquí. Sus saldos y el pendiente de
+ * visacuotas se reportan aparte como "compromisos de crédito"
+ * (ver calcCreditCommitments) para no mezclar patrimonio con deuda de tarjeta.
+ */
 export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: number): { totalQ: number; totalUSD: number; totalEUR: number; totalGBP: number } {
   let totalQ = 0;
   let totalUSD = 0;
@@ -406,8 +412,8 @@ export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: numb
 
   for (const acc of accounts) {
     if (!acc.isActive) continue;
-    const isCredit = acc.type === 'credit';
-    const amount = isCredit ? -Math.abs(acc.balance) : acc.balance;
+    if (acc.type === 'credit') continue;
+    const amount = acc.balance;
 
     if (acc.currency === 'Q') totalQ += amount;
     if (acc.currency === 'USD') totalUSD += amount;
@@ -428,6 +434,26 @@ export function convertAmount(amount: number, from: Currency, to: Currency, exch
   if (from === to) return amount;
   const q = from === 'USD' ? amount * exchangeRate : amount;
   return to === 'USD' ? q / exchangeRate : q;
+}
+
+/**
+ * Compromisos de crédito, calculados aparte del patrimonio neto:
+ * - cardBalanceQ: saldo deudor actual de las tarjetas de crédito activas (convertido a Q)
+ * - installmentsPendingQ: monto pendiente (no el total) de las visacuotas activas (convertido a Q)
+ */
+export function calcCreditCommitments(accounts: Account[], installments: CreditInstallment[], exchangeRate: number): { cardBalanceQ: number; installmentsPendingQ: number } {
+  const cardBalanceQ = accounts
+    .filter(a => a.type === 'credit' && a.isActive)
+    .reduce((s, a) => s + convertAmount(Math.abs(a.balance), a.currency, 'Q', exchangeRate), 0);
+
+  const installmentsPendingQ = installments
+    .filter(i => i.isActive)
+    .reduce((s, i) => {
+      const pending = Math.max(0, i.totalAmount - i.monthlyPayment * i.paidInstallments);
+      return s + convertAmount(pending, i.currency, 'Q', exchangeRate);
+    }, 0);
+
+  return { cardBalanceQ, installmentsPendingQ };
 }
 
 /** Cuota mensual pendiente de visacuotas */
@@ -649,6 +675,19 @@ export const StorageService = {
     const updated = [...all, item];
     await this.saveCreditInstallments(updated);
     return updated;
+  },
+
+  /** Agrega una visacuota nueva y ajusta el saldo de la cuenta asociada (usado al convertir un movimiento existente en visacuota) */
+  async addInstallmentAndAdjustBalance(item: CreditInstallment): Promise<{ installments: CreditInstallment[]; accounts: Account[] }> {
+    const installments = await this.addCreditInstallment(item);
+    if (item.accountId) {
+      // Usar el remanente (no el total) — cubre tanto visacuotas retroactivas
+      // (paidInstallments > 0) como conversión de un movimiento ya pagado.
+      const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
+      await this.adjustAccountBalance(item.accountId, remaining);
+    }
+    const accounts = await this.getAccounts();
+    return { installments, accounts };
   },
 
   async updateCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {

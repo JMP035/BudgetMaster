@@ -96,9 +96,9 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Escribí el monto. Si tenés una cuenta asignada, ese saldo se actualizará automáticamente.',
             },
             {
-                id: 'add_5', elementId: 'add_account', position: 'bottom', icon: 'wallet-outline', padding: 8,
-                title: 'Asignar Cuenta (Opcional)',
-                description: 'Podés asignar este gasto a una cuenta bancaria. El saldo se actualiza automáticamente.',
+                id: 'add_5', elementId: 'add_description', position: 'bottom', icon: 'pencil-outline', padding: 8,
+                title: 'Agregá una Descripción',
+                description: 'Opcional pero recomendado: escribí en qué gastaste o de dónde viene el dinero. Te ayuda a identificar la transacción después.',
             },
             {
                 id: 'add_6', elementId: 'add_category', position: 'top', icon: 'pricetag-outline', padding: 8,
@@ -116,7 +116,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_1', elementId: 'sync_btn', position: 'bottom', icon: 'sync-outline', padding: 16,
                 title: 'Botón de Sincronización',
-                description: 'Este botón lee los últimos 300 SMS de tu bandeja, detecta los bancarios y los registra automáticamente.',
+                description: 'Este botón lee los últimos 2000 SMS de tu bandeja, detecta los bancarios y los registra automáticamente.',
             },
             {
                 id: 'sms_2', position: 'center', icon: 'shield-outline',

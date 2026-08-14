@@ -4,9 +4,10 @@ import {
     Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
-import { Currency, StorageService, Transaction, UserSettings } from "../services/storage";
+import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
 import { C, shadow } from "../theme";
+import InstallmentModal from "./InstallmentModal";
 
 // ─────────────────────────────────────────────────────────────
 // MODAL DE DETALLE / EDICIÓN
@@ -17,9 +18,10 @@ interface DetailModalProps {
     onClose: () => void;
     onSave: (updated: Transaction) => void;
     onDelete: (id: string) => void;
+    onConvertToInstallment: () => void;
 }
 
-function DetailModal({ tx, settings, onClose, onSave, onDelete }: DetailModalProps) {
+function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInstallment }: DetailModalProps) {
     const [category, setCategory] = useState(tx.category);
     const [currency, setCurrency] = useState<Currency>(tx.currency || 'Q');
     const [description, setDescription] = useState(tx.description);
@@ -167,6 +169,11 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete }: DetailModalPro
                             <Text style={m.saveBtnTxt}>{saving ? "Guardando..." : "Guardar Cambios"}</Text>
                         </TouchableOpacity>
 
+                        <TouchableOpacity style={m.convertBtn} onPress={onConvertToInstallment}>
+                            <Ionicons name="card-outline" size={18} color={C.primaryLight} />
+                            <Text style={m.convertBtnTxt}>Convertir a Visacuota</Text>
+                        </TouchableOpacity>
+
                         <TouchableOpacity style={m.deleteBtn} onPress={handleDelete}>
                             <Ionicons name="trash-outline" size={18} color={C.danger} />
                             <Text style={m.deleteBtnTxt}>Eliminar Transacción</Text>
@@ -258,13 +265,16 @@ interface Props {
     settings: UserSettings;
     onDelete: (id: string) => void;
     onUpdate: (tx: Transaction) => void;
+    accounts: Account[];
+    onConvertToInstallment: (item: CreditInstallment, originalTxId: string) => void;
 }
 
-export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate }: Props) {
+export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, accounts, onConvertToInstallment }: Props) {
     const [filter, setFilter] = useState<"all" | "expense" | "income">("all");
     const [currency, setCurrency] = useState<"all" | "Q" | "USD" | "EUR">("all");
     const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<Transaction | null>(null);
+    const [convertingTx, setConvertingTx] = useState<Transaction | null>(null);
 
     // Memoizar el filtrado para no recalcular en cada render
     const filtered = useMemo(() => transactions
@@ -375,6 +385,17 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     onClose={() => setSelected(null)}
                     onSave={(updated) => { onUpdate(updated); setSelected(null); }}
                     onDelete={(id) => { onDelete(id); setSelected(null); }}
+                    onConvertToInstallment={() => { setConvertingTx(selected); setSelected(null); }}
+                />
+            )}
+
+            {/* MODAL CONVERTIR A VISACUOTA */}
+            {convertingTx && (
+                <InstallmentModal
+                    accounts={accounts}
+                    prefill={{ name: convertingTx.description, total: convertingTx.amount.toString(), currency: convertingTx.currency }}
+                    onSave={(item) => { onConvertToInstallment(item, convertingTx.id); setConvertingTx(null); }}
+                    onClose={() => setConvertingTx(null)}
                 />
             )}
         </KeyboardAvoidingView>
@@ -446,6 +467,8 @@ const m = StyleSheet.create({
     smsTxt: { color: C.textSub, fontSize: 12, lineHeight: 18 },
     saveBtn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 20, ...shadow(C.primaryGlow, 10, 0.4) },
     saveBtnTxt: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
+    convertBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: C.primary + "44", backgroundColor: C.primary + "11" },
+    convertBtnTxt: { color: C.primaryLight, fontSize: 14, fontWeight: "700" },
     deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: C.danger + "44", backgroundColor: C.danger + "11" },
     deleteBtnTxt: { color: C.danger, fontSize: 14, fontWeight: "700" },
 });

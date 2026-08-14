@@ -8,10 +8,11 @@ import {
 import {
   Account, AccountType, CreditInstallment,
   Currency, StorageService, Transaction, UserSettings,
-  calcNetWorthFromAccounts, convertAmount, getMonthlyInstallmentTotal
+  calcCreditCommitments, calcNetWorthFromAccounts, convertAmount, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
+import InstallmentModal from "./InstallmentModal";
 
 // ─────────────────────────────────────────────────────────────
 // CONFIGURACIÓN DE TIPOS DE CUENTA
@@ -185,143 +186,6 @@ function AccountModal({ onSave, onClose, existing }: {
 }
 
 // ─────────────────────────────────────────────────────────────
-// MODAL — NUEVA VISACUOTA
-// ─────────────────────────────────────────────────────────────
-function InstallmentModal({ accounts, onSave, onClose, existing }: {
-  accounts: Account[]; onSave: (i: CreditInstallment) => void;
-  onClose: () => void; existing?: CreditInstallment;
-}) {
-  const creditAccounts = accounts.filter(a => a.type === 'credit' && a.isActive);
-  const [accountId, setAccountId] = useState(existing?.accountId || creditAccounts[0]?.id || '');
-  const [name, setName] = useState(existing?.name || '');
-  const [total, setTotal] = useState(existing?.totalAmount.toString() || '');
-  const [monthly, setMonthly] = useState(existing?.monthlyPayment.toString() || '');
-  const [installments, setInstallments] = useState(existing?.totalInstallments.toString() || '');
-  const [category, setCategory] = useState(existing?.category || 'shopping');
-  const [notes, setNotes] = useState(existing?.notes || '');
-
-  const selectedAcc = accounts.find(a => a.id === accountId);
-
-  // Auto-calcular cuotas al cambiar total/mensual
-  React.useEffect(() => {
-    const t = parseFloat(total);
-    const m = parseFloat(monthly);
-    if (t > 0 && m > 0) setInstallments(Math.ceil(t / m).toString());
-  }, [total, monthly]);
-
-  const handleSave = () => {
-    if (!name.trim()) { Alert.alert('Error', 'Ingresa el nombre de la compra.'); return; }
-    if (!accountId) { Alert.alert('Error', 'Selecciona una tarjeta de crédito.'); return; }
-    const t = parseFloat(total.replace(',', '.'));
-    const m = parseFloat(monthly.replace(',', '.'));
-    const n = parseInt(installments);
-    if (isNaN(t) || isNaN(m) || isNaN(n)) { Alert.alert('Error', 'Ingresa montos válidos.'); return; }
-
-    const item: CreditInstallment = {
-      id: existing?.id || `ci_${Date.now()}`,
-      accountId,
-      name: name.trim(),
-      totalAmount: t,
-      monthlyPayment: m,
-      totalInstallments: n,
-      paidInstallments: existing?.paidInstallments || 0,
-      startDate: existing?.startDate || new Date().toISOString(),
-      currency: selectedAcc?.currency || 'Q',
-      category,
-      isActive: true,
-      notes: notes.trim() || undefined,
-    };
-    onSave(item);
-    onClose();
-  };
-
-  return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={md.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
-          <View style={md.sheet}>
-            <View style={md.header}>
-              <Text style={md.title}>{existing ? 'Editar' : 'Nueva'} Visacuota</Text>
-              <TouchableOpacity onPress={onClose} style={md.closeBtn}>
-                <Ionicons name="close" size={22} color={C.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {creditAccounts.length === 0 ? (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Ionicons name="card-outline" size={48} color={C.textMuted} />
-                  <Text style={{ color: C.textMuted, fontSize: 14, textAlign: 'center', marginTop: 12 }}>
-                    Primero agrega una tarjeta de crédito en la sección de Cuentas.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Text style={md.lbl}>TARJETA DE CRÉDITO</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {creditAccounts.map(acc => (
-                        <TouchableOpacity key={acc.id} style={[md.typeChip, accountId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + '22' }]} onPress={() => setAccountId(acc.id)}>
-                          <Ionicons name="card-outline" size={16} color={accountId === acc.id ? acc.color : C.textMuted} />
-                          <Text style={[md.typeChipTxt, accountId === acc.id && { color: acc.color }]}>{acc.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-
-                  <Text style={md.lbl}>NOMBRE DE LA COMPRA</Text>
-                  <TextInput style={md.input} value={name} onChangeText={setName} placeholder="Ej: Laptop, Celular, Refrigeradora..." placeholderTextColor={C.textMuted} autoFocus />
-
-                  <Text style={md.lbl}>MONTO TOTAL</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{selectedAcc?.currency || 'Q'}</Text>
-                    <TextInput style={md.amtInput} value={total} onChangeText={setTotal} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
-                  </View>
-
-                  <Text style={md.lbl}>CUOTA MENSUAL</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{selectedAcc?.currency || 'Q'}</Text>
-                    <TextInput style={md.amtInput} value={monthly} onChangeText={setMonthly} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
-                  </View>
-
-                  <Text style={md.lbl}>TOTAL DE CUOTAS (auto-calculado)</Text>
-                  <View style={md.amtRow}>
-                    <TextInput style={md.amtInput} value={installments} onChangeText={setInstallments} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
-                    <Text style={md.cur}>cuotas</Text>
-                  </View>
-                  <Text style={md.hint}>La app descuenta una cuota automáticamente cada mes.</Text>
-
-                  <Text style={md.lbl}>CATEGORÍA</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {EXPENSE_CATEGORIES.slice(0, 10).map(cat => (
-                        <TouchableOpacity key={cat.id} style={[md.typeChip, category === cat.id && { borderColor: cat.color, backgroundColor: cat.color + '22' }]} onPress={() => setCategory(cat.id)}>
-                          <Ionicons name={cat.icon} size={14} color={category === cat.id ? cat.color : C.textMuted} />
-                          <Text style={[md.typeChipTxt, category === cat.id && { color: cat.color }]}>{cat.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-
-                  <Text style={md.lbl}>NOTAS (Opcional)</Text>
-                  <TextInput style={md.input} value={notes} onChangeText={setNotes} placeholder="Ej: Comprado en Elektra, 12 cuotas sin interés..." placeholderTextColor={C.textMuted} />
-
-                  <TouchableOpacity style={md.saveBtn} onPress={handleSave}>
-                    <Ionicons name="card-outline" size={20} color="#1A0E00" />
-                    <Text style={md.saveBtnTxt}>Guardar Visacuota</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
 // MODAL — TRANSFERENCIA ENTRE CUENTAS
 // ─────────────────────────────────────────────────────────────
 function TransferModal({ accounts, settings, onSave, onClose }: {
@@ -438,7 +302,7 @@ export default function AccountsScreen({
 
   // ── Patrimonio neto ──────────────────────────────────────
   const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
-  const totalDebt = accounts.filter(a => a.type === 'credit' && a.isActive).reduce((s, a) => s + convertAmount(a.balance, a.currency, 'Q', settings.exchangeRate), 0);
+  const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(accounts, creditInstallments, settings.exchangeRate);
   const totalAssets = accounts.filter(a => a.type !== 'credit' && a.isActive).reduce((s, a) => {
     if (a.currency === 'Q') return s + a.balance;
     if (a.currency === 'USD') return s + a.balance * settings.exchangeRate;
@@ -488,7 +352,10 @@ export default function AccountsScreen({
     // Actualizar saldo de la(s) tarjeta(s) involucradas
     if (isNew) {
       if (item.accountId) {
-        await StorageService.adjustAccountBalance(item.accountId, item.totalAmount);
+        // Usar el remanente (no el total) para soportar visacuotas retroactivas
+        // que ya llevan cuotas pagadas al momento de registrarlas.
+        const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
+        await StorageService.adjustAccountBalance(item.accountId, remaining);
       }
     } else if (existing) {
       if (item.accountId === existing.accountId) {
@@ -589,8 +456,8 @@ export default function AccountsScreen({
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
-              <Text style={s.summaryLbl}>DEUDAS</Text>
-              <Text style={[s.summaryVal, { color: C.danger }]}>Q {totalDebt.toFixed(0)}</Text>
+              <Text style={s.summaryLbl}>TARJETAS</Text>
+              <Text style={[s.summaryVal, { color: C.danger }]}>Q {cardBalanceQ.toFixed(0)}</Text>
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
@@ -600,6 +467,14 @@ export default function AccountsScreen({
               </Text>
             </View>
           </View>
+          {installmentsPendingQ > 0 && (
+            <View style={[s.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.separator }]}>
+              <View style={s.summaryItem}>
+                <Text style={s.summaryLbl}>VISACUOTAS PEND.</Text>
+                <Text style={[s.summaryVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
+              </View>
+            </View>
+          )}
           {totalUSD !== 0 && (
             <View style={[s.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.separator }]}>
               <View style={s.summaryItem}>
@@ -761,9 +636,14 @@ export default function AccountsScreen({
                           <Text style={s.instStatLbl}>FIN</Text>
                         </View>
                       </View>
-                      <TouchableOpacity onPress={() => handleDeleteInstallment(item.id)} style={[s.deleteBtn, { alignSelf: 'flex-end', marginTop: 8 }]}>
-                        <Ionicons name="trash-outline" size={14} color={C.danger} />
-                      </TouchableOpacity>
+                      <View style={{ flexDirection: 'row', gap: 8, alignSelf: 'flex-end', marginTop: 8 }}>
+                        <TouchableOpacity onPress={() => { setEditingInst(item); setShowInstModal(true); }} style={s.deleteBtn}>
+                          <Ionicons name="pencil-outline" size={14} color={C.primaryLight} />
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => handleDeleteInstallment(item.id)} style={s.deleteBtn}>
+                          <Ionicons name="trash-outline" size={14} color={C.danger} />
+                        </TouchableOpacity>
+                      </View>
                     </View>
                   );
                 })

@@ -7,13 +7,15 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     FinancialPeriod, SavingsGoal, Transaction, UserSettings,
-    calcFinancialScore, calcNetWorthFromAccounts, convertAmount,
+    calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
     getCurrentFinancialPeriod, getDaysUntilNextPayment, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
 import { C, shadow } from "../theme";
+import { useTutorialRef } from "../context/TutorialContext";
+import { TutorialMenuButton } from "./TutorialOverlay";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
@@ -162,7 +164,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
     const active = accounts.filter(a => a.isActive);
     const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(active, settings.exchangeRate);
     const monthlyInst = getMonthlyInstallmentTotal(installments);
-    const totalDebt = active.filter(a => a.type === "credit").reduce((s, a) => s + convertAmount(a.balance, a.currency, "Q", settings.exchangeRate), 0);
+    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(active, installments, settings.exchangeRate);
     const creditCards = active.filter(a => a.type === "credit");
 
     return (
@@ -214,12 +216,21 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         </View>
                     </>
                 )}
-                {totalDebt > 0 && (
+                {cardBalanceQ > 0 && (
                     <>
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
-                            <Text style={s.accountsLbl}>DEUDA</Text>
-                            <Text style={[s.accountsVal, { color: C.danger }]}>Q {totalDebt.toFixed(0)}</Text>
+                            <Text style={s.accountsLbl}>TARJETAS</Text>
+                            <Text style={[s.accountsVal, { color: C.danger }]}>Q {cardBalanceQ.toFixed(0)}</Text>
+                        </View>
+                    </>
+                )}
+                {installmentsPendingQ > 0 && (
+                    <>
+                        <View style={s.accountsDivider} />
+                        <View style={s.accountsItem}>
+                            <Text style={s.accountsLbl}>VISACUOTAS PEND.</Text>
+                            <Text style={[s.accountsVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
                         </View>
                     </>
                 )}
@@ -380,6 +391,10 @@ export default function DashboardScreen({
 }: Props) {
     const now = new Date();
 
+    const briefingRef = useTutorialRef('briefing_card');
+    const scoreRef = useTutorialRef('score_card');
+    const syncRef = useTutorialRef('sync_btn');
+
     // ── PERÍODO FINANCIERO REAL ───────────────────────────────
     const period: FinancialPeriod = getCurrentFinancialPeriod(settings);
 
@@ -454,6 +469,8 @@ export default function DashboardScreen({
     const netUSD = hasAccounts ? accNetUSD : (settings.externalSavingsUSD || 0);
     const netEUR = hasAccounts ? accNetEUR : 0;
     const netGBP = hasAccounts ? accNetGBP : 0;
+    const { cardBalanceQ: totalCardBalanceQ, installmentsPendingQ: totalInstallmentsPendingQ } = calcCreditCommitments(accounts.filter(a => a.isActive), creditInstallments, settings.exchangeRate);
+    const totalCreditCommitmentsQ = totalCardBalanceQ + totalInstallmentsPendingQ;
 
     const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
     const daysLeft = getDaysUntilNextPayment(settings);
@@ -494,6 +511,7 @@ export default function DashboardScreen({
                             Día {period.daysPassed} de {period.daysTotal} del período
                         </Text>
                     </View>
+                    <TutorialMenuButton />
                 </View>
                 <View style={{ flexDirection: "row", gap: 8 }}>
                     {daysLeft > 0 && settings.paymentCycle !== "irregular" && (
@@ -502,18 +520,24 @@ export default function DashboardScreen({
                             <Text style={[s.daysBadgeTxt, { color: daysLeft <= 3 ? C.danger : C.textMuted }]}>{daysLeft}d</Text>
                         </View>
                     )}
-                    <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn}>
-                        <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
-                        <View style={s.syncDot} />
-                    </TouchableOpacity>
+                    <View ref={syncRef} collapsable={false}>
+                        <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn}>
+                            <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
+                            <View style={s.syncDot} />
+                        </TouchableOpacity>
+                    </View>
                 </View>
             </View>
 
             {/* BRIEFING CFO */}
-            <BriefingCard text={briefing} loading={briefingLoading} />
+            <View ref={briefingRef} collapsable={false}>
+                <BriefingCard text={briefing} loading={briefingLoading} />
+            </View>
 
             {/* SCORE */}
-            <ScoreWidget score={score} />
+            <View ref={scoreRef} collapsable={false}>
+                <ScoreWidget score={score} />
+            </View>
 
             {/* PATRIMONIO TOTAL */}
             <View style={s.netWorthCard}>
@@ -522,17 +546,15 @@ export default function DashboardScreen({
                     <TouchableOpacity
                         onPress={() => Alert.alert(
                             "🏛️ Patrimonio Total",
-                            "El Patrimonio Neto es la diferencia entre lo que tenés y lo que debés.\n\n" +
-                            "✅ ACTIVOS (lo que tenés):\n" +
+                            "El Patrimonio Total muestra lo que tenés en tus cuentas de activos.\n\n" +
+                            "✅ INCLUYE:\n" +
                             "  • Saldo en cuentas de ahorro\n" +
                             "  • Efectivo disponible\n" +
-                            "  • Saldo positivo en cuentas bancarias\n\n" +
-                            "❌ PASIVOS (lo que debés):\n" +
-                            "  • Deuda en tarjetas de crédito\n" +
-                            "  • Préstamos pendientes\n\n" +
-                            "PATRIMONIO = Activos − Pasivos\n\n" +
-                            "Si es positivo → tenés más de lo que debés. 📈\n" +
-                            "Si es negativo → tus deudas superan tus activos. Plan de deuda urgente. 🚨",
+                            "  • Saldo positivo en cuentas bancarias e inversiones\n\n" +
+                            "🚫 NO INCLUYE:\n" +
+                            "  • Saldo deudor de tarjetas de crédito\n" +
+                            "  • Pendiente de visacuotas\n\n" +
+                            "Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tenés con lo que debés.",
                             [{ text: "Entendido", style: "default" }]
                         )}
                         style={s.netWorthInfoBtn}
@@ -560,10 +582,15 @@ export default function DashboardScreen({
                     </Text>
                 )}
                 {hasAccounts && (
-                    <Text style={s.netWorthSource}>Activos menos deudas • basado en tus cuentas</Text>
+                    <Text style={s.netWorthSource}>Solo activos (sin tarjetas de crédito) • basado en tus cuentas</Text>
                 )}
                 {!hasAccounts && (
                     <Text style={s.netWorthSource}>Estimado por ingresos/gastos • agrega cuentas para mayor precisión</Text>
+                )}
+                {totalCreditCommitmentsQ > 0 && (
+                    <Text style={s.netWorthCommitments}>
+                        💳 Compromisos de crédito (aparte): Q {totalCreditCommitmentsQ.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                    </Text>
                 )}
             </View>
 
@@ -687,6 +714,7 @@ const s = StyleSheet.create({
     netWorthVal: { fontSize: 34, fontWeight: "900" },
     netWorthValSub: { fontSize: 18, fontWeight: "700", marginTop: 4 },
     netWorthSource: { color: C.textMuted, fontSize: 10, marginTop: 6, letterSpacing: 0.5 },
+    netWorthCommitments: { color: C.warning, fontSize: 11, marginTop: 10, fontWeight: "700" },
 
     currencyCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 3, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
     currencyHeader: { flexDirection: "row", alignItems: "center", marginBottom: 14 },

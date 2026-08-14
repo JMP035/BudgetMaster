@@ -8,6 +8,7 @@ import { Account, Currency, Transaction, UserSettings } from "../services/storag
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { C, shadow } from "../theme";
 import { SmsService } from "../services/SmsService";
+import { useTutorialRef } from "../context/TutorialContext";
 
 interface Props {
     onAdd: (tx: Transaction) => void;
@@ -24,6 +25,12 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [loading, setLoading] = useState(false);
     const [smsText, setSmsText] = useState("");
     const [showSmsInput, setShowSmsInput] = useState(false);
+
+    const typeSelectorRef = useTutorialRef('add_type_selector');
+    const currencyRef = useTutorialRef('add_currency');
+    const amountRef = useTutorialRef('add_amount');
+    const descriptionRef = useTutorialRef('add_description');
+    const categoryRef = useTutorialRef('add_category');
 
     const currencies: Currency[] = ['Q', 'USD', 'EUR', '£'];
 
@@ -123,7 +130,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 )}
 
                 {/* TIPO: GASTO / INGRESO */}
-                <View style={s.typeRow}>
+                <View style={s.typeRow} ref={typeSelectorRef} collapsable={false}>
                     <TouchableOpacity
                         style={[s.typeBtn, type === "expense" && s.typeBtnExp]}
                         onPress={() => { setType("expense"); setCategory("other"); }}
@@ -141,7 +148,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 </View>
 
                 {/* MONEDA */}
-                <View style={s.card}>
+                <View style={s.card} ref={currencyRef} collapsable={false}>
                     <Text style={s.lbl}>MONEDA</Text>
                     <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 10 }}>
                         ¿En qué moneda es esta transacción?
@@ -160,7 +167,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 </View>
 
                 {/* MONTO */}
-                <View style={s.card}>
+                <View style={s.card} ref={amountRef} collapsable={false}>
                     <Text style={s.lbl}>MONTO</Text>
                     <View style={s.amtRow}>
                         <Text style={s.cur}>{currency}</Text>
@@ -177,7 +184,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 </View>
 
                 {/* DESCRIPCIÓN */}
-                <View style={s.card}>
+                <View style={s.card} ref={descriptionRef} collapsable={false}>
                     <Text style={s.lbl}>DESCRIPCIÓN (Opcional)</Text>
                     <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 8 }}>
                         ¿En qué gastaste o de dónde viene el dinero?
@@ -196,7 +203,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 </View>
 
                 {/* CATEGORÍA */}
-                <View style={[s.card, { paddingBottom: 6 }]}>
+                <View style={[s.card, { paddingBottom: 6 }]} ref={categoryRef} collapsable={false}>
                     <Text style={s.lbl}>CATEGORÍA</Text>
                     <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 12 }}>
                         Clasifica tu transacción para ver estadísticas más precisas.
