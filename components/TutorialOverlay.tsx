@@ -58,11 +58,18 @@ interface StepCardProps {
     onSkip: () => void;
 }
 
+// Alto aproximado de los elementos fijos de la tarjeta (paddings, barra de
+// progreso, ícono, contador y botones) — usado para calcular cuánto espacio
+// le queda al título + descripción cuando hay que limitarlos con ScrollView.
+const FIXED_CHROME_HEIGHT = 220;
+
 function StepCard({ tutorial, step, stepIndex, rect, onNext, onSkip }: StepCardProps) {
     const slideAnim = useRef(new Animated.Value(40)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const isLast = stepIndex === tutorial.steps.length - 1;
+    // Estimación inicial del alto de la tarjeta; se corrige con la medición real (onLayout).
+    const [cardHeight, setCardHeight] = useState(300);
 
     useEffect(() => {
         slideAnim.setValue(40);
@@ -81,27 +88,64 @@ function StepCard({ tutorial, step, stepIndex, rect, onNext, onSkip }: StepCardP
         return () => pulse.stop();
     }, [stepIndex]);
 
-    // Posicionar la card según espacio disponible
-    const cardPosition = (): { top?: number } => {
-        if (!rect) return { top: SH * 0.35 };
-        const cardHeight = 300;
-        const spaceBelow = SH - (rect.y + rect.height + PADDING);
-        const spaceAbove = rect.y - PADDING;
-
-        if (step.position === 'top' || spaceAbove > cardHeight + 20) {
-            return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
+    const handleCardLayout = (e: any) => {
+        const measured = e.nativeEvent.layout.height;
+        if (Math.abs(measured - cardHeight) > 4) {
+            setCardHeight(measured);
         }
-        if (spaceBelow > cardHeight + 20) {
-            return { top: rect.y + rect.height + PADDING + 16 };
-        }
-        return { top: SH * 0.32 };
     };
 
+    // Posicionar la card según espacio disponible
+    const cardPosition = (): { top: number; maxContentHeight?: number } => {
+        if (!rect) return { top: SH * 0.35 };
+
+        const spaceBelow = SH - (rect.y + rect.height + PADDING);
+        const spaceAbove = rect.y - PADDING;
+        const fitsAbove = spaceAbove >= cardHeight + 20;
+        const fitsBelow = spaceBelow >= cardHeight + 20;
+
+        // La preferencia del step ('top'/'bottom') solo se respeta si el espacio alcanza.
+        if (step.position === 'top' && fitsAbove) {
+            return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
+        }
+        if (step.position === 'bottom' && fitsBelow) {
+            return { top: rect.y + rect.height + PADDING + 16 };
+        }
+        // Sin preferencia respetable: usar el lado que alcance el alto ideal.
+        if (fitsAbove) {
+            return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
+        }
+        if (fitsBelow) {
+            return { top: rect.y + rect.height + PADDING + 16 };
+        }
+
+        // Fallback: ni arriba ni abajo alcanza el alto ideal — se usa el lado
+        // con más espacio disponible, pegado al rect, y se limita la altura
+        // visible del contenido para nunca superponerse al spotlight.
+        if (spaceAbove >= spaceBelow) {
+            const availableHeight = Math.max(0, spaceAbove);
+            return {
+                top: Math.max(20, rect.y - PADDING - availableHeight),
+                maxContentHeight: Math.max(40, availableHeight - FIXED_CHROME_HEIGHT),
+            };
+        }
+        const availableHeight = Math.max(0, spaceBelow);
+        return {
+            top: rect.y + rect.height + PADDING,
+            maxContentHeight: Math.max(40, availableHeight - FIXED_CHROME_HEIGHT),
+        };
+    };
+
+    const pos = cardPosition();
+
     return (
-        <Animated.View style={[
-            card.container,
-            { opacity: fadeAnim, transform: [{ translateY: slideAnim }], ...cardPosition() },
-        ]}>
+        <Animated.View
+            onLayout={handleCardLayout}
+            style={[
+                card.container,
+                { opacity: fadeAnim, transform: [{ translateY: slideAnim }], top: pos.top },
+            ]}
+        >
             {/* Progreso */}
             <View style={card.progressRow}>
                 {tutorial.steps.map((_, i) => (
@@ -121,8 +165,17 @@ function StepCard({ tutorial, step, stepIndex, rect, onNext, onSkip }: StepCardP
                 <Ionicons name={step.icon as any} size={28} color={tutorial.color} />
             </Animated.View>
 
-            <Text style={card.title}>{step.title}</Text>
-            <Text style={card.desc}>{step.description}</Text>
+            {pos.maxContentHeight != null ? (
+                <ScrollView style={{ maxHeight: pos.maxContentHeight }} showsVerticalScrollIndicator={false}>
+                    <Text style={card.title}>{step.title}</Text>
+                    <Text style={card.desc}>{step.description}</Text>
+                </ScrollView>
+            ) : (
+                <>
+                    <Text style={card.title}>{step.title}</Text>
+                    <Text style={card.desc}>{step.description}</Text>
+                </>
+            )}
             <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
 
             <View style={card.btnRow}>

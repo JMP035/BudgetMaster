@@ -110,9 +110,6 @@ export const SmsService = {
                 newTransactions.push(parsed.transaction!);
               } else {
                 await StorageService.addCreditInstallment(parsed.installment!);
-                if (parsed.installment!.accountId) {
-                  await StorageService.adjustAccountBalance(parsed.installment!.accountId, parsed.installment!.totalAmount);
-                }
                 newInstallments.push(parsed.installment!);
               }
             } catch (e) {

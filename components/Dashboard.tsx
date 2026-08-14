@@ -8,7 +8,8 @@ import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     FinancialPeriod, SavingsGoal, Transaction, UserSettings,
     calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, getMonthlyInstallmentTotal
+    getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
+    getDaysUntilNextPayment, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
@@ -164,7 +165,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
     const active = accounts.filter(a => a.isActive);
     const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(active, settings.exchangeRate);
     const monthlyInst = getMonthlyInstallmentTotal(installments);
-    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(active, installments, settings.exchangeRate);
+    const { installmentsPendingQ } = calcCreditCommitments(installments, settings.exchangeRate);
     const creditCards = active.filter(a => a.type === "credit");
 
     return (
@@ -216,15 +217,6 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         </View>
                     </>
                 )}
-                {cardBalanceQ > 0 && (
-                    <>
-                        <View style={s.accountsDivider} />
-                        <View style={s.accountsItem}>
-                            <Text style={s.accountsLbl}>TARJETAS</Text>
-                            <Text style={[s.accountsVal, { color: C.danger }]}>Q {cardBalanceQ.toFixed(0)}</Text>
-                        </View>
-                    </>
-                )}
                 {installmentsPendingQ > 0 && (
                     <>
                         <View style={s.accountsDivider} />
@@ -246,15 +238,33 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
             </View>
 
             {/* Mini lista de cuentas */}
-            {active.slice(0, 3).map(acc => (
-                <View key={acc.id} style={s.accMiniRow}>
-                    <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
-                    <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
-                    <Text style={[s.accMiniVal, { color: acc.type === "credit" ? C.danger : acc.color }]}>
-                        {acc.type === "credit" ? "-" : ""}{acc.currency} {acc.balance.toFixed(2)}
-                    </Text>
-                </View>
-            ))}
+            {active.slice(0, 3).map(acc => {
+                if (acc.type === "credit") {
+                    const accMonthlyTotal = getAccountMonthlyInstallmentTotal(installments, acc.id);
+                    return (
+                        <View key={acc.id} style={s.accMiniRow}>
+                            <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
+                            <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
+                            {accMonthlyTotal > 0 ? (
+                                <Text style={[s.accMiniVal, { color: C.warning }]}>
+                                    {acc.currency} {accMonthlyTotal.toFixed(2)}/mes
+                                </Text>
+                            ) : (
+                                <Text style={[s.accMiniVal, { color: C.textMuted }]}>Sin cuotas</Text>
+                            )}
+                        </View>
+                    );
+                }
+                return (
+                    <View key={acc.id} style={s.accMiniRow}>
+                        <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
+                        <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
+                        <Text style={[s.accMiniVal, { color: acc.color }]}>
+                            {acc.currency} {acc.balance.toFixed(2)}
+                        </Text>
+                    </View>
+                );
+            })}
             {active.length > 3 && (
                 <Text style={s.widgetMore}>+{active.length - 3} cuentas más →</Text>
             )}
@@ -469,8 +479,8 @@ export default function DashboardScreen({
     const netUSD = hasAccounts ? accNetUSD : (settings.externalSavingsUSD || 0);
     const netEUR = hasAccounts ? accNetEUR : 0;
     const netGBP = hasAccounts ? accNetGBP : 0;
-    const { cardBalanceQ: totalCardBalanceQ, installmentsPendingQ: totalInstallmentsPendingQ } = calcCreditCommitments(accounts.filter(a => a.isActive), creditInstallments, settings.exchangeRate);
-    const totalCreditCommitmentsQ = totalCardBalanceQ + totalInstallmentsPendingQ;
+    const { installmentsPendingQ: totalInstallmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
+    const totalCreditCommitmentsQ = totalInstallmentsPendingQ;
 
     const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
     const daysLeft = getDaysUntilNextPayment(settings);

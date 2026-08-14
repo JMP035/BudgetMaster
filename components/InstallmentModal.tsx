@@ -1,3 +1,4 @@
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
@@ -32,6 +33,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   const [notes, setNotes] = useState(existing?.notes || '');
   const [paidInstallments, setPaidInstallments] = useState(existing?.paidInstallments?.toString() || '0');
   const [startDate, setStartDate] = useState(existing?.startDate?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const selectedAcc = accounts.find(a => a.id === accountId);
 
@@ -142,8 +144,25 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
                   </View>
                   <Text style={md.hint}>Si ya pagaste algunas cuotas antes de registrar esta compra, indícalo aquí.</Text>
 
-                  <Text style={md.lbl}>FECHA DE INICIO (AAAA-MM-DD)</Text>
-                  <TextInput style={md.input} value={startDate} onChangeText={setStartDate} placeholder="2025-01-15" placeholderTextColor={C.textMuted} />
+                  <Text style={md.lbl}>FECHA DE INICIO</Text>
+                  <TouchableOpacity style={md.amtRow} onPress={() => setShowDatePicker(true)}>
+                    <Ionicons name="calendar-outline" size={16} color={C.textMuted} style={{ marginRight: 8 }} />
+                    <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+                      {new Date(startDate).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+                    </Text>
+                  </TouchableOpacity>
+                  {showDatePicker && (
+                    <DateTimePicker
+                      value={new Date(startDate)}
+                      mode="date"
+                      onChange={(event, selectedDate) => {
+                        setShowDatePicker(false);
+                        if (event.type !== 'dismissed' && selectedDate) {
+                          setStartDate(selectedDate.toISOString().slice(0, 10));
+                        }
+                      }}
+                    />
+                  )}
 
                   <Text style={md.lbl}>CATEGORÍA</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>

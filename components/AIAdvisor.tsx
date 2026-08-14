@@ -8,7 +8,8 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     SavingsGoal, Transaction, UserSettings,
-    calcCreditCommitments, calcNetWorthFromAccounts, getCurrentFinancialPeriod, getDaysUntilNextPayment
+    calcCreditCommitments, calcNetWorthFromAccounts, getAccountMonthlyInstallmentTotal,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
 import { C, shadow } from "../theme";
 
@@ -79,15 +80,28 @@ function buildFinancialContext(
     // Cuentas bancarias
     const activeAccounts = accounts.filter(a => a.isActive);
     const accountsSummary = activeAccounts.length > 0
-        ? activeAccounts.map(a => `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`).join("\n")
+        ? activeAccounts.map(a => {
+            if (a.type === 'credit') {
+                const dayInfo = [
+                    a.cutoffDay ? `corte día ${a.cutoffDay}` : null,
+                    a.paymentDueDay ? `pago día ${a.paymentDueDay}` : null,
+                ].filter(Boolean).join(", ");
+                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+                return `  · ${a.name} (${a.type})${dayInfo ? `: ${dayInfo}` : ""} — cuota mensual: Q${accMonthly.toFixed(2)}`;
+            }
+            return `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`;
+        }).join("\n")
         : "  · No hay cuentas configuradas";
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(activeAccounts, settings.exchangeRate);
     const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
 
-    // Compromisos de crédito (separados del patrimonio: tarjetas + visacuotas pendientes)
-    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(activeAccounts, creditInstallments, settings.exchangeRate);
+    // Compromisos de crédito (separados del patrimonio: pendiente de visacuotas)
+    const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
     const creditCommitmentsSummary = activeAccounts.filter(a => a.type === 'credit').length > 0
-        ? activeAccounts.filter(a => a.type === 'credit').map(a => `  · ${a.name}: Q${a.balance.toFixed(2)}`).join("\n")
+        ? activeAccounts.filter(a => a.type === 'credit').map(a => {
+            const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+            return `  · ${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(2)}/mes en cuotas` : "sin cuotas activas"}`;
+        }).join("\n")
         : "  · Sin tarjetas de crédito registradas";
 
     // Gastos fijos
@@ -145,9 +159,8 @@ Patrimonio total en cuentas (sin incluir tarjetas de crédito): Q${totalBalance.
 
 ── COMPROMISOS DE CRÉDITO (separados del patrimonio) ──
 ${creditCommitmentsSummary}
-Saldo deudor total en tarjetas: Q${cardBalanceQ.toFixed(2)}
 Pendiente total en visacuotas: Q${installmentsPendingQ.toFixed(2)}
-Nota: estos compromisos NO se restan del patrimonio total. Se analizan aparte para no mezclar activos con deuda de tarjeta.
+Nota: las tarjetas de crédito ya NO tienen saldo propio (siempre sería Q0.00) — toda su deuda vive en las visacuotas asociadas. Estos compromisos NO se restan del patrimonio total. Se analizan aparte para no mezclar activos con deuda de tarjeta.
 
 ── GASTOS FIJOS MENSUALES ──
 Total: Q${fixedTotal.toFixed(0)} | Pagado: Q${fixedPaid.toFixed(0)} | Pendiente: Q${fixedPending.toFixed(0)}
@@ -199,9 +212,11 @@ CONTEXTO GUATEMALTECO — RECONOCIMIENTO DE GASTOS:
 - Tipo de cambio aproximado: Q7.70 por USD
 
 SISTEMA DE DEUDAS Y CUOTAS:
+- Las tarjetas de crédito YA NO tienen saldo propio (siempre es Q0.00): son fichas de referencia con nombre, banco, día de corte y día de pago. TODA su deuda vive en las visacuotas asociadas a esa tarjeta.
+- La "cuota mensual total" de una tarjeta es la suma de las cuotas mensuales de sus visacuotas activas — así es como se mide su carga real.
 - Las "visacuotas" son compras financiadas a través de la tarjeta de crédito en cuotas mensuales
 - Si el usuario tiene visacuotas activas, incluílas en el análisis de flujo de caja mensual
-- El patrimonio total y los compromisos de crédito (saldo de tarjetas + pendiente de visacuotas) se muestran SEPARADOS en el contexto: el patrimonio NO resta la deuda de tarjeta. Nunca digas que la deuda de tarjeta "reduce" el patrimonio neto — son cosas distintas que no deben mezclarse. Si el usuario pregunta por su situación completa, mencioná ambos por separado.
+- El patrimonio total y el pendiente en visacuotas se muestran SEPARADOS en el contexto: el patrimonio NO resta la deuda de visacuotas. Nunca digas que la deuda de tarjeta "reduce" el patrimonio neto — son cosas distintas que no deben mezclarse. Si el usuario pregunta por su situación completa, mencioná ambos por separado.
 - Un ratio deuda/ingreso mayor al 30% es zona de alerta
 
 CAPACIDADES:
@@ -255,7 +270,7 @@ async function callGemini(
                 body: JSON.stringify({
                     contents: messages,
                     generationConfig: {
-                        maxOutputTokens: 400,
+                        maxOutputTokens: 1024,
                         temperature: 0.7,
                         topP: 0.9,
                     },
@@ -269,6 +284,13 @@ async function callGemini(
         if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
 
         const data = await res.json();
+        const finishReason = data?.candidates?.[0]?.finishReason;
+        if (finishReason === "MAX_TOKENS") {
+            console.warn(
+                "Gemini: respuesta truncada por MAX_TOKENS. Texto parcial recibido:",
+                data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "(sin texto)"
+            );
+        }
         if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
             return data.candidates[0].content.parts[0].text
                 .replace(/\*\*/g, "")
@@ -309,8 +331,8 @@ function getLocalResponse(
     const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + c.monthlyPayment, 0);
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
-    // Compromisos de crédito (separados del patrimonio: tarjetas + visacuotas pendientes)
-    const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(accounts.filter(a => a.isActive), creditInstallments, settings.exchangeRate);
+    // Compromisos de crédito (separados del patrimonio: visacuotas pendientes)
+    const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
 
     const msg = message.toLowerCase();
 
@@ -341,11 +363,18 @@ function getLocalResponse(
         return `Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}. Para mejores consejos de ahorro, configurá una meta en la sección de Presupuesto.`;
     }
     if (msg.match(/deuda|tarjeta|credito|cuota|visa/)) {
-        return `Compromisos de crédito (separados de tu patrimonio): Q${cardBalanceQ.toFixed(0)} de saldo en tarjetas y Q${installmentsPendingQ.toFixed(0)} pendientes en visacuotas. Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas, lo que representa ${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
+        return `Compromisos de crédito (separados de tu patrimonio): Q${installmentsPendingQ.toFixed(0)} pendientes en visacuotas. Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas, lo que representa ${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
     }
     if (msg.match(/cuenta|banco|saldo|billetera/)) {
-        if (accounts.filter(a => a.isActive).length > 0)
-            return `Tus cuentas suman Q${totalBalance.toFixed(2)} en total. ${accounts.filter(a => a.isActive).map(a => `${a.name}: Q${a.balance.toFixed(0)}`).join(", ")}.`;
+        const nonCreditAccounts = accounts.filter(a => a.isActive && a.type !== 'credit');
+        if (accounts.filter(a => a.isActive).length > 0) {
+            const creditPart = accounts.filter(a => a.isActive && a.type === 'credit').map(a => {
+                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+                return `${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(0)}/mes en cuotas` : "sin cuotas activas"}`;
+            });
+            const parts = [...nonCreditAccounts.map(a => `${a.name}: Q${a.balance.toFixed(0)}`), ...creditPart];
+            return `Tus cuentas suman Q${totalBalance.toFixed(2)} en total (sin incluir tarjetas de crédito, que no tienen saldo propio). ${parts.join(", ")}.`;
+        }
         return `No tenés cuentas bancarias configuradas. Podés agregarlas en la sección de Cuentas.`;
     }
     if (msg.match(/fijo|recurrente|servicios|pagos fijos/)) {

@@ -8,7 +8,8 @@ import {
 import {
   Account, AccountType, CreditInstallment,
   Currency, StorageService, Transaction, UserSettings,
-  calcCreditCommitments, calcNetWorthFromAccounts, convertAmount, getMonthlyInstallmentTotal
+  calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
+  getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
@@ -49,22 +50,64 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVA CUENTA
 // ─────────────────────────────────────────────────────────────
-function AccountModal({ onSave, onClose, existing }: {
-  onSave: (a: Account) => void; onClose: () => void; existing?: Account;
+export function AccountModal({ onSave, onClose, existing, defaultType }: {
+  onSave: (a: Account) => void; onClose: () => void; existing?: Account; defaultType?: AccountType;
 }) {
   const [name, setName] = useState(existing?.name || '');
-  const [type, setType] = useState<AccountType>(existing?.type || 'bank');
+  const [type, setType] = useState<AccountType>(existing?.type || defaultType || 'bank');
   const [currency, setCurrency] = useState<Currency>(existing?.currency || 'Q');
   const [balance, setBalance] = useState(existing?.balance.toString() || '0');
-  const [limit, setLimit] = useState(existing?.creditLimit?.toString() || '');
   const [color, setColor] = useState(existing?.color || ACCOUNT_COLORS[0]);
   const [bankName, setBankName] = useState(existing?.bankName || '');
   const [notes, setNotes] = useState(existing?.notes || '');
+  const [cutoffDay, setCutoffDay] = useState(existing?.cutoffDay?.toString() || '');
+  const [paymentDueDay, setPaymentDueDay] = useState(existing?.paymentDueDay?.toString() || '');
 
   const typeInfo = ACCOUNT_TYPES.find(t => t.type === type)!;
 
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Error', 'Ingresa el nombre de la cuenta.'); return; }
+
+    if (type === 'credit') {
+      let parsedCutoff: number | undefined;
+      let parsedPaymentDue: number | undefined;
+      if (cutoffDay.trim()) {
+        parsedCutoff = parseInt(cutoffDay, 10);
+        if (isNaN(parsedCutoff) || parsedCutoff < 1 || parsedCutoff > 31) {
+          Alert.alert('Error', 'El día de corte debe ser un número entre 1 y 31.');
+          return;
+        }
+      }
+      if (paymentDueDay.trim()) {
+        parsedPaymentDue = parseInt(paymentDueDay, 10);
+        if (isNaN(parsedPaymentDue) || parsedPaymentDue < 1 || parsedPaymentDue > 31) {
+          Alert.alert('Error', 'El día de pago debe ser un número entre 1 y 31.');
+          return;
+        }
+      }
+
+      const account: Account = {
+        id: existing?.id || `acc_${Date.now()}`,
+        name: name.trim(),
+        type,
+        currency,
+        balance: existing?.balance ?? 0,
+        initialBalance: existing?.initialBalance ?? 0,
+        color,
+        icon: typeInfo.icon,
+        bankName: bankName.trim() || undefined,
+        creditLimit: existing?.creditLimit,
+        cutoffDay: parsedCutoff,
+        paymentDueDay: parsedPaymentDue,
+        isActive: true,
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        notes: notes.trim() || undefined,
+      };
+      onSave(account);
+      onClose();
+      return;
+    }
+
     const bal = parseFloat(balance.replace(',', '.'));
     if (isNaN(bal)) { Alert.alert('Error', 'Ingresa un saldo válido.'); return; }
 
@@ -78,7 +121,6 @@ function AccountModal({ onSave, onClose, existing }: {
       color,
       icon: typeInfo.icon,
       bankName: bankName.trim() || undefined,
-      creditLimit: type === 'credit' && limit ? parseFloat(limit) : undefined,
       isActive: true,
       createdAt: existing?.createdAt || new Date().toISOString(),
       notes: notes.trim() || undefined,
@@ -127,8 +169,8 @@ function AccountModal({ onSave, onClose, existing }: {
               )}
 
               {/* Moneda y saldo */}
-              <View style={{ flexDirection: 'row', gap: 12 }}>
-                <View style={{ flex: 1 }}>
+              {type === 'credit' ? (
+                <View>
                   <Text style={md.lbl}>MONEDA</Text>
                   <View style={{ flexDirection: 'row', gap: 6 }}>
                     {(['Q', 'USD'] as Currency[]).map(c => (
@@ -138,24 +180,40 @@ function AccountModal({ onSave, onClose, existing }: {
                     ))}
                   </View>
                 </View>
-                <View style={{ flex: 2 }}>
-                  <Text style={md.lbl}>{type === 'credit' ? 'SALDO DEUDOR' : 'SALDO ACTUAL'}</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{currency}</Text>
-                    <TextInput style={md.amtInput} value={balance} onChangeText={setBalance} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+              ) : (
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={md.lbl}>MONEDA</Text>
+                    <View style={{ flexDirection: 'row', gap: 6 }}>
+                      {(['Q', 'USD'] as Currency[]).map(c => (
+                        <TouchableOpacity key={c} style={[md.currBtn, currency === c && md.currBtnActive]} onPress={() => setCurrency(c)}>
+                          <Text style={[md.currTxt, currency === c && { color: C.primaryLight }]}>{c}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={{ flex: 2 }}>
+                    <Text style={md.lbl}>SALDO ACTUAL</Text>
+                    <View style={md.amtRow}>
+                      <Text style={md.cur}>{currency}</Text>
+                      <TextInput style={md.amtInput} value={balance} onChangeText={setBalance} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+                    </View>
                   </View>
                 </View>
-              </View>
+              )}
 
-              {/* Límite de crédito */}
+              {/* Día de corte / día de pago (solo tarjetas) */}
               {type === 'credit' && (
-                <>
-                  <Text style={md.lbl}>LÍMITE DE CRÉDITO</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{currency}</Text>
-                    <TextInput style={md.amtInput} value={limit} onChangeText={setLimit} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={md.lbl}>DÍA DE CORTE (Opcional)</Text>
+                    <TextInput style={md.input} value={cutoffDay} onChangeText={setCutoffDay} placeholder="Ej: 25" placeholderTextColor={C.textMuted} keyboardType="number-pad" maxLength={2} />
                   </View>
-                </>
+                  <View style={{ flex: 1 }}>
+                    <Text style={md.lbl}>DÍA DE PAGO (Opcional)</Text>
+                    <TextInput style={md.input} value={paymentDueDay} onChangeText={setPaymentDueDay} placeholder="Ej: 10" placeholderTextColor={C.textMuted} keyboardType="number-pad" maxLength={2} />
+                  </View>
+                </View>
               )}
 
               {/* Color */}
@@ -302,7 +360,7 @@ export default function AccountsScreen({
 
   // ── Patrimonio neto ──────────────────────────────────────
   const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
-  const { cardBalanceQ, installmentsPendingQ } = calcCreditCommitments(accounts, creditInstallments, settings.exchangeRate);
+  const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
   const totalAssets = accounts.filter(a => a.type !== 'credit' && a.isActive).reduce((s, a) => {
     if (a.currency === 'Q') return s + a.balance;
     if (a.currency === 'USD') return s + a.balance * settings.exchangeRate;
@@ -348,53 +406,15 @@ export default function AccountsScreen({
       ? await StorageService.addCreditInstallment(item)
       : await StorageService.updateCreditInstallment(item);
     setCreditInstallments(updated);
-
-    // Actualizar saldo de la(s) tarjeta(s) involucradas
-    if (isNew) {
-      if (item.accountId) {
-        // Usar el remanente (no el total) para soportar visacuotas retroactivas
-        // que ya llevan cuotas pagadas al momento de registrarlas.
-        const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
-        await StorageService.adjustAccountBalance(item.accountId, remaining);
-      }
-    } else if (existing) {
-      if (item.accountId === existing.accountId) {
-        if (item.accountId && item.totalAmount !== existing.totalAmount) {
-          const delta = item.totalAmount - existing.totalAmount;
-          await StorageService.adjustAccountBalance(item.accountId, delta);
-        }
-      } else {
-        // Cambió de tarjeta (o de/hacia sin tarjeta): revertir remanente en la anterior, aplicar en la nueva
-        if (existing.accountId) {
-          const remainingOld = existing.totalAmount - existing.monthlyPayment * existing.paidInstallments;
-          await StorageService.adjustAccountBalance(existing.accountId, -remainingOld);
-        }
-        if (item.accountId) {
-          const remainingNew = item.totalAmount - item.monthlyPayment * item.paidInstallments;
-          await StorageService.adjustAccountBalance(item.accountId, remainingNew);
-        }
-      }
-    }
-
-    const accs = await StorageService.getAccounts();
-    setAccounts(accs);
   };
 
   const handleDeleteInstallment = (id: string) => {
-    const item = creditInstallments.find(i => i.id === id);
     Alert.alert('Eliminar', '¿Borrar esta visacuota?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive', onPress: async () => {
           const updated = await StorageService.deleteCreditInstallment(id);
           setCreditInstallments(updated);
-
-          if (item?.accountId) {
-            const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
-            await StorageService.adjustAccountBalance(item.accountId, -remaining);
-            const accs = await StorageService.getAccounts();
-            setAccounts(accs);
-          }
         }
       },
     ]);
@@ -456,8 +476,8 @@ export default function AccountsScreen({
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
-              <Text style={s.summaryLbl}>TARJETAS</Text>
-              <Text style={[s.summaryVal, { color: C.danger }]}>Q {cardBalanceQ.toFixed(0)}</Text>
+              <Text style={s.summaryLbl}>VISACUOTAS PEND.</Text>
+              <Text style={[s.summaryVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
@@ -467,14 +487,6 @@ export default function AccountsScreen({
               </Text>
             </View>
           </View>
-          {installmentsPendingQ > 0 && (
-            <View style={[s.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.separator }]}>
-              <View style={s.summaryItem}>
-                <Text style={s.summaryLbl}>VISACUOTAS PEND.</Text>
-                <Text style={[s.summaryVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
-              </View>
-            </View>
-          )}
           {totalUSD !== 0 && (
             <View style={[s.summaryRow, { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.separator }]}>
               <View style={s.summaryItem}>
@@ -542,8 +554,13 @@ export default function AccountsScreen({
                 accounts.filter(a => a.isActive).map(acc => {
                   const typeInfo = ACCOUNT_TYPES.find(t => t.type === acc.type)!;
                   const isCredit = acc.type === 'credit';
-                  const usagePct = isCredit && acc.creditLimit
-                    ? (acc.balance / acc.creditLimit) * 100 : 0;
+                  const monthlyTotal = isCredit ? getAccountMonthlyInstallmentTotal(creditInstallments, acc.id) : 0;
+                  const cutoffPaymentLabel = isCredit && (acc.cutoffDay || acc.paymentDueDay)
+                    ? [
+                        acc.cutoffDay ? `Corte: día ${acc.cutoffDay}` : null,
+                        acc.paymentDueDay ? `Pago: día ${acc.paymentDueDay}` : null,
+                      ].filter(Boolean).join(' · ')
+                    : null;
 
                   return (
                     <TouchableOpacity
@@ -565,19 +582,27 @@ export default function AccountsScreen({
                           )}
                         </View>
                         <Text style={s.accType}>{typeInfo.label}</Text>
-                        {isCredit && acc.creditLimit && (
-                          <>
-                            <AnimBar pct={usagePct} color={usagePct > 80 ? C.danger : acc.color} />
-                            <Text style={{ color: C.textMuted, fontSize: 10, marginTop: 3 }}>
-                              Disponible: {acc.currency} {(acc.creditLimit - acc.balance).toFixed(2)} de {acc.currency} {acc.creditLimit.toFixed(2)}
-                            </Text>
-                          </>
+                        {isCredit && cutoffPaymentLabel && (
+                          <Text style={{ color: C.textMuted, fontSize: 10, marginTop: 3 }}>{cutoffPaymentLabel}</Text>
+                        )}
+                        {isCredit && monthlyTotal > 0 && (
+                          <Text style={{ color: C.warning, fontSize: 10, marginTop: 3 }}>
+                            Cuota mensual: {acc.currency} {monthlyTotal.toFixed(2)}
+                          </Text>
                         )}
                       </View>
                       <View style={{ alignItems: 'flex-end' }}>
-                        <Text style={[s.accBalance, { color: isCredit ? C.danger : acc.color }]}>
-                          {isCredit ? '-' : ''}{fmt(acc.balance, acc.currency)}
-                        </Text>
+                        {isCredit ? (
+                          monthlyTotal > 0 ? (
+                            <Text style={[s.accBalance, { color: C.warning }]}>{acc.currency} {monthlyTotal.toFixed(2)}</Text>
+                          ) : (
+                            <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 4 }}>Sin cuotas activas</Text>
+                          )
+                        ) : (
+                          <Text style={[s.accBalance, { color: acc.color }]}>
+                            {fmt(acc.balance, acc.currency)}
+                          </Text>
+                        )}
                         <TouchableOpacity onPress={() => handleDeleteAccount(acc.id)} style={s.deleteBtn}>
                           <Ionicons name="trash-outline" size={14} color={C.danger} />
                         </TouchableOpacity>
@@ -671,8 +696,8 @@ export default function AccountsScreen({
         {showInstModal && (
           <InstallmentModal accounts={accounts} existing={editingInst} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
         )}
-        {showTransfer && accounts.length >= 2 && (
-          <TransferModal accounts={accounts.filter(a => a.isActive)} settings={settings} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />
+        {showTransfer && accounts.filter(a => a.isActive && a.type !== 'credit').length >= 2 && (
+          <TransferModal accounts={accounts.filter(a => a.isActive && a.type !== 'credit')} settings={settings} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />
         )}
       </View>
     </Modal>

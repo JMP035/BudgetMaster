@@ -40,7 +40,9 @@ export interface Account {
   color: string;
   icon: string;
   bankName?: string;        // Nombre del banco si aplica
-  creditLimit?: number;        // Para tarjetas de crédito
+  creditLimit?: number;        // Para tarjetas de crédito (legado, ya no editable vía UI)
+  cutoffDay?: number;        // Día de corte (1-31), solo para type === 'credit'
+  paymentDueDay?: number;        // Día de pago (1-31), solo para type === 'credit'
   isActive: boolean;
   createdAt: string;
   notes?: string;
@@ -147,6 +149,7 @@ export interface UserSettings {
   customCategories: CustomCategory[];
   onboardingComplete: boolean;
   tutorialComplete: boolean;
+  cardsOnboardingComplete: boolean;
   financialScoreHistory: { month: string; score: number }[];
   activeDebtsList?: any[];
 }
@@ -207,6 +210,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   customCategories: [],
   onboardingComplete: false,
   tutorialComplete: false,
+  cardsOnboardingComplete: false,
   financialScoreHistory: [],
   activeDebtsList: [],
 };
@@ -438,14 +442,11 @@ export function convertAmount(amount: number, from: Currency, to: Currency, exch
 
 /**
  * Compromisos de crédito, calculados aparte del patrimonio neto:
- * - cardBalanceQ: saldo deudor actual de las tarjetas de crédito activas (convertido a Q)
+ * Las tarjetas de crédito ya no tienen saldo propio (siempre sería 0);
+ * toda su deuda vive en las visacuotas asociadas.
  * - installmentsPendingQ: monto pendiente (no el total) de las visacuotas activas (convertido a Q)
  */
-export function calcCreditCommitments(accounts: Account[], installments: CreditInstallment[], exchangeRate: number): { cardBalanceQ: number; installmentsPendingQ: number } {
-  const cardBalanceQ = accounts
-    .filter(a => a.type === 'credit' && a.isActive)
-    .reduce((s, a) => s + convertAmount(Math.abs(a.balance), a.currency, 'Q', exchangeRate), 0);
-
+export function calcCreditCommitments(installments: CreditInstallment[], exchangeRate: number): { installmentsPendingQ: number } {
   const installmentsPendingQ = installments
     .filter(i => i.isActive)
     .reduce((s, i) => {
@@ -453,13 +454,20 @@ export function calcCreditCommitments(accounts: Account[], installments: CreditI
       return s + convertAmount(pending, i.currency, 'Q', exchangeRate);
     }, 0);
 
-  return { cardBalanceQ, installmentsPendingQ };
+  return { installmentsPendingQ };
 }
 
 /** Cuota mensual pendiente de visacuotas */
 export function getMonthlyInstallmentTotal(installments: CreditInstallment[]): number {
   return installments
     .filter(i => i.isActive && i.paidInstallments < i.totalInstallments)
+    .reduce((s, i) => s + i.monthlyPayment, 0);
+}
+
+/** Cuota mensual total de las visacuotas activas ligadas a una cuenta (tarjeta) específica */
+export function getAccountMonthlyInstallmentTotal(installments: CreditInstallment[], accountId: string): number {
+  return installments
+    .filter(i => i.accountId === accountId && i.isActive && i.paidInstallments < i.totalInstallments)
     .reduce((s, i) => s + i.monthlyPayment, 0);
 }
 
@@ -677,15 +685,9 @@ export const StorageService = {
     return updated;
   },
 
-  /** Agrega una visacuota nueva y ajusta el saldo de la cuenta asociada (usado al convertir un movimiento existente en visacuota) */
+  /** Agrega una visacuota nueva (usado al convertir un movimiento existente en visacuota). Las tarjetas ya no tienen saldo propio, así que no se ajusta ningún balance. */
   async addInstallmentAndAdjustBalance(item: CreditInstallment): Promise<{ installments: CreditInstallment[]; accounts: Account[] }> {
     const installments = await this.addCreditInstallment(item);
-    if (item.accountId) {
-      // Usar el remanente (no el total) — cubre tanto visacuotas retroactivas
-      // (paidInstallments > 0) como conversión de un movimiento ya pagado.
-      const remaining = item.totalAmount - item.monthlyPayment * item.paidInstallments;
-      await this.adjustAccountBalance(item.accountId, remaining);
-    }
     const accounts = await this.getAccounts();
     return { installments, accounts };
   },
@@ -712,9 +714,6 @@ export const StorageService = {
       if (!item.isActive || item.paidInstallments >= item.totalInstallments) {
         updated.push(item);
         continue;
-      }
-      if (item.accountId) {
-        await this.adjustAccountBalance(item.accountId, -item.monthlyPayment);
       }
       const newPaid = item.paidInstallments + 1;
       updated.push({

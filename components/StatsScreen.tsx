@@ -293,7 +293,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                     { key: "all",     label: "Todo" },
                 ] as const).map(p => (
                     <TouchableOpacity key={p.key} style={[s.filterTab, period === p.key && s.filterTabActive]} onPress={() => { setPeriod(p.key); setSelectedSlice(null); }}>
-                        <Text style={[s.filterTxt, period === p.key && s.filterTxtActive]}>{p.label}</Text>
+                        <Text numberOfLines={1} style={[s.filterTxt, period === p.key && s.filterTxtActive]}>{p.label}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -483,9 +483,9 @@ const s = StyleSheet.create({
     pageTitle: { color: C.textPrimary, fontSize: 28, fontWeight: "900", letterSpacing: 0.5 },
     pageSubtitle: { color: C.textSub, fontSize: 13, marginTop: 4 },
     filterRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
-    filterTab: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", backgroundColor: C.bgDeep },
+    filterTab: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", backgroundColor: C.bgDeep },
     filterTabActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.3) },
-    filterTxt: { color: C.textSub, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
+    filterTxt: { color: C.textSub, fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
     filterTxtActive: { color: C.primaryLight, fontWeight: "900" },
     quickRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
     quickCard: { flex: 1, backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 2, padding: 12, alignItems: "center" },

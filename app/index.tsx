@@ -26,6 +26,7 @@ import AddScreen from "../components/AddScreen";
 import AIAdvisor from "../components/AIAdvisor";
 import BiometricGate from "../components/BiometricGate";
 import BudgetScreen from "../components/BudgetScreen";
+import CardsOnboardingScreen from "../components/CardsOnboardingScreen";
 import DashboardScreen from "../components/Dashboard";
 import OnboardingScreen from "../components/OnboardingScreen";
 import SettingsScreen from "../components/SettingsScreen";
@@ -158,7 +159,16 @@ function AppContent() {
     await StorageService.checkAndRunMonthlyReset();
     const data = await StorageService.loadAllData();
     setTxs(data.transactions);
-    setSettings(data.settings);
+
+    // Si el usuario ya tenía tarjetas de crédito antes de este cambio, se marca
+    // el onboarding de tarjetas como completado automáticamente (no se le vuelve a mostrar).
+    let settingsToUse = data.settings;
+    if (!data.settings.cardsOnboardingComplete && data.accounts.some(a => a.type === 'credit')) {
+      settingsToUse = { ...data.settings, cardsOnboardingComplete: true };
+      await StorageService.saveSettings(settingsToUse);
+    }
+    setSettings(settingsToUse);
+
     setFixedExpenses(data.fixedExpenses);
     setCategoryBudgets(data.categoryBudgets);
     setSavingsGoals(data.savingsGoals);
@@ -212,6 +222,12 @@ function AppContent() {
   };
 
   const hSaveSettings = (s: UserSettings) => setSettings(s);
+
+  const hCardsOnboardingComplete = async () => {
+    const updated = { ...settings, cardsOnboardingComplete: true };
+    await StorageService.saveSettings(updated);
+    setSettings(updated);
+  };
 
   const hClearAll = async () => {
     await StorageService.clearAllData();
@@ -271,6 +287,7 @@ function AppContent() {
   // ── Renders condicionales ─────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
+  if (!settings.cardsOnboardingComplete) return <CardsOnboardingScreen settings={settings} onComplete={hCardsOnboardingComplete} />;
 
   return (
     <TutorialMenuProvider onOpen={() => setShowTutorialMenu(true)}>
