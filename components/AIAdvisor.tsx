@@ -8,8 +8,8 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     SavingsGoal, Transaction, UserSettings,
-    calcCreditCommitments, calcNetWorthFromAccounts, getAccountMonthlyInstallmentTotal,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment
+    calcCreditCommitments, calcNetWorthFromAccounts, convertAmount, getAccountMonthlyInstallmentTotal,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, parseAmount
 } from "../services/storage";
 import { C, shadow } from "../theme";
 
@@ -127,7 +127,7 @@ function buildFinancialContext(
 
     // Visacuotas
     const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0)
-        .reduce((s, c) => s + c.monthlyPayment, 0);
+        .reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
     const installSummary = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).slice(0, 3)
         .map(c => `  · ${c.name}: Q${c.monthlyPayment.toFixed(0)}/mes (${c.totalInstallments - c.paidInstallments} cuotas restantes)`)
         .join("\n") || "  · Sin cuotas activas";
@@ -328,7 +328,7 @@ function getLocalResponse(
         .map(([cat, amt]) => `${cat} Q${amt.toFixed(0)}`).join(", ");
 
     const fixedPending = fixedExpenses.filter(f => f.isActive && !f.isPaid).reduce((s, f) => s + f.amount, 0);
-    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + c.monthlyPayment, 0);
+    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
     // Compromisos de crédito (separados del patrimonio: visacuotas pendientes)
@@ -350,9 +350,11 @@ function getLocalResponse(
     if (msg.match(/puedo comprar|puedo gastar|tengo para|alcanza|cuesta/)) {
         const numMatch = message.match(/[\d,]+(?:\.\d+)?/);
         if (numMatch) {
-            const amount = parseFloat(numMatch[0].replace(",", "."));
-            if (amount <= remaining) return `Con Q${remaining.toFixed(0)} disponibles sí podés comprarlo (Q${amount.toFixed(0)}). Te quedarán Q${(remaining - amount).toFixed(0)} y aún faltan ${daysLeft} días hasta tu pago.`;
-            return `No es recomendable. Tenés Q${remaining.toFixed(0)} disponibles pero la compra es Q${amount.toFixed(0)} — excede en Q${(amount - remaining).toFixed(0)}.`;
+            const amount = parseAmount(numMatch[0]);
+            if (!isNaN(amount)) {
+                if (amount <= remaining) return `Con Q${remaining.toFixed(0)} disponibles sí podés comprarlo (Q${amount.toFixed(0)}). Te quedarán Q${(remaining - amount).toFixed(0)} y aún faltan ${daysLeft} días hasta tu pago.`;
+                return `No es recomendable. Tenés Q${remaining.toFixed(0)} disponibles pero la compra es Q${amount.toFixed(0)} — excede en Q${(amount - remaining).toFixed(0)}.`;
+            }
         }
         return `Disponés de Q${remaining.toFixed(0)} en tu presupuesto (${100 - pct}% restante). ¿Cuánto cuesta lo que querés comprar?`;
     }

@@ -8,7 +8,8 @@ import {
 import {
     CategoryBudget, Currency, FixedExpense, SavingsGoal,
     StorageService, Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
+    parseAmount
 } from "../services/storage";
 import { EXPENSE_CATEGORIES, getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
@@ -116,7 +117,7 @@ function FixedExpenseModal({ onSave, onClose, existing }: {
 
     const handleSave = () => {
         if (!name.trim()) { Alert.alert("Error", "Ingresa el nombre del gasto."); return; }
-        const amt = parseFloat(amount.replace(",", "."));
+        const amt = parseAmount(amount);
         if (isNaN(amt) || amt <= 0) { Alert.alert("Error", "Ingresa un monto válido."); return; }
         const dayNum = parseInt(day);
         if (isNaN(dayNum) || dayNum < 1 || dayNum > 31) { Alert.alert("Error", "Día inválido (1-31)."); return; }
@@ -129,6 +130,8 @@ function FixedExpenseModal({ onSave, onClose, existing }: {
             category,
             dayOfMonth: dayNum,
             isPaid: existing?.isPaid || false,
+            paidDate: existing?.paidDate,
+            lastTxId: existing?.lastTxId,
             autoRecord,
             notes: notes.trim(),
             isActive: true,
@@ -238,8 +241,8 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
 
     const handleSave = () => {
         if (!name.trim()) { Alert.alert("Error", "Ingresa el nombre de la meta."); return; }
-        const tgt = parseFloat(target.replace(",", "."));
-        const cur = parseFloat(current.replace(",", "."));
+        const tgt = parseAmount(target);
+        const cur = parseAmount(current);
         if (isNaN(tgt) || tgt <= 0) { Alert.alert("Error", "Ingresa un monto objetivo válido."); return; }
         const curVal = isNaN(cur) ? 0 : cur;
 
@@ -562,7 +565,7 @@ function CategoryBudgetTab({
         periodTx.filter(t => t.category === catId).reduce((s, t) => s + t.amount, 0);
 
     const handleSaveBudget = async (catId: string) => {
-        const val = parseFloat(limitVal.replace(",", "."));
+        const val = parseAmount(limitVal);
         if (isNaN(val) || val <= 0) { Alert.alert("Error", "Ingresa un límite válido."); return; }
         const budget: CategoryBudget = { categoryId: catId, limit: val, currency: "Q", alertAt: 80 };
         const all = await StorageService.upsertCategoryBudget(budget);
@@ -711,7 +714,7 @@ function SavingsGoalsTab({
     };
 
     const handleAbono = async (goal: SavingsGoal) => {
-        const val = parseFloat(abonoVal.replace(",", "."));
+        const val = parseAmount(abonoVal);
         if (isNaN(val) || val <= 0) { Alert.alert("Error", "Ingresa un monto válido."); return; }
         const updated = {
             ...goal,

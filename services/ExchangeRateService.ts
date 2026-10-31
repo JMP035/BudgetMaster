@@ -27,9 +27,22 @@ interface RateResult {
 const FALLBACK_RATE = 7.70;
 const FALLBACK_SOURCE = 'Valor por defecto (sin conexión)';
 
+const FETCH_TIMEOUT_MS = 10000;
+
+/** fetch con timeout vía AbortController (mismo patrón que callGemini en AIAdvisor). Si vence, el fetch rechaza (AbortError) y cae en el manejo de error existente. */
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs: number = FETCH_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function fetchFromBanguat(): Promise<RateResult> {
   // API pública del Banco de Guatemala (tipo de cambio referencial)
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     'https://apis.banguat.gob.gt/v1/cambio/referencial',
     { headers: { Accept: 'application/json' } }
   );
@@ -43,7 +56,7 @@ async function fetchFromBanguat(): Promise<RateResult> {
 
 async function fetchFromFallback(): Promise<RateResult> {
   // API pública sin clave: exchangerate-api.com
-  const res = await fetch('https://open.er-api.com/v6/latest/USD');
+  const res = await fetchWithTimeout('https://open.er-api.com/v6/latest/USD');
   if (!res.ok) throw new Error('Exchange API no disponible');
   const json = await res.json();
   const rate = parseFloat(json?.rates?.GTQ);

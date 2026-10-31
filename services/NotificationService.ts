@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import {
     CategoryBudget, FixedExpense, SavingsGoal,
     Transaction, UserSettings,
-    getDaysUntilNextPayment, getEffectivePaymentDay,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, getEffectivePaymentDay,
     StorageService,
 } from './storage';
 
@@ -344,12 +344,10 @@ export const NotificationService = {
     ): Promise<void> {
         if (tx.type !== 'expense' || tx.currency !== 'Q') return;
 
-        const now = new Date();
-        const m = now.getMonth();
-        const y = now.getFullYear();
+        const fp = getCurrentFinancialPeriod(settings);
         const monthTx = transactions.filter(t => {
             const d = new Date(t.date);
-            return d.getMonth() === m && d.getFullYear() === y &&
+            return d >= fp.start && d <= fp.end &&
                 t.type === 'expense' && t.currency === 'Q';
         });
 
@@ -642,6 +640,7 @@ Responde SOLO el texto, sin encabezados ni formato.
         const unpaid = fixedExpenses.filter(f => f.isActive && !f.isPaid);
 
         const catAlerts = categoryBudgets.filter(cb => {
+            if (cb.limit <= 0) return false;
             const spent = monthTx
                 .filter(t => t.type === 'expense' && t.category === cb.categoryId && t.currency === 'Q')
                 .reduce((s, t) => s + t.amount, 0);

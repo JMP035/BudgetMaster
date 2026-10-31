@@ -6,7 +6,7 @@ import {
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { Currency, CustomCategory, StorageService, UserSettings } from "../services/storage";
+import { Currency, CustomCategory, StorageService, UserSettings, parseAmount } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
@@ -187,10 +187,11 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
 
     // ── Guardar ───────────────────────────────────────────────
     const handleSave = async () => {
-        const bQ = parseFloat(budgetQ.replace(",", "."));
-        const bUSD = parseFloat(budgetUSD.replace(",", "."));
-        const sQ = parseFloat(extSavingsQ.replace(",", "."));
-        const sUSD = parseFloat(extSavingsUSD.replace(",", "."));
+        const bQ = parseAmount(budgetQ);
+        const bUSD = parseAmount(budgetUSD);
+        const sQ = parseAmount(extSavingsQ);
+        const sUSD = parseAmount(extSavingsUSD);
+        // El tipo de cambio nunca lleva separador de miles: parseAmount leería "7,705" como 7705. Se mantiene parseFloat a propósito.
         const rate = parseFloat(exchangeRate.replace(",", "."));
 
         if (isNaN(bQ) || bQ <= 0) { Alert.alert("Error", "El presupuesto en Q debe ser mayor a 0."); return; }

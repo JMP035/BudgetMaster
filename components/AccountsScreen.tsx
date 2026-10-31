@@ -10,7 +10,7 @@ import {
   Currency, StorageService, Transaction, UserSettings,
   calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
   getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal, hasReliableConversion,
-  parseDateOnly, storedDateToDateOnly
+  parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
@@ -109,7 +109,10 @@ export function AccountModal({ onSave, onClose, existing, defaultType }: {
       return;
     }
 
-    const bal = parseFloat(balance.replace(',', '.'));
+    const balTrim = balance.trim();
+    const isNegBal = balTrim.startsWith('-');
+    const balAbs = parseAmount(isNegBal ? balTrim.slice(1) : balTrim);
+    const bal = isNegBal ? -balAbs : balAbs;
     if (isNaN(bal)) { Alert.alert('Error', 'Ingresa un saldo válido.'); return; }
 
     const account: Account = {
@@ -262,14 +265,14 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
 
   const fxBlocked = !!fromAcc && !!toAcc && !hasReliableConversion(fromAcc.currency, toAcc.currency);
 
-  const previewAmt = parseFloat(amount.replace(',', '.'));
+  const previewAmt = parseAmount(amount);
   const showPreview = !!fromAcc && !!toAcc && toAcc.currency !== fromAcc.currency && !isNaN(previewAmt) && previewAmt > 0 && !fxBlocked;
   const convertedPreview = showPreview ? convertAmount(previewAmt, fromAcc!.currency, toAcc!.currency, settings.exchangeRate) : 0;
 
   const handleSave = () => {
     if (fromId === toId) { Alert.alert('Error', 'Las cuentas deben ser diferentes.'); return; }
     if (fxBlocked) { Alert.alert('Conversión no disponible', `No hay tipo de cambio confiable entre ${fromAcc!.currency} y ${toAcc!.currency}. Solo se puede transferir USD↔Q, o entre cuentas de la misma moneda.`); return; }
-    const amt = parseFloat(amount.replace(',', '.'));
+    const amt = parseAmount(amount);
     if (isNaN(amt) || amt <= 0) { Alert.alert('Error', 'Ingresa un monto válido.'); return; }
     if (!fromAcc || fromAcc.balance < amt) { Alert.alert('Error', 'Saldo insuficiente en la cuenta origen.'); return; }
     onSave(fromId, toId, amt);
