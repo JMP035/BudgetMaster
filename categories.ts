@@ -65,9 +65,10 @@ export function customToCategory(c: CustomCategory): Category {
 }
 
 /** Busca una categoría en predefinidas + custom */
-export const getCat = (id: string, customCategories: CustomCategory[] = []): Category => {
-    // Buscar en predefinidas primero
-    const predefined = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].find(c => c.id === id);
+export const getCat = (id: string, customCategories: CustomCategory[] = [], type?: 'income' | 'expense' | 'transfer'): Category => {
+    // Buscar en predefinidas primero (el orden depende del tipo de transacción, ya que algunos ids como "other" existen en ambas listas)
+    const predefinedOrder = type === 'income' ? [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES] : [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
+    const predefined = predefinedOrder.find(c => c.id === id);
     if (predefined) return predefined;
 
     // Buscar en custom

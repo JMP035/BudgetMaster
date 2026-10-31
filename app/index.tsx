@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Account, CategoryBudget, CreditInstallment,
+  Account, AppData, CategoryBudget, CreditInstallment,
   DEFAULT_SETTINGS, FixedExpense, SavingsGoal,
   StorageService, Transaction, UserSettings
 } from "../services/storage";
@@ -153,7 +153,7 @@ function AppContent() {
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
 
   // ── Carga inicial ─────────────────────────────────────────
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (): Promise<AppData> => {
     // El reset mensual debe correr ANTES de leer los datos,
     // si no la UI muestra gastos fijos/cuotas del mes anterior.
     await StorageService.checkAndRunMonthlyReset();
@@ -174,12 +174,18 @@ function AppContent() {
     setSavingsGoals(data.savingsGoals);
     setAccounts(data.accounts);
     setCreditInstallments(data.creditInstallments);
+
+    void NotificationService.syncFixedExpenseReminders(data.fixedExpenses).catch(e => console.warn("[loadData] recordatorios:", e));
+
+    return { ...data, settings: settingsToUse };
   }, []);
 
   useEffect(() => {
-    loadData();
-    NotificationService.requestPermissions();
-    NotificationService.scheduleWeeklySummary();
+    (async () => {
+      const data = await loadData();
+      const granted = await NotificationService.requestPermissions();
+      if (granted) await NotificationService.runStartupNotifications(data);
+    })().catch(e => console.warn("[startup] notificaciones:", e));
     TutorialService.isCompleted('tour_inicial').then(done => {
       if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
     });
@@ -213,11 +219,9 @@ function AppContent() {
   const hAdd = async (tx: Transaction) => {
     await StorageService.addTransaction(tx);
     setTxs(p => [tx, ...p]);
-    try {
-      await NotificationService.onTransactionAdded(
-        tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses
-      );
-    } catch { }
+    void NotificationService.onTransactionAdded(
+      tx, [tx, ...txs], settings, categoryBudgets, fixedExpenses
+    ).catch(e => console.warn("[hAdd] Notificación falló:", e));
     setTab("dashboard");
   };
 
@@ -230,6 +234,7 @@ function AppContent() {
   };
 
   const hClearAll = async () => {
+    await NotificationService.cancelAll();
     await StorageService.clearAllData();
     await loadData();
     setTab("dashboard");

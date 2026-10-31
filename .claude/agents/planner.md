@@ -1,7 +1,7 @@
 ---
 name: planner
-description: Arquitecto de software (Fable 5). Úsalo SIEMPRE que una tarea requiera diseño o planificación antes de tocar código - nuevas funcionalidades, refactors, correcciones complejas. Produce un plan paso a paso que luego ejecuta el agente "ejecutor". No modifica archivos.
-model: fable
+description: Arquitecto de software (Opus 5). Úsalo SIEMPRE que una tarea requiera diseño o planificación antes de tocar código - nuevas funcionalidades, refactors, correcciones complejas. Produce un plan paso a paso que luego ejecuta el agente "ejecutor". No modifica archivos.
+model: opus
 tools: Read, Glob, Grep, Bash
 ---
 

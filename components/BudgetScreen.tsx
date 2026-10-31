@@ -8,12 +8,13 @@ import {
 import {
     CategoryBudget, Currency, FixedExpense, SavingsGoal,
     StorageService, Transaction, UserSettings,
-    getDaysUntilNextPayment
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue
 } from "../services/storage";
 import { EXPENSE_CATEGORIES, getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
+import { NotificationService } from "../services/NotificationService";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -240,17 +241,18 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
         const tgt = parseFloat(target.replace(",", "."));
         const cur = parseFloat(current.replace(",", "."));
         if (isNaN(tgt) || tgt <= 0) { Alert.alert("Error", "Ingresa un monto objetivo válido."); return; }
+        const curVal = isNaN(cur) ? 0 : cur;
 
         const goal: SavingsGoal = {
             id: existing?.id || `sg_${Date.now()}`,
             name: name.trim(),
             targetAmount: tgt,
-            currentAmount: isNaN(cur) ? 0 : cur,
+            currentAmount: curVal,
             currency,
             deadline: deadline ? new Date(deadline).toISOString() : new Date(Date.now() + 180 * 86400000).toISOString(),
             icon: selectedIcon,
             color: selectedColor,
-            isCompleted: false,
+            isCompleted: curVal >= tgt,
             createdAt: existing?.createdAt || new Date().toISOString(),
         };
         onSave(goal);
@@ -403,6 +405,7 @@ function FixedExpensesTab({
         };
         const all = await StorageService.updateFixedExpense(updated);
         setFixedExpenses(all);
+        void NotificationService.scheduleFixedExpenseReminder(updated).catch(e => console.warn("[FixedExpense] recordatorio:", e));
 
         // Notificar al padre para que recargue todos los datos
         onRefresh?.();
@@ -414,6 +417,7 @@ function FixedExpensesTab({
             ? await StorageService.addFixedExpense(expense)
             : await StorageService.updateFixedExpense(expense);
         setFixedExpenses(all);
+        void NotificationService.scheduleFixedExpenseReminder(expense).catch(e => console.warn("[FixedExpense] recordatorio:", e));
     };
 
     const handleDelete = (id: string) => {
@@ -423,6 +427,7 @@ function FixedExpensesTab({
                 text: "Eliminar", style: "destructive", onPress: async () => {
                     const all = await StorageService.deleteFixedExpense(id);
                     setFixedExpenses(all);
+                    void NotificationService.cancelFixedExpenseReminder(id).catch(e => console.warn("[FixedExpense] cancelar recordatorio:", e));
                 }
             }
         ]);
@@ -472,7 +477,7 @@ function FixedExpensesTab({
                         .sort((a, b) => a.dayOfMonth - b.dayOfMonth)
                         .map(expense => {
                             const cat = getCat(expense.category, settings.customCategories);
-                            const isOverdue = !expense.isPaid && new Date().getDate() > expense.dayOfMonth;
+                            const isOverdue = isFixedExpenseOverdue(expense);
                             return (
                                 <TouchableOpacity
                                     key={expense.id}
@@ -545,18 +550,16 @@ function CategoryBudgetTab({
     const [editing, setEditing] = useState<string | null>(null);
     const [limitVal, setLimitVal] = useState("");
 
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
-    const monthTx = transactions.filter(t => {
+    const fp = getCurrentFinancialPeriod(settings);
+    const periodTx = transactions.filter(t => {
         const d = new Date(t.date);
-        return d.getMonth() === m && d.getFullYear() === y && t.type === 'expense' && t.currency === 'Q';
+        return d >= fp.start && d <= fp.end && t.type === 'expense' && (t.currency === 'Q' || !t.currency);
     });
 
     const allCats = getAllExpenseCategories(settings.customCategories);
 
     const getSpent = (catId: string) =>
-        monthTx.filter(t => t.category === catId).reduce((s, t) => s + t.amount, 0);
+        periodTx.filter(t => t.category === catId).reduce((s, t) => s + t.amount, 0);
 
     const handleSaveBudget = async (catId: string) => {
         const val = parseFloat(limitVal.replace(",", "."));
@@ -717,6 +720,7 @@ function SavingsGoalsTab({
         };
         const all = await StorageService.updateSavingsGoal(updated);
         setSavingsGoals(all);
+        void NotificationService.notifyGoalProgressIfCrossed(goal, updated, settings).catch(e => console.warn("[Abono] notificación:", e));
         setAbonoId(null);
         setAbonoVal("");
     };

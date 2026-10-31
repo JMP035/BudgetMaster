@@ -86,7 +86,7 @@ function buildFinancialContext(
                     a.cutoffDay ? `corte día ${a.cutoffDay}` : null,
                     a.paymentDueDay ? `pago día ${a.paymentDueDay}` : null,
                 ].filter(Boolean).join(", ");
-                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
                 return `  · ${a.name} (${a.type})${dayInfo ? `: ${dayInfo}` : ""} — cuota mensual: Q${accMonthly.toFixed(2)}`;
             }
             return `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`;
@@ -99,7 +99,7 @@ function buildFinancialContext(
     const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
     const creditCommitmentsSummary = activeAccounts.filter(a => a.type === 'credit').length > 0
         ? activeAccounts.filter(a => a.type === 'credit').map(a => {
-            const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+            const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
             return `  · ${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(2)}/mes en cuotas` : "sin cuotas activas"}`;
         }).join("\n")
         : "  · Sin tarjetas de crédito registradas";
@@ -115,14 +115,14 @@ function buildFinancialContext(
     const budgetsSummary = categoryBudgets.slice(0, 5)
         .map(b => { 
             const spent = transactions.filter(t => t.category === b.categoryId && t.type === "expense" && new Date(t.date) >= fp.start && new Date(t.date) <= fp.end).reduce((s,t)=>s+t.amount, 0);
-            const pctB = Math.round((spent / b.limit) * 100); 
+            const pctB = b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0;
             return `  · ${b.categoryId}: Q${spent.toFixed(0)} / Q${b.limit.toFixed(0)} (${pctB}%${pctB >= 100 ? " ⚠️ EXCEDIDO" : ""})`; 
         })
         .join("\n") || "  · Sin límites por categoría";
 
     // Metas de ahorro
     const goalsSummary = savingsGoals.filter(g => !g.isCompleted).slice(0, 3)
-        .map(g => { const pctG = Math.round((g.currentAmount / g.targetAmount) * 100); return `  · ${g.name}: Q${g.currentAmount.toFixed(0)} / Q${g.targetAmount.toFixed(0)} (${pctG}%)`; })
+        .map(g => { const pctG = g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0; return `  · ${g.name}: Q${g.currentAmount.toFixed(0)} / Q${g.targetAmount.toFixed(0)} (${pctG}%)`; })
         .join("\n") || "  · Sin metas activas";
 
     // Visacuotas
@@ -319,7 +319,7 @@ function getLocalResponse(
     const expenseQ  = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const incomeQ   = periodTx.filter(t => t.type === "income"  && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const remaining = settings.budgetLimit - expenseQ;
-    const pct       = Math.round((expenseQ / settings.budgetLimit) * 100);
+    const pct       = settings.budgetLimit > 0 ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
 
     // Top categorías del período
     const catMap: Record<string, number> = {};
@@ -359,7 +359,7 @@ function getLocalResponse(
     if (msg.match(/ahorro|ahorrar|meta|objetivo|guardar/)) {
         const activeGoals = savingsGoals.filter(g => !g.isCompleted);
         const goal = activeGoals[0];
-        if (goal) return `Tu meta "${goal.name}" lleva Q${goal.currentAmount.toFixed(0)} de Q${goal.targetAmount.toFixed(0)} (${Math.round(goal.currentAmount / goal.targetAmount * 100)}%). Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}.`;
+        if (goal) return `Tu meta "${goal.name}" lleva Q${goal.currentAmount.toFixed(0)} de Q${goal.targetAmount.toFixed(0)} (${goal.targetAmount > 0 ? Math.round(goal.currentAmount / goal.targetAmount * 100) : 0}%). Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}.`;
         return `Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}. Para mejores consejos de ahorro, configurá una meta en la sección de Presupuesto.`;
     }
     if (msg.match(/deuda|tarjeta|credito|cuota|visa/)) {
@@ -369,7 +369,7 @@ function getLocalResponse(
         const nonCreditAccounts = accounts.filter(a => a.isActive && a.type !== 'credit');
         if (accounts.filter(a => a.isActive).length > 0) {
             const creditPart = accounts.filter(a => a.isActive && a.type === 'credit').map(a => {
-                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id);
+                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
                 return `${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(0)}/mes en cuotas` : "sin cuotas activas"}`;
             });
             const parts = [...nonCreditAccounts.map(a => `${a.name}: Q${a.balance.toFixed(0)}`), ...creditPart];
@@ -564,6 +564,7 @@ export default function AIAdvisor({
     };
 
     const handleClearChat = () => {
+        if (loading) return;
         setMessages([{
             id: "welcome_new",
             role: "ai",
@@ -593,7 +594,7 @@ export default function AIAdvisor({
                             </Text>
                         </View>
                     </View>
-                    <TouchableOpacity onPress={handleClearChat} style={s.clearBtn}>
+                    <TouchableOpacity onPress={handleClearChat} disabled={loading} style={[s.clearBtn, loading && { opacity: 0.4 }]}>
                         <Ionicons name="refresh-outline" size={18} color={C.textMuted} />
                     </TouchableOpacity>
                 </View>

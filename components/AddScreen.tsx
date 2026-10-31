@@ -4,7 +4,7 @@ import {
     Alert, KeyboardAvoidingView, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
-import { Account, Currency, Transaction, UserSettings } from "../services/storage";
+import { Account, Currency, Transaction, UserSettings, parseAmount } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { C, shadow } from "../theme";
 import { SmsService } from "../services/SmsService";
@@ -71,7 +71,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     };
 
     const handleAdd = async () => {
-        const amt = parseFloat(amount.replace(",", "."));
+        const amt = parseAmount(amount);
         if (!amount || isNaN(amt) || amt <= 0) {
             Alert.alert("Error", "Ingresa un monto válido mayor a 0.");
             return;

@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-    ScrollView, StyleSheet, Text, TouchableOpacity, View
+    Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import { Account, StorageService, UserSettings } from "../services/storage";
 import { C, shadow } from "../theme";
@@ -20,8 +20,13 @@ export default function CardsOnboardingScreen({ settings, onComplete }: Props) {
     const [showAccModal, setShowAccModal] = useState(false);
 
     const handleSaveCard = async (account: Account) => {
-        await StorageService.addAccount(account);
-        setCards(prev => [...prev, account]);
+        try {
+            await StorageService.addAccount(account);
+            setCards(prev => [...prev, account]);
+        } catch (e) {
+            console.warn("[CardsOnboarding] No se pudo guardar la tarjeta:", e);
+            Alert.alert("Error", "No se pudo guardar la tarjeta. Intenta de nuevo.");
+        }
     };
 
     return (

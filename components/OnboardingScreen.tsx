@@ -245,9 +245,23 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
     const handleFinish = () => onComplete(data);
 
+    const isValidDay = (str: string, max: number): boolean => {
+        if (!/^\d{1,2}$/.test(str.trim())) return false;
+        const n = parseInt(str.trim(), 10);
+        return n >= 1 && n <= max;
+    };
+
     const canContinue = (): boolean => {
         if (step === 0) return data.name.trim().length > 0;
         if (step === 1) return data.monthlyIncome.trim().length > 0;
+        if (step === 3) {
+            if (data.paymentCycle === "biweekly") {
+                const parts = data.paymentDays.split(",").map(x => x.trim());
+                return parts.length === 2 && parts.every(x => isValidDay(x, 31)) && parts[0] !== parts[1];
+            }
+            if (data.paymentCycle === "weekly") return isValidDay(data.paymentDay, 7);
+            return isValidDay(data.paymentDay, 31);
+        }
         return true;
     };
 
@@ -330,6 +344,15 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     suffix="del mes"
                     autoFocus
                 />
+                {step === 3 && !canContinue() && (
+                    <Text style={s.dayError}>
+                        {data.paymentCycle === "biweekly"
+                            ? "Ingresa dos días válidos (1-31) separados por coma, ej: 15,30"
+                            : data.paymentCycle === "weekly"
+                                ? "Ingresa un día de la semana entre 1 y 7"
+                                : "Ingresa un día del mes entre 1 y 31"}
+                    </Text>
+                )}
             </ScrollView>
         </AnimatedCard>,
 
@@ -576,6 +599,7 @@ const s = StyleSheet.create({
     stepTitle: { color: C.textPrimary, fontSize: 24, fontWeight: "900", marginBottom: 10, lineHeight: 30 },
     stepSubtitle: { color: C.textSub, fontSize: 14, lineHeight: 22 },
     hint: { color: C.textMuted, fontSize: 12, marginTop: 10, lineHeight: 18 },
+    dayError: { color: C.danger, fontSize: 12, marginTop: 8 },
     currencyRow: { flexDirection: "row", gap: 10, marginBottom: 4 },
     currBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.card },
     currBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + "33" },

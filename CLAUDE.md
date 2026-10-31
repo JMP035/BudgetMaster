@@ -16,7 +16,7 @@ App de finanzas personales hecha con Expo (SDK 54) / React Native 0.81 / React 1
 Para tareas no triviales se usa el flujo **plan → ejecución** descrito en
 `.claude/WORKFLOW.md`:
 
-1. El subagente `planner` (Fable 5) diseña el plan.
+1. El subagente `planner` (Opus 5) diseña el plan.
 2. El subagente `ejecutor` (Sonnet 5) lo implementa.
 
 ## Comandos

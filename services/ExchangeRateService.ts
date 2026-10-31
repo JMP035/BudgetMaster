@@ -4,7 +4,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // SERVICIO DE TIPO DE CAMBIO USD → Q
 // Fuente principal: Banco de Guatemala (Banguat)
 // Fuente de respaldo: Open Exchange Rates (sin clave)
-// Cache de 6 horas
+// Cache de 6 horas. El valor de respaldo (sin conexión) NUNCA se cachea:
+// si ambas fuentes de red fallan, la próxima llamada vuelve a intentar
+// conectarse en vez de quedarse pegada a FALLBACK_RATE por 6 horas.
 // ─────────────────────────────────────────────────────────────
 
 const CACHE_KEY = '@bm_exchange_rate';
@@ -60,7 +62,9 @@ export const ExchangeRateService = {
       if (cached) {
         const parsed: CachedRate = JSON.parse(cached);
         const age = Date.now() - parsed.timestamp;
-        if (age < CACHE_TTL_MS) {
+        // Una entrada cacheada con la fuente de respaldo es inválida (de
+        // versiones anteriores que sí la cacheaban): no se usa, se reintenta.
+        if (age < CACHE_TTL_MS && parsed.source !== FALLBACK_SOURCE) {
           return { rate: parsed.rate, source: parsed.source };
         }
       }
@@ -75,6 +79,7 @@ export const ExchangeRateService = {
    */
   async forceRefresh(): Promise<RateResult> {
     let result: RateResult;
+    let isFallback = false;
 
     try {
       result = await fetchFromBanguat();
@@ -83,14 +88,17 @@ export const ExchangeRateService = {
         result = await fetchFromFallback();
       } catch {
         result = { rate: FALLBACK_RATE, source: FALLBACK_SOURCE };
+        isFallback = true;
       }
     }
 
-    // Guardar en caché
-    try {
-      const toCache: CachedRate = { ...result, timestamp: Date.now() };
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(toCache));
-    } catch { /* ignorar error de escritura */ }
+    // Guardar en caché, salvo que sea el valor de respaldo: ese nunca se cachea.
+    if (!isFallback) {
+      try {
+        const toCache: CachedRate = { ...result, timestamp: Date.now() };
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(toCache));
+      } catch { /* ignorar error de escritura */ }
+    }
 
     return result;
   },

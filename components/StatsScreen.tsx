@@ -208,12 +208,37 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const selectedCatData = byCat.find(s => s.id === selectedSlice);
 
     // ── Stats ────────────────────────────────────────────────
-    const daysPassed = now.getDate();
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
     const daysLeft = getDaysUntilNextPayment(settings);
-    const dailyRate = totalExp / Math.max(daysPassed, 1);
-    const projected = dailyRate * daysInMonth;
-    const projBalance = totalInc - projected;
+
+    // Días inclusivos entre dos fechas (ignora horas)
+    const dayDiff = (a: Date, b: Date) => Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime() - new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()) / 86400000) + 1;
+
+    let daysElapsed: number;
+    let daysTotal: number;
+    if (period === "current") {
+        daysElapsed = fp.daysPassed;
+        daysTotal = fp.daysTotal;
+    } else if (period === "prev") {
+        daysElapsed = daysTotal = dayDiff(fp.prevStart, fp.prevEnd);
+    } else if (period === "year") {
+        daysElapsed = dayDiff(new Date(y, 0, 1), now);
+        daysTotal = dayDiff(new Date(y, 0, 1), new Date(y, 11, 31));
+    } else {
+        const validDates = filtered.map(t => new Date(t.date)).filter(d => !isNaN(d.getTime()));
+        if (validDates.length > 0) {
+            const minDate = new Date(Math.min(...validDates.map(d => d.getTime())));
+            daysElapsed = daysTotal = dayDiff(minDate, now);
+        } else {
+            daysElapsed = daysTotal = 1;
+        }
+    }
+    daysElapsed = Math.max(daysElapsed, 1);
+    daysTotal = Math.max(daysTotal, 1);
+
+    const dailyRate = totalExp / daysElapsed;
+    const projected = dailyRate * daysTotal;
+    const projIncome = period === "current" ? totalInc : (totalInc / daysElapsed) * daysTotal;
+    const projBalance = projIncome - projected;
 
     const last6Months = Array.from({ length: 6 }, (_, i) => {
         const d = new Date(y, m - (5 - i), 1);
@@ -243,20 +268,20 @@ export default function StatsScreen({ transactions, settings }: Props) {
         return Math.max(cumInc - cumExp + (settings.externalSavings || 0), 0);
     });
 
-    const avgDaily = totalExp / Math.max(daysPassed, 1);
-    const avgDailyBudget = settings.budgetLimit / daysInMonth;
-    const dailyPct = (avgDaily / avgDailyBudget) * 100;
+    const avgDaily = dailyRate;
+    const avgDailyBudget = settings.budgetLimit / Math.max(fp.daysTotal, 1);
+    const dailyPct = avgDailyBudget > 0 ? (avgDaily / avgDailyBudget) * 100 : 0;
 
     const daysWithExpense = new Set(expensesQ.map(t => new Date(t.date).toDateString())).size;
-    const daysWithoutExpense = Math.max(daysPassed - daysWithExpense, 0);
+    const daysWithoutExpense = Math.max(daysElapsed - daysWithExpense, 0);
 
-    const prevMonthExp = transactions.filter(t => {
+    const prevPeriodExp = transactions.filter(t => {
         const d = new Date(t.date);
         return t.type === "expense" && (t.currency === "Q" || !t.currency) &&
-            d.getMonth() === (m === 0 ? 11 : m - 1) && d.getFullYear() === (m === 0 ? y - 1 : y);
+            d >= fp.prevStart && d <= fp.prevEnd;
     }).reduce((s, t) => s + t.amount, 0);
-    const velocityDiff = totalExp - prevMonthExp;
-    const velocityPct = prevMonthExp > 0 ? (Math.abs(velocityDiff) / prevMonthExp) * 100 : 0;
+    const velocityDiff = totalExp - prevPeriodExp;
+    const velocityPct = prevPeriodExp > 0 ? (Math.abs(velocityDiff) / prevPeriodExp) * 100 : 0;
 
     const avgMonthlyExp = expByMonth.reduce((s, v) => s + v, 0) / 6;
     const avgMonthlyInc = incByMonth.reduce((s, v) => s + v, 0) / 6;
@@ -274,6 +299,13 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
     const debtRatio = settings.monthlyIncome > 0 ? (settings.activeDebts / settings.monthlyIncome) * 100 : 0;
     const debtColor = debtRatio > 40 ? C.danger : debtRatio > 20 ? C.warning : C.income;
+
+    // ── Subtítulo STAT 1 (Flujo de Caja Proyectado) ──────────
+    const stat1Subtitle = period === "current"
+        ? `A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este período. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`} Días hasta próximo ingreso: ${daysLeft}.`
+        : period === "year"
+            ? `A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este año. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`}`
+            : `Gastaste Q${projected.toFixed(0)} en ${periodLabel} (Q${avgDaily.toFixed(0)}/día). ${projBalance >= 0 ? `Te sobró Q${projBalance.toFixed(0)}.` : `Te faltaron Q${Math.abs(projBalance).toFixed(0)}.`}`;
 
     return (
         <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
@@ -390,7 +422,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* STAT 1 — Flujo proyectado */}
             <StatCard icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
-                subtitle={`A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este mes. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`} Días hasta próximo ingreso: ${daysLeft}.`}
+                subtitle={stat1Subtitle}
             />
 
             {/* STAT 2 — Comparativa mes a mes */}
@@ -400,11 +432,11 @@ export default function StatsScreen({ transactions, settings }: Props) {
                 <View style={{ height: 28 }} />
                 <Text style={s.chartLabel}>INGRESOS</Text>
                 <VertBars data={incByMonth} color={C.income} labels={last6Months.map(m => m.label)} />
-                {velocityDiff !== 0 && (
+                {period === "current" && velocityDiff !== 0 && (
                     <View style={[s.trendBadge, { backgroundColor: velocityDiff > 0 ? C.danger + "22" : C.income + "22", marginTop: 12 }]}>
                         <Ionicons name={velocityDiff > 0 ? "trending-up" : "trending-down"} size={14} color={velocityDiff > 0 ? C.danger : C.income} />
                         <Text style={{ color: velocityDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", marginLeft: 6 }}>
-                            {velocityDiff > 0 ? "+" : "-"}Q{Math.abs(velocityDiff).toFixed(0)} vs mes anterior ({velocityPct.toFixed(0)}%)
+                            {velocityDiff > 0 ? "+" : "-"}Q{Math.abs(velocityDiff).toFixed(0)} vs período anterior ({velocityPct.toFixed(0)}%)
                         </Text>
                     </View>
                 )}
@@ -428,7 +460,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* STAT 5 — Días sin gastar */}
             <StatCard icon="shield-checkmark-outline" title="Días Sin Gastar" value={`${daysWithoutExpense} días`} color={daysWithoutExpense >= 3 ? C.income : C.textSub}
-                subtitle={`De ${daysPassed} días transcurridos, gastaste en ${daysWithExpense}.`}
+                subtitle={`De ${daysElapsed} días del período, gastaste en ${daysWithExpense}.`}
             />
 
             {/* STAT 6 — Desglose por banco */}
@@ -459,10 +491,12 @@ export default function StatsScreen({ transactions, settings }: Props) {
             )}
 
             {/* STAT 8 — Velocidad de gasto */}
-            <StatCard icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : `${velocityDiff > 0 ? "+" : ""}Q ${velocityDiff.toFixed(0)}`}
-                color={velocityDiff > 0 ? C.danger : velocityDiff < 0 ? C.income : C.textSub}
-                subtitle={velocityDiff > 0 ? `Gastás Q${velocityDiff.toFixed(0)} más que el mes pasado (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás Q${Math.abs(velocityDiff).toFixed(0)} menos que el mes pasado. ¡Buen trabajo!` : "Sin datos para comparar."}
-            />
+            {period === "current" && (
+                <StatCard icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : `${velocityDiff > 0 ? "+" : ""}Q ${velocityDiff.toFixed(0)}`}
+                    color={velocityDiff > 0 ? C.danger : velocityDiff < 0 ? C.income : C.textSub}
+                    subtitle={velocityDiff > 0 ? `Gastás Q${velocityDiff.toFixed(0)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás Q${Math.abs(velocityDiff).toFixed(0)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
+                />
+            )}
 
             {/* STAT 9 — Proyección de ahorro (misma métrica de flujo que la tarjeta de arriba) */}
             <StatCard icon="rocket-outline" title="Proyección de Ahorro" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}

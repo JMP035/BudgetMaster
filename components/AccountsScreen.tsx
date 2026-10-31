@@ -9,7 +9,8 @@ import {
   Account, AccountType, CreditInstallment,
   Currency, StorageService, Transaction, UserSettings,
   calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
-  getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal
+  getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal, hasReliableConversion,
+  parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
@@ -259,12 +260,15 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
   const fromAcc = accounts.find(a => a.id === fromId);
   const toAcc = accounts.find(a => a.id === toId);
 
+  const fxBlocked = !!fromAcc && !!toAcc && !hasReliableConversion(fromAcc.currency, toAcc.currency);
+
   const previewAmt = parseFloat(amount.replace(',', '.'));
-  const showPreview = !!fromAcc && !!toAcc && toAcc.currency !== fromAcc.currency && !isNaN(previewAmt) && previewAmt > 0;
+  const showPreview = !!fromAcc && !!toAcc && toAcc.currency !== fromAcc.currency && !isNaN(previewAmt) && previewAmt > 0 && !fxBlocked;
   const convertedPreview = showPreview ? convertAmount(previewAmt, fromAcc!.currency, toAcc!.currency, settings.exchangeRate) : 0;
 
   const handleSave = () => {
     if (fromId === toId) { Alert.alert('Error', 'Las cuentas deben ser diferentes.'); return; }
+    if (fxBlocked) { Alert.alert('Conversión no disponible', `No hay tipo de cambio confiable entre ${fromAcc!.currency} y ${toAcc!.currency}. Solo se puede transferir USD↔Q, o entre cuentas de la misma moneda.`); return; }
     const amt = parseFloat(amount.replace(',', '.'));
     if (isNaN(amt) || amt <= 0) { Alert.alert('Error', 'Ingresa un monto válido.'); return; }
     if (!fromAcc || fromAcc.balance < amt) { Alert.alert('Error', 'Saldo insuficiente en la cuenta origen.'); return; }
@@ -314,13 +318,18 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
             <Text style={md.cur}>{fromAcc?.currency || 'Q'}</Text>
             <TextInput style={md.amtInput} value={amount} onChangeText={setAmount} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" autoFocus />
           </View>
+          {fxBlocked && (
+            <Text style={[md.hint, { color: C.danger }]}>
+              No hay tipo de cambio confiable entre {fromAcc!.currency} y {toAcc!.currency}. Solo se puede transferir USD↔Q, o entre cuentas de la misma moneda.
+            </Text>
+          )}
           {showPreview && (
             <Text style={md.hint}>
               Se acreditarán {toAcc!.currency} {convertedPreview.toFixed(2)} en {toAcc!.name} (tipo de cambio Q {settings.exchangeRate}/USD)
             </Text>
           )}
 
-          <TouchableOpacity style={[md.saveBtn, { marginTop: 20 }]} onPress={handleSave}>
+          <TouchableOpacity style={[md.saveBtn, { marginTop: 20 }, fxBlocked && { opacity: 0.5 }]} onPress={handleSave} disabled={fxBlocked}>
             <Ionicons name="swap-horizontal-outline" size={20} color="#1A0E00" />
             <Text style={md.saveBtnTxt}>Transferir</Text>
           </TouchableOpacity>
@@ -361,20 +370,21 @@ export default function AccountsScreen({
   // ── Patrimonio neto ──────────────────────────────────────
   const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
   const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
-  const totalAssets = accounts.filter(a => a.type !== 'credit' && a.isActive).reduce((s, a) => {
-    if (a.currency === 'Q') return s + a.balance;
-    if (a.currency === 'USD') return s + a.balance * settings.exchangeRate;
-    return s;
-  }, 0);
-  const monthlyInstTotal = getMonthlyInstallmentTotal(creditInstallments);
+  const totalAssets = totalQ + convertAmount(totalUSD, 'USD', 'Q', settings.exchangeRate);
+  const monthlyInstTotal = getMonthlyInstallmentTotal(creditInstallments, settings.exchangeRate);
 
   // ── Handlers Cuentas ─────────────────────────────────────
   const handleSaveAccount = async (account: Account) => {
     const isNew = !accounts.find(a => a.id === account.id);
-    const updated = isNew
-      ? await StorageService.addAccount(account)
-      : await StorageService.updateAccount(account);
-    setAccounts(updated);
+    try {
+      const updated = isNew
+        ? await StorageService.addAccount(account)
+        : await StorageService.updateAccount(account);
+      setAccounts(updated);
+    } catch (e) {
+      console.warn('[AccountsScreen] No se pudo guardar la cuenta:', e);
+      Alert.alert('Error', 'No se pudo guardar la cuenta. Intenta de nuevo.');
+    }
   };
 
   const handleDeleteAccount = (id: string) => {
@@ -425,11 +435,10 @@ export default function AccountsScreen({
     const fromAcc = accounts.find(a => a.id === fromId);
     const toAcc = accounts.find(a => a.id === toId);
     if (!fromAcc || !toAcc) return;
+    if (!hasReliableConversion(fromAcc.currency, toAcc.currency)) return;
 
-    await StorageService.adjustAccountBalance(fromId, -amount);
     const amountToCredit = convertAmount(amount, fromAcc.currency, toAcc.currency, settings.exchangeRate);
-    await StorageService.adjustAccountBalance(toId, amountToCredit);
-    const accs = await StorageService.getAccounts();
+    const accs = await StorageService.transferBetweenAccounts(fromId, toId, -amount, amountToCredit);
     setAccounts(accs);
 
     // Registrar como transacción de transferencia
@@ -473,6 +482,11 @@ export default function AccountsScreen({
             <View style={s.summaryItem}>
               <Text style={s.summaryLbl}>ACTIVOS</Text>
               <Text style={[s.summaryVal, { color: C.income }]}>Q {totalAssets.toFixed(0)}</Text>
+              {(totalEUR !== 0 || totalGBP !== 0) && (
+                <Text style={s.summarySub}>
+                  + {[totalEUR !== 0 ? `EUR ${totalEUR.toFixed(0)}` : null, totalGBP !== 0 ? `£ ${totalGBP.toFixed(0)}` : null].filter(Boolean).join(" · ")}
+                </Text>
+              )}
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
@@ -554,7 +568,7 @@ export default function AccountsScreen({
                 accounts.filter(a => a.isActive).map(acc => {
                   const typeInfo = ACCOUNT_TYPES.find(t => t.type === acc.type)!;
                   const isCredit = acc.type === 'credit';
-                  const monthlyTotal = isCredit ? getAccountMonthlyInstallmentTotal(creditInstallments, acc.id) : 0;
+                  const monthlyTotal = isCredit ? getAccountMonthlyInstallmentTotal(creditInstallments, acc.id, settings.exchangeRate, acc.currency) : 0;
                   const cutoffPaymentLabel = isCredit && (acc.cutoffDay || acc.paymentDueDay)
                     ? [
                         acc.cutoffDay ? `Corte: día ${acc.cutoffDay}` : null,
@@ -625,7 +639,7 @@ export default function AccountsScreen({
                   const acc = accounts.find(a => a.id === item.accountId);
                   const remaining = item.totalInstallments - item.paidInstallments;
                   const pct = (item.paidInstallments / item.totalInstallments) * 100;
-                  const endDate = new Date(item.startDate);
+                  const endDate = parseDateOnly(storedDateToDateOnly(item.startDate)) ?? new Date(item.startDate);
                   endDate.setMonth(endDate.getMonth() + item.totalInstallments);
 
                   return (
@@ -720,6 +734,7 @@ const s = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryLbl: { color: C.textMuted, fontSize: 9, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   summaryVal: { fontSize: 15, fontWeight: '900', color: C.textPrimary },
+  summarySub: { color: C.textMuted, fontSize: 10, marginTop: 2 },
   summaryDivider: { width: 1, height: 32, backgroundColor: C.cardBorder, marginHorizontal: 8 },
 
   tabRow: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: C.card, borderRadius: 12, padding: 4, marginBottom: 16, borderWidth: 1, borderColor: C.cardBorder },

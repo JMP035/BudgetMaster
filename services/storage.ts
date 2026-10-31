@@ -170,6 +170,14 @@ export interface AppData {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ESTADO DE NOTIFICACIONES
+// ─────────────────────────────────────────────────────────────
+export interface NotificationState {
+  weeklySummaryFireAt?: string;   // ISO
+  setupNudgesShown: string[];
+}
+
+// ─────────────────────────────────────────────────────────────
 // CLAVES DE ALMACENAMIENTO
 // ─────────────────────────────────────────────────────────────
 const K = {
@@ -181,6 +189,7 @@ const K = {
   SAVINGS_GOALS: '@bm_savings_goals',
   ACCOUNTS: '@bm_accounts',
   CREDIT_INSTALLMENTS: '@bm_credit_installments',
+  NOTIFICATION_STATE: '@bm_notification_state',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -219,6 +228,109 @@ export const DEFAULT_SETTINGS: UserSettings = {
 // HELPERS
 // ─────────────────────────────────────────────────────────────
 
+/** Cantidad de días del mes dado (acepta month fuera de 0-11, JS lo normaliza) */
+function daysInMonth(year: number, month: number): number {
+  return new Date(year, month + 1, 0).getDate();
+}
+
+/** Recorta un día de pago configurado al largo real del mes indicado */
+export function getEffectivePaymentDay(paymentDay: number, year: number, month: number): number {
+  return Math.min(Math.max(1, Math.round(paymentDay)), daysInMonth(year, month));
+}
+
+/** Indica si un gasto fijo está vencido: no pagado y ya se pasó su día efectivo del mes actual */
+export function isFixedExpenseOverdue(expense: FixedExpense, now: Date = new Date()): boolean {
+  return !expense.isPaid && now.getDate() > getEffectivePaymentDay(expense.dayOfMonth, now.getFullYear(), now.getMonth());
+}
+
+/** Último instante (23:59:59) del día anterior a la fecha dada */
+function dayBefore(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, 23, 59, 59);
+}
+
+/**
+ * Parsea un monto ingresado por el usuario con separadores de miles/decimales
+ * ambiguos (convención de Guatemala: tanto "," como "." pueden ser decimal o
+ * de miles según el contexto). Devuelve NaN si no se puede interpretar.
+ */
+export function parseAmount(input: string): number {
+  let s = input.trim().replace(/\s/g, "");
+  if (!s) return NaN;
+
+  const hasComma = s.includes(",");
+  const hasDot = s.includes(".");
+
+  if (hasComma && hasDot) {
+    // El separador que aparece último es el decimal.
+    const lastComma = s.lastIndexOf(",");
+    const lastDot = s.lastIndexOf(".");
+    if (lastComma > lastDot) {
+      s = s.replace(/\./g, "").replace(",", ".");
+    } else {
+      s = s.replace(/,/g, "");
+    }
+  } else if (hasComma) {
+    const commaCount = (s.match(/,/g) || []).length;
+    if (commaCount > 1 || /^\d{1,3},\d{3}$/.test(s)) {
+      s = s.replace(/,/g, "");
+    } else {
+      s = s.replace(",", ".");
+    }
+  } else if (hasDot) {
+    const dotCount = (s.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      s = s.replace(/\./g, "");
+    }
+  }
+
+  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
+}
+
+/**
+ * Indica si existe una tasa de cambio confiable entre dos monedas.
+ * La app solo tiene tasa real Q↔USD; cualquier conversión USD↔EUR/£ no es
+ * confiable (ver JSDoc de convertAmount) y debe bloquearse con este helper.
+ */
+export function hasReliableConversion(from: Currency, to: Currency): boolean {
+  const isUsdEurOrGbpPair =
+    (from === 'USD' && (to === 'EUR' || to === '£')) ||
+    (to === 'USD' && (from === 'EUR' || from === '£'));
+  return !isUsdEurOrGbpPair;
+}
+
+/** Formatea una fecha (solo año-mes-día, sin hora) como "YYYY-MM-DD" en horario local */
+export function formatDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Parsea una cadena "YYYY-MM-DD" a un Date al mediodía local. Devuelve null si no es válida. */
+export function parseDateOnly(s: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!match) return null;
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  const date = new Date(y, m - 1, d, 12, 0, 0);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
+  return date;
+}
+
+/**
+ * Convierte una fecha-hora guardada (string ISO con hora, posiblemente vieja)
+ * a una cadena solo-día "YYYY-MM-DD", evitando el corrimiento de día que
+ * causaría convertir a horario local una fecha guardada a medianoche UTC.
+ */
+export function storedDateToDateOnly(stored: string): string {
+  if (/^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/.test(stored)) {
+    return stored.slice(0, 10);
+  }
+  const d = new Date(stored);
+  return isNaN(d.getTime()) ? formatDateOnly(new Date()) : formatDateOnly(d);
+}
+
 /** Días hasta próximo pago */
 export function getDaysUntilNextPayment(settings: UserSettings): number {
   const now = new Date();
@@ -229,17 +341,18 @@ export function getDaysUntilNextPayment(settings: UserSettings): number {
   if (settings.paymentCycle === 'weekly') return 7 - now.getDay();
 
   if (settings.paymentCycle === 'biweekly') {
-    const days = [...settings.paymentDays].sort((a, b) => a - b);
+    const sortedRaw = [...settings.paymentDays].sort((a, b) => a - b);
+    const days = sortedRaw.map(d => getEffectivePaymentDay(d, year, month));
     const next = days.find(d => d > today);
     if (next) return next - today;
-    const firstNext = new Date(year, month + 1, days[0]);
+    const firstNext = new Date(year, month + 1, getEffectivePaymentDay(sortedRaw[0], year, month + 1));
     return Math.ceil((firstNext.getTime() - now.getTime()) / 86400000);
   }
 
   if (settings.paymentCycle === 'monthly') {
-    const payDay = settings.paymentDay;
-    if (today < payDay) return payDay - today;
-    const nextPay = new Date(year, month + 1, payDay);
+    const eff = getEffectivePaymentDay(settings.paymentDay, year, month);
+    if (today < eff) return eff - today;
+    const nextPay = new Date(year, month + 1, getEffectivePaymentDay(settings.paymentDay, year, month + 1));
     return Math.ceil((nextPay.getTime() - now.getTime()) / 86400000);
   }
   return 0;
@@ -301,27 +414,29 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
     const days = [...settings.paymentDays].sort((a, b) => a - b); // Ej: [15, 30]
     const d1 = days[0] ?? 15;
     const d2 = days[1] ?? 30;
+    const D = (yy: number, mm: number, dd: number) => new Date(yy, mm, dd);
+    const e1 = (mo: number) => getEffectivePaymentDay(d1, y, mo);
+    const e2 = (mo: number) => getEffectivePaymentDay(d2, y, mo);
     let start: Date, end: Date, prevStart: Date, prevEnd: Date;
 
-    if (today >= d2) {
-      // Segunda quincena: d2 → d1 del mes siguiente
-      start = new Date(y, m, d2);
-      const nextD1 = new Date(y, m + 1, d1);
-      end = new Date(nextD1); end.setDate(nextD1.getDate() - 1); end.setHours(23, 59, 59);
-      prevStart = new Date(y, m, d1);
-      prevEnd = new Date(y, m, d2 - 1); prevEnd.setHours(23, 59, 59);
-    } else if (today >= d1) {
-      // Primera quincena: d1 → d2-1
-      start = new Date(y, m, d1);
-      end = new Date(y, m, d2 - 1, 23, 59, 59);
-      prevStart = new Date(y, m - 1, d2);
-      prevEnd = new Date(y, m, d1 - 1, 23, 59, 59);
+    if (today >= e2(m)) {
+      // Segunda quincena: e2(m) → e1(m+1) del mes siguiente
+      start = D(y, m, e2(m));
+      end = dayBefore(D(y, m + 1, e1(m + 1)));
+      prevStart = D(y, m, e1(m));
+      prevEnd = dayBefore(start);
+    } else if (today >= e1(m)) {
+      // Primera quincena: e1(m) → e2(m)-1
+      start = D(y, m, e1(m));
+      end = dayBefore(D(y, m, e2(m)));
+      prevStart = D(y, m - 1, e2(m - 1));
+      prevEnd = dayBefore(start);
     } else {
-      // Antes del d1: última quincena del mes pasado
-      start = new Date(y, m - 1, d2);
-      end = new Date(y, m, d1 - 1, 23, 59, 59);
-      prevStart = new Date(y, m - 1, d1);
-      prevEnd = new Date(y, m - 1, d2 - 1, 23, 59, 59);
+      // Antes del e1(m): última quincena del mes pasado
+      start = D(y, m - 1, e2(m - 1));
+      end = dayBefore(D(y, m, e1(m)));
+      prevStart = D(y, m - 1, e1(m - 1));
+      prevEnd = dayBefore(start);
     }
     const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
     const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
@@ -333,23 +448,24 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
   }
 
   // ── Ciclo mensual (default) ──────────────────────────────────
-  const payDay = Math.min(settings.paymentDay, 28); // Máx 28 para evitar Feb
+  const P = settings.paymentDay;
+  const e = (mo: number) => getEffectivePaymentDay(P, y, mo);
 
-  let start: Date, end: Date, prevStart: Date, prevEnd: Date;
+  let start: Date, end: Date, prevStart: Date, prevEnd: Date, nextStart: Date;
 
-  if (today >= payDay) {
-    // Estamos dentro del período: desde payDay de este mes
-    start = new Date(y, m, payDay, 0, 0, 0);
-    end = new Date(y, m + 1, payDay - 1, 23, 59, 59);
-    prevStart = new Date(y, m - 1, payDay, 0, 0, 0);
-    prevEnd = new Date(y, m, payDay - 1, 23, 59, 59);
+  if (today >= e(m)) {
+    // Estamos dentro del período: desde e(m) de este mes
+    start = new Date(y, m, e(m));
+    nextStart = new Date(y, m + 1, e(m + 1));
+    prevStart = new Date(y, m - 1, e(m - 1));
   } else {
-    // Antes del payDay: período empezó el mes pasado
-    start = new Date(y, m - 1, payDay, 0, 0, 0);
-    end = new Date(y, m, payDay - 1, 23, 59, 59);
-    prevStart = new Date(y, m - 2, payDay, 0, 0, 0);
-    prevEnd = new Date(y, m - 1, payDay - 1, 23, 59, 59);
+    // Antes de e(m): período empezó el mes pasado
+    start = new Date(y, m - 1, e(m - 1));
+    nextStart = new Date(y, m, e(m));
+    prevStart = new Date(y, m - 2, e(m - 2));
   }
+  end = dayBefore(nextStart);
+  prevEnd = dayBefore(start);
 
   const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
   const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
@@ -432,7 +548,10 @@ export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: numb
  * Convierte un monto entre monedas usando Q como moneda puente.
  * Para EUR/£ no hay tasa de cambio disponible en la app: se asumen 1:1
  * respecto a Q (misma limitación que el resto del código; no se introduce
- * infraestructura nueva de FX).
+ * infraestructura nueva de FX). Como consecuencia, una conversión USD↔EUR/£
+ * no es confiable (pasa por Q con una tasa 1:1 inventada); usar
+ * hasReliableConversion() para detectar y bloquear ese caso antes de llamar
+ * a esta función donde el resultado se le muestra o aplica al usuario.
  */
 export function convertAmount(amount: number, from: Currency, to: Currency, exchangeRate: number): number {
   if (from === to) return amount;
@@ -457,18 +576,18 @@ export function calcCreditCommitments(installments: CreditInstallment[], exchang
   return { installmentsPendingQ };
 }
 
-/** Cuota mensual pendiente de visacuotas */
-export function getMonthlyInstallmentTotal(installments: CreditInstallment[]): number {
+/** Cuota mensual pendiente de visacuotas, en Q */
+export function getMonthlyInstallmentTotal(installments: CreditInstallment[], exchangeRate: number): number {
   return installments
     .filter(i => i.isActive && i.paidInstallments < i.totalInstallments)
-    .reduce((s, i) => s + i.monthlyPayment, 0);
+    .reduce((s, i) => s + convertAmount(i.monthlyPayment, i.currency, 'Q', exchangeRate), 0);
 }
 
-/** Cuota mensual total de las visacuotas activas ligadas a una cuenta (tarjeta) específica */
-export function getAccountMonthlyInstallmentTotal(installments: CreditInstallment[], accountId: string): number {
+/** Cuota mensual total de las visacuotas activas ligadas a una cuenta (tarjeta) específica, convertida a targetCurrency */
+export function getAccountMonthlyInstallmentTotal(installments: CreditInstallment[], accountId: string, exchangeRate: number, targetCurrency: Currency): number {
   return installments
     .filter(i => i.accountId === accountId && i.isActive && i.paidInstallments < i.totalInstallments)
-    .reduce((s, i) => s + i.monthlyPayment, 0);
+    .reduce((s, i) => s + convertAmount(i.monthlyPayment, i.currency, targetCurrency, exchangeRate), 0);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -517,6 +636,16 @@ export const StorageService = {
       const data = await AsyncStorage.getItem(K.SETTINGS);
       return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
     } catch { return DEFAULT_SETTINGS; }
+  },
+
+  /**
+   * Igual que getSettings() pero sin try/catch: los errores se propagan.
+   * Usado donde una falla silenciosa sería peligrosa (ej. el gate biométrico),
+   * para poder distinguir "no hay configuración guardada" de "algo falló".
+   */
+  async getSettingsOrThrow(): Promise<UserSettings> {
+    const data = await AsyncStorage.getItem(K.SETTINGS);
+    return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
   },
 
   async saveSettings(s: UserSettings): Promise<void> {
@@ -639,7 +768,8 @@ export const StorageService = {
   async addAccount(account: Account): Promise<Account[]> {
     const all = await this.getAccounts();
     const updated = [...all, account];
-    await this.saveAccounts(updated);
+    // a diferencia de saveAccounts, propaga el error
+    await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(updated));
     return updated;
   },
 
@@ -664,6 +794,21 @@ export const StorageService = {
       a.id === accountId ? { ...a, balance: a.balance + delta } : a
     );
     await this.saveAccounts(updated);
+  },
+
+  /** Transferencia en una sola lectura+escritura para no dejar saldos a medias */
+  async transferBetweenAccounts(fromId: string, toId: string, fromDelta: number, toDelta: number): Promise<Account[]> {
+    const all = await this.getAccounts();
+    const fromAcc = all.find(a => a.id === fromId);
+    const toAcc = all.find(a => a.id === toId);
+    if (fromId === toId || !fromAcc || !toAcc) return all;
+    const updated = all.map(a => {
+      if (a.id === fromId) return { ...a, balance: a.balance + fromDelta };
+      if (a.id === toId) return { ...a, balance: a.balance + toDelta };
+      return a;
+    });
+    await this.saveAccounts(updated);
+    return updated;
   },
 
   // ── Visacuotas / Cuotas ───────────────────────────────────
@@ -725,6 +870,29 @@ export const StorageService = {
     await this.saveCreditInstallments(updated);
   },
 
+  // ── Estado de notificaciones ──────────────────────────────
+  async getNotificationState(): Promise<NotificationState> {
+    try {
+      const data = await AsyncStorage.getItem(K.NOTIFICATION_STATE);
+      return data ? { setupNudgesShown: [], ...JSON.parse(data) } : { setupNudgesShown: [] };
+    } catch { return { setupNudgesShown: [] }; }
+  },
+
+  async saveNotificationState(s: NotificationState): Promise<void> {
+    try { await AsyncStorage.setItem(K.NOTIFICATION_STATE, JSON.stringify(s)); } catch { }
+  },
+
+  async markSetupNudgesShown(ids: string[]): Promise<void> {
+    const prev = await this.getNotificationState();
+    const setupNudgesShown = Array.from(new Set([...prev.setupNudgesShown, ...ids]));
+    await this.saveNotificationState({ ...prev, setupNudgesShown });
+  },
+
+  async setWeeklySummaryFireAt(iso: string): Promise<void> {
+    const prev = await this.getNotificationState();
+    await this.saveNotificationState({ ...prev, weeklySummaryFireAt: iso });
+  },
+
   // ── Reset mensual ─────────────────────────────────────────
   async getLastResetDate(): Promise<string | null> {
     try { return await AsyncStorage.getItem(K.LAST_RESET); } catch { return null; }
@@ -737,14 +905,37 @@ export const StorageService = {
   async checkAndRunMonthlyReset(): Promise<boolean> {
     const lastReset = await this.getLastResetDate();
     const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${now.getMonth()}`;
-    if (lastReset !== currentMonth) {
+    const nowY = now.getFullYear();
+    const nowM = now.getMonth();
+    const currentMonth = `${nowY}-${nowM}`;
+
+    const match = lastReset ? /^(\d{4})-(\d{1,2})$/.exec(lastReset) : null;
+    if (!match) {
+      // Sin registro previo o con formato inválido: un solo ciclo, como antes.
       await this.resetFixedExpensesForNewMonth();
       await this.processMonthlyInstallments();
       await this.saveLastResetDate(currentMonth);
       return true;
     }
-    return false;
+
+    const lastY = Number(match[1]);
+    const lastM = Number(match[2]);
+    const elapsed = (nowY * 12 + nowM) - (lastY * 12 + lastM);
+
+    if (elapsed <= 0) {
+      // Reloj del dispositivo atrasado (o mismo mes): no se guarda nada.
+      return false;
+    }
+
+    // Tope de 120 meses (10 años) solo como protección ante un lastReset
+    // corrupto o absurdamente viejo; no es un límite funcional esperado.
+    const cycles = Math.min(elapsed, 120);
+    for (let i = 0; i < cycles; i++) {
+      await this.resetFixedExpensesForNewMonth();
+      await this.processMonthlyInstallments();
+    }
+    await this.saveLastResetDate(currentMonth);
+    return true;
   },
 
   // ── Cargar TODO ───────────────────────────────────────────

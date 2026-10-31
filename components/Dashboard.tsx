@@ -9,7 +9,7 @@ import {
     FinancialPeriod, SavingsGoal, Transaction, UserSettings,
     calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
-    getDaysUntilNextPayment, getMonthlyInstallmentTotal
+    getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
@@ -164,7 +164,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
 }) {
     const active = accounts.filter(a => a.isActive);
     const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(active, settings.exchangeRate);
-    const monthlyInst = getMonthlyInstallmentTotal(installments);
+    const monthlyInst = getMonthlyInstallmentTotal(installments, settings.exchangeRate);
     const { installmentsPendingQ } = calcCreditCommitments(installments, settings.exchangeRate);
     const creditCards = active.filter(a => a.type === "credit");
 
@@ -240,7 +240,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
             {/* Mini lista de cuentas */}
             {active.slice(0, 3).map(acc => {
                 if (acc.type === "credit") {
-                    const accMonthlyTotal = getAccountMonthlyInstallmentTotal(installments, acc.id);
+                    const accMonthlyTotal = getAccountMonthlyInstallmentTotal(installments, acc.id, settings.exchangeRate, acc.currency);
                     return (
                         <View key={acc.id} style={s.accMiniRow}>
                             <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
@@ -291,7 +291,7 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
     const active = fixedExpenses.filter(e => e.isActive);
     const paid = active.filter(e => e.isPaid).length;
     const pending = active.filter(e => !e.isPaid);
-    const overdue = pending.filter(e => new Date().getDate() > e.dayOfMonth);
+    const overdue = pending.filter(e => isFixedExpenseOverdue(e));
     if (active.length === 0) return null;
 
     return (
@@ -654,7 +654,7 @@ export default function DashboardScreen({
                 {recent.length === 0 ? (
                     <Text style={s.empty}>Sin transacciones aún.</Text>
                 ) : recent.map(tx => {
-                    const cat = getCat(tx.category, settings.customCategories);
+                    const cat = getCat(tx.category, settings.customCategories, tx.type);
                     const txCurrency = tx.currency || "Q";
                     const isTransfer = tx.type === "transfer";
                     return (

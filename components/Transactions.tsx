@@ -32,7 +32,7 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
         ? getAllExpenseCategories(settings.customCategories)
         : getAllIncomeCategories(settings.customCategories);
 
-    const selectedCat = getCat(category, settings.customCategories);
+    const selectedCat = getCat(category, settings.customCategories, tx.type);
     const currencies: Currency[] = ['Q', 'USD', 'EUR', '£'];
 
     const handleSave = async () => {
@@ -198,7 +198,7 @@ interface TxCardProps {
 }
 
 export function TxCard({ tx, settings, onDelete, onPress }: TxCardProps) {
-    const cat = getCat(tx.category, settings.customCategories);
+    const cat = getCat(tx.category, settings.customCategories, tx.type);
     const isIncome = tx.type === "income";
     const txCurrency = tx.currency || 'Q';
 
@@ -282,7 +282,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
         .filter(t => currency === "all" || (t.currency || 'Q') === currency)
         .filter(t => !search ||
             t.description.toLowerCase().includes(search.toLowerCase()) ||
-            getCat(t.category, settings.customCategories).label.toLowerCase().includes(search.toLowerCase()) ||
+            getCat(t.category, settings.customCategories, t.type).label.toLowerCase().includes(search.toLowerCase()) ||
             (t.bank || '').toLowerCase().includes(search.toLowerCase())
         )
         .sort((a, b) => +new Date(b.date) - +new Date(a.date)),
@@ -365,7 +365,6 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                             )}
                         </View>
                     }
-                    getItemLayout={(_data, index) => ({ length: 84, offset: 84 * index, index })}
                     ListEmptyComponent={
                         <View style={s.empty}>
                             <Ionicons name="search-outline" size={48} color={C.textMuted} />

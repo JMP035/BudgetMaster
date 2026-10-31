@@ -159,7 +159,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             const hasHW = await LocalAuthentication.hasHardwareAsync();
             const enrolled = await LocalAuthentication.isEnrolledAsync();
             setBiometricAvailable(hasHW && enrolled);
-        } catch { }
+        } catch (e) { console.warn("[Settings] No se pudo verificar disponibilidad biométrica:", e); }
     };
 
     const loadExchangeRate = async () => {
@@ -194,6 +194,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
         const rate = parseFloat(exchangeRate.replace(",", "."));
 
         if (isNaN(bQ) || bQ <= 0) { Alert.alert("Error", "El presupuesto en Q debe ser mayor a 0."); return; }
+        if (isNaN(rate) || rate <= 0) { Alert.alert("Error", "El tipo de cambio debe ser un número mayor a 0."); return; }
 
         const updated: UserSettings = {
             ...settings,
@@ -205,7 +206,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             biometricEnabled: biometricOpt,
             externalSavings: isNaN(sQ) ? 0 : sQ,
             externalSavingsUSD: isNaN(sUSD) ? 0 : sUSD,
-            exchangeRate: isNaN(rate) ? 7.70 : rate,
+            exchangeRate: rate,
             geminiApiKey: apiKey.trim(),
             customCategories: customCats,
         };

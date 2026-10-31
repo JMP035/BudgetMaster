@@ -6,7 +6,8 @@ import {
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import {
-  Account, CreditInstallment, Currency
+  Account, CreditInstallment, Currency,
+  formatDateOnly, parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C, shadow } from "../theme";
@@ -32,25 +33,27 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   const [category, setCategory] = useState(existing?.category || 'shopping');
   const [notes, setNotes] = useState(existing?.notes || '');
   const [paidInstallments, setPaidInstallments] = useState(existing?.paidInstallments?.toString() || '0');
-  const [startDate, setStartDate] = useState(existing?.startDate?.slice(0, 10) || new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(existing?.startDate ? storedDateToDateOnly(existing.startDate) : formatDateOnly(new Date()));
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const selectedAcc = accounts.find(a => a.id === accountId);
+  const effectiveCurrency: Currency = existing?.currency || prefill?.currency || selectedAcc?.currency || 'Q';
 
   // Auto-calcular cuotas al cambiar total/mensual
   React.useEffect(() => {
-    const t = parseFloat(total);
-    const m = parseFloat(monthly);
+    const t = parseAmount(total);
+    const m = parseAmount(monthly);
     if (t > 0 && m > 0) setInstallments(Math.ceil(t / m).toString());
   }, [total, monthly]);
 
   const handleSave = () => {
     if (!name.trim()) { Alert.alert('Error', 'Ingresa el nombre de la compra.'); return; }
     if (!accountId) { Alert.alert('Error', 'Selecciona una tarjeta de crédito.'); return; }
-    const t = parseFloat(total.replace(',', '.'));
-    const m = parseFloat(monthly.replace(',', '.'));
+    const t = parseAmount(total);
+    const m = parseAmount(monthly);
     const n = parseInt(installments);
     if (isNaN(t) || isNaN(m) || isNaN(n)) { Alert.alert('Error', 'Ingresa montos válidos.'); return; }
+    if (t <= 0 || m <= 0 || n < 1) { Alert.alert('Error', 'El monto total, la cuota mensual y el total de cuotas deben ser mayores a 0.'); return; }
 
     const paid = parseInt(paidInstallments);
     if (isNaN(paid) || paid < 0 || paid >= n) {
@@ -58,10 +61,8 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
       return;
     }
 
-    let validStartDate = existing?.startDate || new Date().toISOString();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(startDate) && !isNaN(new Date(startDate).getTime())) {
-      validStartDate = new Date(startDate).toISOString();
-    }
+    const parsedStart = parseDateOnly(startDate);
+    const validStartDate = parsedStart ? parsedStart.toISOString() : (existing?.startDate || new Date().toISOString());
 
     const item: CreditInstallment = {
       id: existing?.id || `ci_${Date.now()}`,
@@ -72,7 +73,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
       totalInstallments: n,
       paidInstallments: paid,
       startDate: validStartDate,
-      currency: prefill?.currency || selectedAcc?.currency || 'Q',
+      currency: effectiveCurrency,
       category,
       isActive: true,
       notes: notes.trim() || undefined,
@@ -120,13 +121,13 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
 
                   <Text style={md.lbl}>MONTO TOTAL</Text>
                   <View style={md.amtRow}>
-                    <Text style={md.cur}>{selectedAcc?.currency || 'Q'}</Text>
+                    <Text style={md.cur}>{effectiveCurrency}</Text>
                     <TextInput style={md.amtInput} value={total} onChangeText={setTotal} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
                   </View>
 
                   <Text style={md.lbl}>CUOTA MENSUAL</Text>
                   <View style={md.amtRow}>
-                    <Text style={md.cur}>{selectedAcc?.currency || 'Q'}</Text>
+                    <Text style={md.cur}>{effectiveCurrency}</Text>
                     <TextInput style={md.amtInput} value={monthly} onChangeText={setMonthly} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
                   </View>
 
@@ -148,17 +149,17 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
                   <TouchableOpacity style={md.amtRow} onPress={() => setShowDatePicker(true)}>
                     <Ionicons name="calendar-outline" size={16} color={C.textMuted} style={{ marginRight: 8 }} />
                     <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                      {new Date(startDate).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+                      {(parseDateOnly(startDate) ?? new Date()).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
                     </Text>
                   </TouchableOpacity>
                   {showDatePicker && (
                     <DateTimePicker
-                      value={new Date(startDate)}
+                      value={parseDateOnly(startDate) ?? new Date()}
                       mode="date"
                       onChange={(event, selectedDate) => {
                         setShowDatePicker(false);
                         if (event.type !== 'dismissed' && selectedDate) {
-                          setStartDate(selectedDate.toISOString().slice(0, 10));
+                          setStartDate(formatDateOnly(selectedDate));
                         }
                       }}
                     />

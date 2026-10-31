@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Animated, Easing, StyleSheet, Text,
+    ActivityIndicator, Animated, AppState, AppStateStatus, Easing, StyleSheet, Text,
     TouchableOpacity, View
 } from "react-native";
 import { StorageService } from "../services/storage";
@@ -15,7 +15,7 @@ interface Props {
     children: React.ReactNode;
 }
 
-type AuthState = "checking" | "locked" | "unlocked" | "disabled";
+type AuthState = "checking" | "locked" | "unlocked" | "disabled" | "error";
 
 // ─────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
@@ -25,12 +25,21 @@ export default function BiometricGate({ children }: Props) {
     const [authType, setAuthType] = useState<"fingerprint" | "face" | "generic">("fingerprint");
     const [error, setError] = useState<string>("");
     const [attempts, setAttempts] = useState(0);
+    const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+    // Refs de estado para usar dentro del listener de AppState sin depender de closures viejas
+    const authStateRef = useRef<AuthState>("checking");
+    const biometricEnabledRef = useRef(false);
+    const isAuthenticatingRef = useRef(false);
+    const relockedRef = useRef(false);
 
     // Animaciones
     const fadeAnim  = useRef(new Animated.Value(0)).current;
     const shakeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.9)).current;
     const glowAnim  = useRef(new Animated.Value(0)).current;
+
+    useEffect(() => { authStateRef.current = authState; }, [authState]);
 
     // Pulso del ícono — solo corre mientras la pantalla de bloqueo está visible
     useEffect(() => {
@@ -49,9 +58,39 @@ export default function BiometricGate({ children }: Props) {
         initAuth();
     }, []);
 
+    // Re-chequea / vuelve a pedir biometría cuando la app vuelve a foreground
+    // después de haber sido re-bloqueada al pasar a background.
+    useEffect(() => {
+        const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
+            if (
+                next === "background" &&
+                authStateRef.current === "unlocked" &&
+                biometricEnabledRef.current &&
+                !isAuthenticatingRef.current
+            ) {
+                relockedRef.current = true;
+                setAttempts(0);
+                setError("");
+                setAuthState("locked");
+            } else if (next === "active" && relockedRef.current) {
+                relockedRef.current = false;
+                initAuth();
+            }
+            // "inactive" se ignora a propósito: en iOS el propio prompt de Face ID
+            // y el selector de apps generan "inactive". En Android, el PIN de
+            // respaldo puede mandar la app a "background", pero en ese momento
+            // el estado ya es "locked" e isAuthenticatingRef está en true, así
+            // que no hay bucle de re-bloqueo.
+        });
+        return () => sub.remove();
+    }, []);
+
     const initAuth = async () => {
+        setAuthState("checking");
+        setError("");
         try {
-            const settings = await StorageService.getSettings();
+            const settings = await StorageService.getSettingsOrThrow();
+            biometricEnabledRef.current = settings.biometricEnabled;
             if (!settings.biometricEnabled) {
                 setAuthState("disabled");
                 return;
@@ -78,6 +117,8 @@ export default function BiometricGate({ children }: Props) {
             }
 
             // Mostrar pantalla de bloqueo con animación
+            fadeAnim.setValue(0);
+            scaleAnim.setValue(0.9);
             setAuthState("locked");
             Animated.parallel([
                 Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
@@ -88,11 +129,15 @@ export default function BiometricGate({ children }: Props) {
             await attemptAuth();
 
         } catch {
-            setAuthState("disabled");
+            setError("No se pudo verificar la configuración de seguridad. Tocá Reintentar.");
+            setAuthState("error");
         }
     };
 
     const attemptAuth = async () => {
+        if (isAuthenticatingRef.current) return;
+        isAuthenticatingRef.current = true;
+        setIsAuthenticating(true);
         try {
             setError("");
             const result = await LocalAuthentication.authenticateAsync({
@@ -119,6 +164,9 @@ export default function BiometricGate({ children }: Props) {
             }
         } catch {
             setError("Error al acceder al sensor biométrico.");
+        } finally {
+            isAuthenticatingRef.current = false;
+            setIsAuthenticating(false);
         }
     };
 
@@ -133,8 +181,44 @@ export default function BiometricGate({ children }: Props) {
     };
 
     // Si no necesita auth o ya fue desbloqueado, mostrar la app directamente
-    if (authState === "disabled" || authState === "checking" || authState === "unlocked") {
+    if (authState === "disabled" || authState === "unlocked") {
         return <>{children}</>;
+    }
+
+    if (authState === "checking") {
+        return (
+            <View style={s.screen}>
+                <View style={s.bgGradient} />
+                <ActivityIndicator size="large" color={C.primary} />
+            </View>
+        );
+    }
+
+    if (authState === "error") {
+        return (
+            <View style={s.screen}>
+                <View style={s.bgGradient} />
+                <View style={s.card}>
+                    <View style={s.logoWrap}>
+                        <View style={s.logoBg}>
+                            <Ionicons name="wallet-outline" size={32} color="#1A0E00" />
+                        </View>
+                    </View>
+
+                    <Text style={s.appName}>BudgetMaster</Text>
+
+                    <View style={s.errorBox}>
+                        <Ionicons name="alert-circle-outline" size={16} color={C.danger} />
+                        <Text style={s.errorText}>{error}</Text>
+                    </View>
+
+                    <TouchableOpacity style={s.retryBtn} onPress={initAuth} activeOpacity={0.8}>
+                        <Ionicons name="refresh-outline" size={18} color="#1A0E00" />
+                        <Text style={s.retryText}>Reintentar</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
     }
 
     const iconName = authType === "face" ? "scan-outline" : "finger-print-outline";
@@ -168,6 +252,7 @@ export default function BiometricGate({ children }: Props) {
                         onPress={attemptAuth}
                         activeOpacity={0.8}
                         accessibilityLabel="Autenticar con biometría"
+                        disabled={isAuthenticating}
                     >
                         <Ionicons name={iconName as any} size={48} color={C.primaryLight} />
                     </TouchableOpacity>
@@ -185,7 +270,12 @@ export default function BiometricGate({ children }: Props) {
                 ) : null}
 
                 {/* BOTÓN DE REINTENTO */}
-                <TouchableOpacity style={s.retryBtn} onPress={attemptAuth} activeOpacity={0.8}>
+                <TouchableOpacity
+                    style={[s.retryBtn, isAuthenticating && s.retryBtnDisabled]}
+                    onPress={attemptAuth}
+                    activeOpacity={0.8}
+                    disabled={isAuthenticating}
+                >
                     <Ionicons name="refresh-outline" size={18} color="#1A0E00" />
                     <Text style={s.retryText}>
                         {attempts === 0 ? "Autenticar" : "Intentar de nuevo"}
@@ -277,6 +367,7 @@ const s = StyleSheet.create({
         ...shadow(C.primaryGlow, 10, 0.5),
     },
     retryText: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
+    retryBtnDisabled: { opacity: 0.5 },
     hint: {
         color: C.textMuted, fontSize: 11, textAlign: "center",
         marginTop: 16, lineHeight: 17,

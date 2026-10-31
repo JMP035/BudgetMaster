@@ -282,7 +282,14 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     const [stepIndex, setStepIndex] = useState(0);
     const [spotlightRect, setSpotlightRect] = useState<Rect | null>(null);
     const [completed, setCompleted] = useState<string[]>([]);
-    const [measuring, setMeasuring] = useState(false);
+    const [measuredKey, setMeasuredKey] = useState<string | null>(null);
+    const measureSeqRef = useRef(0);
+    const isMountedRef = useRef(true);
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => { isMountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
         TutorialService.getCompleted().then(setCompleted);
@@ -296,26 +303,38 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     }, [activeTutorialId]);
 
     useEffect(() => {
-        if (!activeTutorial) return;
-        measureStep(activeTutorial.steps[stepIndex]);
+        if (!activeTutorial) {
+            measureSeqRef.current++;
+            return;
+        }
+        measureStep(activeTutorial.steps[stepIndex], `${activeTutorial.id}:${stepIndex}`);
     }, [activeTutorial, stepIndex]);
 
     // FIX: usa step.elementId (antes era step.targetRef)
-    const measureStep = useCallback(async (step: TutorialStep) => {
+    const measureStep = useCallback(async (step: TutorialStep, key: string) => {
+        const seq = ++measureSeqRef.current;
         if (!step.elementId) {
             setSpotlightRect(null);
+            setMeasuredKey(key);
             return;
         }
-        setMeasuring(true);
         await new Promise(r => setTimeout(r, 120));
-        const rect = await measureElement(step.elementId);
+        let rect: Rect | null = null;
+        try {
+            rect = await measureElement(step.elementId);
+        } catch {
+            rect = null;
+        }
+        if (!isMountedRef.current || seq !== measureSeqRef.current) return;
         setSpotlightRect(rect);
-        setMeasuring(false);
+        setMeasuredKey(key);
     }, [measureElement]);
 
     const startTutorial = (tutorial: Tutorial) => {
         setActiveTutorial(tutorial);
         setStepIndex(0);
+        setSpotlightRect(null);
+        setMeasuredKey(null);
     };
 
     const handleNext = async () => {
@@ -336,10 +355,13 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         setActiveTutorial(null);
         setStepIndex(0);
         setSpotlightRect(null);
+        setMeasuredKey(null);
         onTutorialEnd?.();
     };
 
     const currentStep = activeTutorial?.steps[stepIndex];
+    const currentKey = activeTutorial ? `${activeTutorial.id}:${stepIndex}` : null;
+    const cardReady = !!currentStep && (!currentStep.elementId || measuredKey === currentKey);
 
     return (
         <>
@@ -353,7 +375,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                             <View style={StyleSheet.absoluteFill} />
                         </TouchableWithoutFeedback>
                         {/* Card encima del bloqueador */}
-                        {!measuring && (
+                        {cardReady && (
                             <StepCard
                                 tutorial={activeTutorial}
                                 step={currentStep}
