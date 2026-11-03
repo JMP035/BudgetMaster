@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { PermissionsAndroid, Platform } from 'react-native';
 // @ts-ignore
 import SmsAndroid from 'react-native-get-sms-android';
 import { Account, CreditInstallment, StorageService, Transaction } from './storage';
@@ -55,15 +55,44 @@ export interface SyncResult {
   totalIgnored: number;
 }
 
+export type SmsPermissionStatus = 'granted' | 'denied' | 'never_ask_again' | 'unavailable';
+
 // ─────────────────────────────────────────────────────────────
 // SERVICIO PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 export const SmsService = {
 
+  isSmsModuleAvailable(): boolean {
+    return Platform.OS === 'android' && !!SmsAndroid && typeof SmsAndroid.list === 'function';
+  },
+
+  async ensureReadSmsPermission(): Promise<SmsPermissionStatus> {
+    if (Platform.OS !== 'android') return 'unavailable';
+    try {
+      if (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)) return 'granted';
+      const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS, {
+        title: 'Permiso para leer SMS bancarios',
+        message: 'BudgetMaster necesita leer tus SMS para detectar los mensajes de tu banco (compras, débitos, abonos) y registrarlos solo. Únicamente se procesan mensajes bancarios y todo queda en tu teléfono.',
+        buttonPositive: 'Permitir',
+        buttonNegative: 'Ahora no',
+      });
+      if (res === PermissionsAndroid.RESULTS.GRANTED) return 'granted';
+      if (res === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) return 'never_ask_again';
+      return 'denied';
+    } catch (e) {
+      console.warn('ensureReadSmsPermission error:', e);
+      return 'denied';
+    }
+  },
+
   async syncBankSms(): Promise<SyncResult> {
     if (Platform.OS !== 'android') {
       return { transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 };
     }
+
+    if (!this.isSmsModuleAvailable()) throw new Error('SMS_MODULE_UNAVAILABLE');
+    const hasPerm = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+    if (!hasPerm) throw new Error('SMS_PERMISSION_DENIED');
 
     const filter = { box: 'inbox', indexFrom: 0, maxCount: 2000 };
     const accounts = await StorageService.getAccounts();

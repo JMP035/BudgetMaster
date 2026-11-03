@@ -31,6 +31,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const amountRef = useTutorialRef('add_amount');
     const descriptionRef = useTutorialRef('add_description');
     const categoryRef = useTutorialRef('add_category');
+    const smsBtnRef = useTutorialRef('add_sms_btn');
 
     const currencies: Currency[] = ['Q', 'USD', 'EUR', '£'];
 
@@ -101,10 +102,12 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 {/* HEADER */}
                 <View style={s.header}>
                     <Text style={s.title}>Nueva Transacción</Text>
-                    <TouchableOpacity style={s.smsBtn} onPress={() => setShowSmsInput(!showSmsInput)}>
-                        <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
-                        <Text style={s.smsBtnTxt}>Leer SMS</Text>
-                    </TouchableOpacity>
+                    <View ref={smsBtnRef} collapsable={false}>
+                        <TouchableOpacity style={s.smsBtn} onPress={() => setShowSmsInput(!showSmsInput)}>
+                            <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
+                            <Text style={s.smsBtnTxt}>Leer SMS</Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* LEER SMS */}

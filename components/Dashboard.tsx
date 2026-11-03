@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    Alert, Animated, Easing, RefreshControl,
+    ActivityIndicator, Alert, Animated, Easing, Linking, Modal, Platform, RefreshControl,
     ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import {
@@ -14,9 +14,11 @@ import {
 import { SmsService } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
 import { TutorialMenuButton } from "./TutorialOverlay";
+import { GlassCard, GlassBackground } from "./GlassCard";
+import GradientText from "./GradientText";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
@@ -92,7 +94,7 @@ function ScoreWidget({ score }: { score: number }) {
     const w = anim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
 
     return (
-        <View style={s.scoreCard}>
+        <GlassCard style={s.glassOuter} contentStyle={s.scoreCard}>
             <View style={s.scoreHeader}>
                 <View style={[s.scoreIconBg, { backgroundColor: color + "22" }]}>
                     <Ionicons name="shield-checkmark-outline" size={20} color={color} />
@@ -101,7 +103,7 @@ function ScoreWidget({ score }: { score: number }) {
                     <Text style={s.scoreTitle}>Score Financiero</Text>
                     <Text style={[s.scoreLabel, { color }]}>{label}</Text>
                 </View>
-                <Text style={[s.scoreValue, { color }]}>{score}</Text>
+                {score >= 60 ? <GradientText text={String(score)} style={s.scoreValue} /> : <Text style={[s.scoreValue, { color }]}>{score}</Text>}
                 <Text style={s.scoreMax}>/100</Text>
             </View>
             <View style={{ height: 8, backgroundColor: C.bgDeep, borderRadius: 4, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder }}>
@@ -113,7 +115,8 @@ function ScoreWidget({ score }: { score: number }) {
                         score >= 40 ? "Hay oportunidades de mejora importantes." :
                             "Situación crítica. Revisa tu presupuesto urgente."}
             </Text>
-        </View>
+            <Text style={s.scoreSource}>Se calcula con los movimientos que registrás este mes, no con tu ingreso declarado.</Text>
+        </GlassCard>
     );
 }
 
@@ -126,7 +129,7 @@ function CurrencyCard({ currency, income, expense }: { currency: string; income:
     const fmt = (n: number) => `${currency} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     const accentColor = currency === "Q" ? C.primary : "#4A9EE8";
     return (
-        <View style={[s.currencyCard, { borderTopColor: accentColor }]}>
+        <GlassCard style={s.glassOuter} contentStyle={s.currencyCard} topAccentColor={accentColor} topAccentWidth={3}>
             <View style={s.currencyHeader}>
                 <View style={[s.currencyBadge, { backgroundColor: accentColor + "22" }]}>
                     <Text style={[s.currencySymbol, { color: accentColor }]}>{currency}</Text>
@@ -151,7 +154,7 @@ function CurrencyCard({ currency, income, expense }: { currency: string; income:
                     </Text>
                 </View>
             </View>
-        </View>
+        </GlassCard>
     );
 }
 
@@ -169,7 +172,8 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
     const creditCards = active.filter(a => a.type === "credit");
 
     return (
-        <TouchableOpacity style={s.widgetCard} onPress={onPress} activeOpacity={0.8}>
+        <TouchableOpacity style={s.glassOuter} onPress={onPress} activeOpacity={0.8}>
+            <GlassCard contentStyle={s.widgetCard}>
             <View style={s.widgetHeader}>
                 <Ionicons name="wallet-outline" size={18} color={C.primaryLight} />
                 <Text style={s.widgetTitle}>Mis Cuentas</Text>
@@ -278,6 +282,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                     </Text>
                 </View>
             )}
+            </GlassCard>
         </TouchableOpacity>
     );
 }
@@ -295,7 +300,8 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
     if (active.length === 0) return null;
 
     return (
-        <TouchableOpacity style={s.widgetCard} onPress={onPress} activeOpacity={0.8}>
+        <TouchableOpacity style={s.glassOuter} onPress={onPress} activeOpacity={0.8}>
+            <GlassCard contentStyle={s.widgetCard}>
             <View style={s.widgetHeader}>
                 <Ionicons name="calendar-outline" size={18} color={C.primaryLight} />
                 <Text style={s.widgetTitle}>Gastos Fijos del Mes</Text>
@@ -318,6 +324,7 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
                 </View>
             ))}
             {pending.length > 2 && <Text style={s.widgetMore}>+{pending.length - 2} más →</Text>}
+            </GlassCard>
         </TouchableOpacity>
     );
 }
@@ -329,7 +336,8 @@ function GoalsWidget({ goals, onPress }: { goals: SavingsGoal[]; onPress: () => 
     const active = goals.filter(g => !g.isCompleted);
     if (active.length === 0) return null;
     return (
-        <TouchableOpacity style={s.widgetCard} onPress={onPress} activeOpacity={0.8}>
+        <TouchableOpacity style={s.glassOuter} onPress={onPress} activeOpacity={0.8}>
+            <GlassCard contentStyle={s.widgetCard}>
             <View style={s.widgetHeader}>
                 <Ionicons name="trophy-outline" size={18} color={C.primaryLight} />
                 <Text style={s.widgetTitle}>Metas de Ahorro</Text>
@@ -348,6 +356,7 @@ function GoalsWidget({ goals, onPress }: { goals: SavingsGoal[]; onPress: () => 
                 );
             })}
             {active.length > 2 && <Text style={s.widgetMore}>+{active.length - 2} metas más →</Text>}
+            </GlassCard>
         </TouchableOpacity>
     );
 }
@@ -364,18 +373,90 @@ function BriefingCard({ text, loading }: { text: string; loading: boolean }) {
     }, [loading, text]);
 
     return (
-        <Animated.View style={[s.briefingCard, { opacity: loading ? 1 : fadeAnim }]}>
-            <View style={s.briefingHeader}>
-                <Ionicons name="sparkles-outline" size={16} color={C.primaryLight} />
-                <Text style={s.briefingTitle}>CFO Intelligence</Text>
-                <View style={s.briefingBadge}><Text style={s.briefingBadgeTxt}>AI</Text></View>
-            </View>
-            <Text style={loading ? s.briefingLoading : s.briefingText}>
-                {loading ? "Analizando tu situación financiera..." : text}
-            </Text>
+        <Animated.View style={[s.glassOuter, { opacity: loading ? 1 : fadeAnim }]}>
+            <GlassCard leftAccentColor={C.primary} contentStyle={s.briefingCard}>
+                <View style={s.briefingHeader}>
+                    <Ionicons name="sparkles-outline" size={16} color={C.primaryLight} />
+                    <Text style={s.briefingTitle}>CFO Intelligence</Text>
+                    <View style={s.briefingBadge}><Text style={s.briefingBadgeTxt}>AI</Text></View>
+                </View>
+                <Text style={loading ? s.briefingLoading : s.briefingText}>
+                    {loading ? "Analizando tu situación financiera..." : text}
+                </Text>
+            </GlassCard>
         </Animated.View>
     );
 }
+
+// ─────────────────────────────────────────────────────────────
+// ORBE AMBIENTAL
+// ─────────────────────────────────────────────────────────────
+function AmbientOrb({ size, color, style }: { size: number; color: string; style?: any }) {
+    return (
+        <View pointerEvents="none" style={[{ position: "absolute" }, style]}>
+            <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: 0.045 }} />
+            <View style={{ position: "absolute", width: size * 0.72, height: size * 0.72, borderRadius: (size * 0.72) / 2, backgroundColor: color, opacity: 0.045, top: (size - size * 0.72) / 2, left: (size - size * 0.72) / 2 }} />
+            <View style={{ position: "absolute", width: size * 0.45, height: size * 0.45, borderRadius: (size * 0.45) / 2, backgroundColor: color, opacity: 0.045, top: (size - size * 0.45) / 2, left: (size - size * 0.45) / 2 }} />
+        </View>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// MODAL — INFO DE PATRIMONIO TOTAL (vidrio, no Alert nativo)
+// ─────────────────────────────────────────────────────────────
+function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <View style={ni.overlay}>
+                <GlassCard radius={20} style={ni.card} contentStyle={ni.content} blur={false}>
+                    <View style={ni.iconWrap}>
+                        <Ionicons name="business-outline" size={22} color={C.primaryLight} />
+                    </View>
+                    <Text style={ni.title}>Patrimonio Total</Text>
+                    <Text style={ni.body}>El Patrimonio Total muestra lo que tenés en tus cuentas de activos.</Text>
+
+                    <View style={ni.row}>
+                        <Ionicons name="checkmark-circle" size={15} color={C.income} />
+                        <Text style={ni.rowLabel}>INCLUYE</Text>
+                    </View>
+                    <Text style={ni.bullet}>• Saldo en cuentas de ahorro</Text>
+                    <Text style={ni.bullet}>• Efectivo disponible</Text>
+                    <Text style={ni.bullet}>• Saldo positivo en cuentas bancarias e inversiones</Text>
+
+                    <View style={ni.row}>
+                        <Ionicons name="close-circle" size={15} color={C.danger} />
+                        <Text style={ni.rowLabel}>NO INCLUYE</Text>
+                    </View>
+                    <Text style={ni.bullet}>• Saldo deudor de tarjetas de crédito</Text>
+                    <Text style={ni.bullet}>• Pendiente de visacuotas</Text>
+
+                    <Text style={ni.footnote}>
+                        Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tenés con lo que debés.
+                    </Text>
+
+                    <TouchableOpacity style={ni.btn} onPress={onClose}>
+                        <Text style={ni.btnTxt}>Entendido</Text>
+                    </TouchableOpacity>
+                </GlassCard>
+            </View>
+        </Modal>
+    );
+}
+
+const ni = StyleSheet.create({
+    overlay: { flex: 1, backgroundColor: "#000000AA", alignItems: "center", justifyContent: "center", padding: 24 },
+    card: { width: "100%", maxWidth: 380, backgroundColor: C.cardHigh },
+    content: { padding: 22 },
+    iconWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.primary + "22", borderWidth: 1, borderColor: C.primary + "44", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+    title: { color: C.text, fontSize: 18, fontWeight: "900", marginBottom: 8 },
+    body: { color: C.textSub, fontSize: 13, lineHeight: 19, marginBottom: 14 },
+    row: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, marginBottom: 4 },
+    rowLabel: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1 },
+    bullet: { color: C.textSub, fontSize: 13, lineHeight: 19, marginLeft: 4 },
+    footnote: { color: C.textMuted, fontSize: 12, lineHeight: 18, marginTop: 14 },
+    btn: { backgroundColor: C.primary, borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 18 },
+    btnTxt: { color: "#1A0E00", fontSize: 14, fontWeight: "900" },
+});
 
 // ─────────────────────────────────────────────────────────────
 // DASHBOARD PRINCIPAL
@@ -404,12 +485,15 @@ export default function DashboardScreen({
     const briefingRef = useTutorialRef('briefing_card');
     const scoreRef = useTutorialRef('score_card');
     const syncRef = useTutorialRef('sync_btn');
+    const accountsRef = useTutorialRef('accounts_widget');
 
     // ── PERÍODO FINANCIERO REAL ───────────────────────────────
     const period: FinancialPeriod = getCurrentFinancialPeriod(settings);
 
     const [briefing, setBriefing] = useState("");
     const [briefingLoading, setBriefingLoading] = useState(true);
+    const [syncing, setSyncing] = useState(false);
+    const [showNetWorthInfo, setShowNetWorthInfo] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -421,7 +505,53 @@ export default function DashboardScreen({
         load();
     }, [transactions.length, settings.budgetLimit, settings.userName]);
 
+    const showSmsPermissionDenied = () => {
+        Alert.alert(
+            "Permiso de SMS necesario",
+            "Sin permiso para leer SMS, BudgetMaster no puede detectar tus movimientos bancarios. Podés concederlo ahora, o seguir registrando a mano (o pegando el SMS en Agregar → Leer SMS).",
+            [
+                { text: "Cancelar", style: "cancel" },
+                { text: "Reintentar", onPress: () => { void handleSmsSync(); } },
+                { text: "Abrir Ajustes", onPress: () => { void Linking.openSettings(); } },
+            ]
+        );
+    };
+
+    const showSmsPermissionBlocked = () => {
+        Alert.alert(
+            "Permiso de SMS bloqueado",
+            "Android tiene bloqueado el permiso de SMS para BudgetMaster (elegiste \"No volver a preguntar\"). Para activarlo: Ajustes del teléfono → Apps → BudgetMaster → Permisos → SMS → Permitir.",
+            [
+                { text: "Cancelar", style: "cancel" },
+                { text: "Abrir Ajustes", onPress: () => { void Linking.openSettings(); } },
+            ]
+        );
+    };
+
     const handleSmsSync = async () => {
+        if (syncing) return;
+
+        if (Platform.OS !== 'android') {
+            Alert.alert("No disponible", "La sincronización de SMS solo funciona en Android.");
+            return;
+        }
+
+        if (!SmsService.isSmsModuleAvailable()) {
+            Alert.alert("Función no disponible", "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.");
+            return;
+        }
+
+        const perm = await SmsService.ensureReadSmsPermission();
+        if (perm === 'never_ask_again') {
+            showSmsPermissionBlocked();
+            return;
+        }
+        if (perm !== 'granted') {
+            showSmsPermissionDenied();
+            return;
+        }
+
+        setSyncing(true);
         try {
             const result = await SmsService.syncBankSms();
             if (result.transactions.length > 0 || result.installments.length > 0) {
@@ -441,8 +571,17 @@ export default function DashboardScreen({
                     `Bancarios: ${result.totalMatched} | Ya registrados: ${result.totalSkipped}`
                 );
             }
-        } catch {
-            Alert.alert("⚠️ Aviso", "Asegúrate de conceder permisos de SMS.");
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            if (msg === 'SMS_PERMISSION_DENIED') {
+                showSmsPermissionDenied();
+            } else if (msg === 'SMS_MODULE_UNAVAILABLE') {
+                Alert.alert("Función no disponible", "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.");
+            } else {
+                Alert.alert("Error al sincronizar", "No se pudieron leer los SMS: " + msg);
+            }
+        } finally {
+            setSyncing(false);
         }
     };
 
@@ -503,7 +642,11 @@ export default function DashboardScreen({
     const fmt = (n: number, cur = "Q") => `${cur} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
     return (
-        <ScrollView
+        <View style={s.root}>
+            <AmbientOrb size={280} color={C.primary} style={{ top: -60, right: -90 }} />
+            <AmbientOrb size={300} color={C.primaryLight} style={{ top: 360, left: -120 }} />
+            <AmbientOrb size={240} color={C.primary} style={{ top: 720, right: -80 }} />
+            <ScrollView
             style={s.screen}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
             showsVerticalScrollIndicator={false}
@@ -531,9 +674,20 @@ export default function DashboardScreen({
                         </View>
                     )}
                     <View ref={syncRef} collapsable={false}>
-                        <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn}>
-                            <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
-                            <View style={s.syncDot} />
+                        <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn} disabled={syncing}>
+                            <View pointerEvents="none" style={s.syncGlass}>
+                                <View style={s.syncOrbOuter} />
+                                <View style={s.syncOrbInner} />
+                                <GlassBackground radius={20} intensity={30} />
+                            </View>
+                            {syncing ? (
+                                <ActivityIndicator size="small" color={C.accent} />
+                            ) : (
+                                <>
+                                    <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
+                                    <View style={s.syncDot} />
+                                </>
+                            )}
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -550,32 +704,24 @@ export default function DashboardScreen({
             </View>
 
             {/* PATRIMONIO TOTAL */}
-            <View style={s.netWorthCard}>
+            <GlassCard radius={20} style={s.glassOuter} contentStyle={s.netWorthCard}>
                 <View style={s.netWorthTitleRow}>
                     <Text style={s.netWorthTitle}>PATRIMONIO TOTAL</Text>
                     <TouchableOpacity
-                        onPress={() => Alert.alert(
-                            "🏛️ Patrimonio Total",
-                            "El Patrimonio Total muestra lo que tenés en tus cuentas de activos.\n\n" +
-                            "✅ INCLUYE:\n" +
-                            "  • Saldo en cuentas de ahorro\n" +
-                            "  • Efectivo disponible\n" +
-                            "  • Saldo positivo en cuentas bancarias e inversiones\n\n" +
-                            "🚫 NO INCLUYE:\n" +
-                            "  • Saldo deudor de tarjetas de crédito\n" +
-                            "  • Pendiente de visacuotas\n\n" +
-                            "Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tenés con lo que debés.",
-                            [{ text: "Entendido", style: "default" }]
-                        )}
+                        onPress={() => setShowNetWorthInfo(true)}
                         style={s.netWorthInfoBtn}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Ionicons name="information-circle-outline" size={18} color={C.textMuted} />
                     </TouchableOpacity>
                 </View>
-                <Text style={[s.netWorthVal, { color: netQ >= 0 ? C.textPrimary : C.danger }]}>
-                    {netQ < 0 ? "-" : ""}Q {Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                </Text>
+                {netQ >= 0 ? (
+                    <GradientText text={`Q ${Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`} style={s.netWorthVal} />
+                ) : (
+                    <Text style={[s.netWorthVal, { color: C.danger }]}>
+                        -Q {Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                    </Text>
+                )}
                 {netUSD !== 0 && (
                     <Text style={[s.netWorthValSub, { color: netUSD >= 0 ? "#4A9EE8" : C.danger }]}>
                         {netUSD < 0 ? "-" : "+"}USD {Math.abs(netUSD).toFixed(2)}
@@ -602,7 +748,7 @@ export default function DashboardScreen({
                         💳 Compromisos de crédito (aparte): Q {totalCreditCommitmentsQ.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
                     </Text>
                 )}
-            </View>
+            </GlassCard>
 
             {/* BALANCE Q */}
             <CurrencyCard currency="Q" income={incomeQ} expense={expenseQ} />
@@ -620,19 +766,21 @@ export default function DashboardScreen({
             )}
 
             {/* PRESUPUESTO */}
-            <View style={[s.card, { alignItems: "center", paddingVertical: 24 }]}>
+            <GlassCard style={s.glassOuter} contentStyle={[s.cardContent, { alignItems: "center", paddingVertical: 24 }]}>
                 <Text style={[s.sectionTitle, { marginBottom: 4 }]}>PRESUPUESTO DEL PERÍODO</Text>
                 <Text style={{ color: C.textMuted, fontSize: 10, marginBottom: 16 }}>{period.label}</Text>
                 <BudgetRing spent={expenseQ} limit={settings.budgetLimit} currency="Q" />
-            </View>
+            </GlassCard>
 
             {/* WIDGET CUENTAS */}
-            <AccountsWidget
-                accounts={accounts}
-                installments={creditInstallments}
-                settings={settings}
-                onPress={onNavigateAccounts || (() => { })}
-            />
+            <View ref={accountsRef} collapsable={false}>
+                <AccountsWidget
+                    accounts={accounts}
+                    installments={creditInstallments}
+                    settings={settings}
+                    onPress={onNavigateAccounts || (() => { })}
+                />
+            </View>
 
             {/* WIDGET GASTOS FIJOS */}
             <FixedExpensesWidget fixedExpenses={fixedExpenses} settings={settings} onPress={onNavigateBudget || (() => { })} />
@@ -641,15 +789,15 @@ export default function DashboardScreen({
             <GoalsWidget goals={savingsGoals} onPress={onNavigateBudget || (() => { })} />
 
             {/* GRÁFICA 6 MESES */}
-            <View style={s.card}>
+            <GlassCard style={s.glassOuter} contentStyle={s.cardContent}>
                 <Text style={s.sectionTitle}>GASTOS Q — ÚLTIMOS 6 MESES</Text>
                 <View style={{ marginTop: 16 }}>
                     <MiniBarChart data={chartData} color={C.primary} labels={months.map(m => m.label)} />
                 </View>
-            </View>
+            </GlassCard>
 
             {/* RECIENTES */}
-            <View style={[s.card, { marginBottom: 120 }]}>
+            <GlassCard style={[s.glassOuter, { marginBottom: 120 }]} contentStyle={s.cardContent}>
                 <Text style={[s.sectionTitle, { marginBottom: 12 }]}>RECIENTES</Text>
                 {recent.length === 0 ? (
                     <Text style={s.empty}>Sin transacciones aún.</Text>
@@ -679,8 +827,10 @@ export default function DashboardScreen({
                         </View>
                     );
                 })}
-            </View>
-        </ScrollView>
+            </GlassCard>
+            </ScrollView>
+            <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
+        </View>
     );
 }
 
@@ -688,45 +838,52 @@ export default function DashboardScreen({
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+    root: { flex: 1 },
     screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-    logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12 },
+    logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12, borderWidth: 1, borderTopColor: C.primaryGlow, borderLeftColor: C.primaryLight, borderRightColor: C.primaryDark, borderBottomColor: C.primaryDark },
     periodProgress: { color: C.accent, fontSize: 9, marginTop: 1, fontWeight: "700", letterSpacing: 0.5 },
     periodBadge: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 14, flexWrap: "wrap" },
     greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
     month: { color: C.textPrimary, fontSize: 11, marginTop: 2, letterSpacing: 1.5, fontWeight: "700" },
-    daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.card },
+    daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.glassFill },
     daysBadgeTxt: { fontSize: 11, fontWeight: "700" },
-    syncBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: C.primaryDark + "33", borderWidth: 1, borderColor: C.accent + "66", alignItems: "center", justifyContent: "center" },
+    syncBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+    syncGlass: { ...StyleSheet.absoluteFillObject, borderRadius: 20, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+    syncOrbOuter: { position: "absolute", width: 34, height: 34, borderRadius: 17, backgroundColor: C.primary, opacity: 0.25 },
+    syncOrbInner: { position: "absolute", width: 20, height: 20, borderRadius: 10, backgroundColor: C.primaryLight, opacity: 0.35 },
     syncDot: { position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent },
 
-    briefingCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.primary + "33", borderLeftWidth: 3, borderLeftColor: C.primary, padding: 16, marginBottom: 14, ...shadow(C.primaryGlow, 8, 0.2) },
+    glassOuter: { marginBottom: 14 },
+
+    briefingCard: { padding: 16 },
     briefingHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
     briefingTitle: { color: C.primaryLight, fontSize: 12, fontWeight: "800", letterSpacing: 1, flex: 1 },
-    briefingBadge: { backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+    briefingBadge: { backgroundColor: C.primary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1, borderTopColor: C.primaryGlow, borderLeftColor: C.primaryLight, borderRightColor: C.primaryDark, borderBottomColor: C.primaryDark },
     briefingBadgeTxt: { color: "#1A0E00", fontSize: 10, fontWeight: "900" },
     briefingText: { color: C.text, fontSize: 13, lineHeight: 20 },
     briefingLoading: { color: C.textMuted, fontSize: 13, fontStyle: "italic" },
 
-    scoreCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    scoreCard: { padding: 16 },
     scoreHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
     scoreIconBg: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
     scoreTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", flex: 1 },
     scoreLabel: { fontSize: 11, fontWeight: "700" },
-    scoreValue: { fontSize: 32, fontWeight: "900" },
+    scoreValue: { fontSize: 32, fontWeight: "900", lineHeight: 38 },
     scoreMax: { color: C.textMuted, fontSize: 14, marginLeft: 2, alignSelf: "flex-end", marginBottom: 4 },
     scoreHint: { color: C.textMuted, fontSize: 12, marginTop: 8 },
+    scoreSource: { color: C.textMuted, fontSize: 10, marginTop: 6, letterSpacing: 0.5 },
 
-    netWorthCard: { backgroundColor: C.cardHigh, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44", padding: 24, alignItems: "center", marginBottom: 14, ...shadow(C.primaryGlow, 15, 0.2) },
+    netWorthCard: { padding: 24, alignItems: "center" },
     netWorthTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
     netWorthTitle: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
     netWorthInfoBtn: { opacity: 0.7 },
-    netWorthVal: { fontSize: 34, fontWeight: "900" },
+    netWorthVal: { fontSize: 34, fontWeight: "900", lineHeight: 40 },
     netWorthValSub: { fontSize: 18, fontWeight: "700", marginTop: 4 },
     netWorthSource: { color: C.textMuted, fontSize: 10, marginTop: 6, letterSpacing: 0.5 },
     netWorthCommitments: { color: C.warning, fontSize: 11, marginTop: 10, fontWeight: "700" },
 
-    currencyCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 3, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    currencyCard: { padding: 16 },
     currencyHeader: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
     currencyBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginRight: 10 },
     currencySymbol: { fontSize: 14, fontWeight: "900" },
@@ -735,9 +892,9 @@ const s = StyleSheet.create({
     currencyItem: { flex: 1, alignItems: "center" },
     currencyLbl: { color: C.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
     currencyVal: { fontSize: 15, fontWeight: "800" },
-    currencyDivider: { width: 1, height: 40, backgroundColor: C.cardBorder },
+    currencyDivider: { width: 1, height: 40, backgroundColor: C.glassBorder },
 
-    widgetCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    widgetCard: { padding: 16 },
     widgetHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
     widgetTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", flex: 1 },
     widgetBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
@@ -755,13 +912,13 @@ const s = StyleSheet.create({
     accountsItem: { flex: 1, alignItems: "center" },
     accountsLbl: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1, marginBottom: 3 },
     accountsVal: { fontSize: 14, fontWeight: "900" },
-    accountsDivider: { width: 1, height: 32, backgroundColor: C.cardBorder, marginHorizontal: 6 },
+    accountsDivider: { width: 1, height: 32, backgroundColor: C.glassBorder, marginHorizontal: 6 },
     accMiniRow: { flexDirection: "row", alignItems: "center", paddingVertical: 5, borderTopWidth: 1, borderTopColor: C.separator },
     accMiniDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
     accMiniName: { flex: 1, color: C.textSub, fontSize: 12 },
     accMiniVal: { fontSize: 12, fontWeight: "700" },
 
-    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    cardContent: { padding: 16 },
     sectionTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.8 },
     ringBg: { borderColor: C.bgDeep, alignItems: "center", justifyContent: "center" },
 

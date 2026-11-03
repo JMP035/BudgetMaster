@@ -13,8 +13,10 @@ import {
 } from "../services/storage";
 import { NotificationService } from "../services/NotificationService";
 import { TutorialService } from "../services/TutorialService";
+import type { TutorialScreen } from "../services/TutorialService";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
 import { C, shadow } from "../theme";
+import { GlassBackground } from "../components/GlassCard";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -85,20 +87,23 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
   const tabBudgetRef = useTutorialRef('tab_budget');
   const tabAdvisorRef = useTutorialRef('tab_advisor');
   const tabSettingsRef = useTutorialRef('tab_settings');
+  const tabStatsRef = useTutorialRef('tab_stats');
 
   const TABS: { id: Tab | "advisor"; icon: keyof typeof Ionicons.glyphMap; label: string; tutRef?: any; isAdvisor?: boolean }[] = [
     { id: "dashboard", icon: "home", label: "Inicio" },
     { id: "transactions", icon: "list", label: "Movimientos" },
     { id: "budget", icon: "wallet-outline", label: "Presupuesto", tutRef: tabBudgetRef },
     { id: "add", icon: "add", label: "Agregar", tutRef: tabAddRef },
-    { id: "stats", icon: "bar-chart-outline", label: "Estadísticas" },
+    { id: "stats", icon: "bar-chart-outline", label: "Estadísticas", tutRef: tabStatsRef },
     { id: "advisor", icon: "sparkles", label: "Asesor", tutRef: tabAdvisorRef, isAdvisor: true },
     { id: "settings", icon: "settings", label: "Ajustes", tutRef: tabSettingsRef },
   ];
 
   return (
-    <View style={[tb.bar, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-      {TABS.map(t => {
+    <View style={[tb.wrap, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View style={tb.bar}>
+        <GlassBackground radius={28} blur={false} />
+        {TABS.map(t => {
         const isAdd = t.id === "add";
         const isAdvisor = t.isAdvisor;
         const isActive = isAdvisor ? showAI : (tab === t.id && !showAI);
@@ -123,12 +128,13 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
                 />
               </View>
               {!isAdd && (
-                <Text style={[tb.label, isActive && { color: C.primaryLight }]}>{t.label}</Text>
+                <Text style={[tb.label, isActive && { color: C.primaryLight }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{t.label}</Text>
               )}
             </TouchableOpacity>
           </View>
         );
-      })}
+        })}
+      </View>
     </View>
   );
 }
@@ -151,6 +157,7 @@ function AppContent() {
   const [showAccounts, setShowAccounts] = useState(false);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
+  const contentRef = useTutorialRef('app_content');
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
@@ -289,6 +296,18 @@ function AppContent() {
     setShowAI(v => !v);
   };
 
+  // Navegación automática del tutorial: sin LayoutAnimation, para que la
+  // medición del spotlight no capture una animación a medias.
+  const navigateForTutorial = useCallback((screen: TutorialScreen) => {
+    setShowAccounts(false);
+    if (screen === 'advisor') {
+      setShowAI(true);
+      return;
+    }
+    setTab(screen);
+    setShowAI(false);
+  }, []);
+
   // ── Renders condicionales ─────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
@@ -300,7 +319,7 @@ function AppContent() {
         <StatusBar barStyle="light-content" backgroundColor={C.bgDeep} />
 
         {/* CONTENIDO */}
-        <View style={s.content}>
+        <View ref={contentRef} collapsable={false} style={s.content}>
           {tab === "dashboard" && !showAI && (
             <DashboardScreen
               transactions={txs}
@@ -399,6 +418,8 @@ function AppContent() {
           onTutorialEnd={() => setAutoTutorial(undefined)}
           showMenu={showTutorialMenu}
           onCloseMenu={() => setShowTutorialMenu(false)}
+          currentScreen={showAI ? 'advisor' : tab}
+          onNavigateToScreen={navigateForTutorial}
         />
       </View>
     </TutorialMenuProvider>
@@ -427,15 +448,18 @@ const s = StyleSheet.create({
 });
 
 const tb = StyleSheet.create({
+  wrap: {
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    backgroundColor: C.bgDeep,
+  },
   bar: {
     flexDirection: "row",
-    backgroundColor: C.card,
-    borderTopWidth: 1.5,
-    borderTopColor: C.primary + "55",
+    borderRadius: 28,
     paddingTop: 8,
+    paddingBottom: 8,
     paddingHorizontal: 4,
     overflow: "visible",
-    ...shadow(C.primaryGlow, 8, 0.25),
   },
   item: { 
     flex: 1, 
@@ -456,6 +480,6 @@ const tb = StyleSheet.create({
     zIndex: 10,
   },
   tabBg: { backgroundColor: C.primaryDark + "44", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "55" },
-  addBubble: { width: 56, height: 56, borderRadius: 28, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.primaryLight, borderTopColor: C.accentLight, ...shadow(C.primaryGlow, 12, 0.7) },
+  addBubble: { width: 56, height: 56, borderRadius: 28, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: C.primaryLight, borderTopColor: C.primaryGlow, borderBottomColor: C.primaryDark, ...shadow(C.primaryGlow, 12, 0.7) },
   label: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 0.2 },
 });

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator, Animated, Easing, KeyboardAvoidingView,
     Platform, ScrollView, StyleSheet, Text, TextInput,
@@ -9,9 +9,11 @@ import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
     SavingsGoal, Transaction, UserSettings,
     calcCreditCommitments, calcNetWorthFromAccounts, convertAmount, getAccountMonthlyInstallmentTotal,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, parseAmount
+    getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
+import { buildLocalOpening, computeLocalMetrics, getLocalResponse, getQuickReplies } from "../services/LocalAdvisorEngine";
 import { C, shadow } from "../theme";
+import { useTutorialRef } from "../context/TutorialContext";
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -305,91 +307,6 @@ async function callGemini(
 }
 
 // ─────────────────────────────────────────────────────────────
-// RESPUESTA LOCAL (fallback sin API Key)
-// ─────────────────────────────────────────────────────────────
-function getLocalResponse(
-    message: string, transactions: Transaction[], settings: UserSettings,
-    accounts: Account[] = [], fixedExpenses: FixedExpense[] = [],
-    savingsGoals: SavingsGoal[] = [], creditInstallments: CreditInstallment[] = [],
-): string {
-    const fp = getCurrentFinancialPeriod(settings);
-    const daysLeft = getDaysUntilNextPayment(settings);
-
-    const periodTx  = transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; });
-    const expenseQ  = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const incomeQ   = periodTx.filter(t => t.type === "income"  && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const remaining = settings.budgetLimit - expenseQ;
-    const pct       = settings.budgetLimit > 0 ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
-
-    // Top categorías del período
-    const catMap: Record<string, number> = {};
-    periodTx.filter(t => t.type === "expense").forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
-    const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 3)
-        .map(([cat, amt]) => `${cat} Q${amt.toFixed(0)}`).join(", ");
-
-    const fixedPending = fixedExpenses.filter(f => f.isActive && !f.isPaid).reduce((s, f) => s + f.amount, 0);
-    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
-    const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
-    const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
-    // Compromisos de crédito (separados del patrimonio: visacuotas pendientes)
-    const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
-
-    const msg = message.toLowerCase();
-
-    if (msg.match(/hola|buenos|buenas|hey|inicio/)) {
-        return `Hola ${settings.userName}. Período ${fp.label}: llevás Q${expenseQ.toFixed(0)} gastados de Q${settings.budgetLimit.toFixed(0)} (${pct}%). Te quedan Q${remaining.toFixed(0)} y ${daysLeft} días hasta tu próximo ingreso. ¿En qué te ayudo?`;
-    }
-    if (msg.match(/como voy|resumen|situacion|estado|analisis|summary/)) {
-        return `Período ${fp.label} — Gastos: Q${expenseQ.toFixed(0)} (${pct}% del presupuesto), Ingresos: Q${incomeQ.toFixed(0)}, Libre: Q${remaining.toFixed(0)}. Gastos fijos pendientes: Q${fixedPending.toFixed(0)}. Cuotas mensuales: Q${installTotal.toFixed(0)}. ${pct > 80 ? "Estás en zona de alerta." : "Vas bien."}`;
-    }
-    if (msg.match(/gaste|gaste mas|categor|donde|en que/)) {
-        return topCats
-            ? `Tus mayores gastos del período son: ${topCats}. En total llevás Q${expenseQ.toFixed(0)} gastados.`
-            : `Aún no tenés gastos registrados en este período (${fp.label}).`;
-    }
-    if (msg.match(/puedo comprar|puedo gastar|tengo para|alcanza|cuesta/)) {
-        const numMatch = message.match(/[\d,]+(?:\.\d+)?/);
-        if (numMatch) {
-            const amount = parseAmount(numMatch[0]);
-            if (!isNaN(amount)) {
-                if (amount <= remaining) return `Con Q${remaining.toFixed(0)} disponibles sí podés comprarlo (Q${amount.toFixed(0)}). Te quedarán Q${(remaining - amount).toFixed(0)} y aún faltan ${daysLeft} días hasta tu pago.`;
-                return `No es recomendable. Tenés Q${remaining.toFixed(0)} disponibles pero la compra es Q${amount.toFixed(0)} — excede en Q${(amount - remaining).toFixed(0)}.`;
-            }
-        }
-        return `Disponés de Q${remaining.toFixed(0)} en tu presupuesto (${100 - pct}% restante). ¿Cuánto cuesta lo que querés comprar?`;
-    }
-    if (msg.match(/ahorro|ahorrar|meta|objetivo|guardar/)) {
-        const activeGoals = savingsGoals.filter(g => !g.isCompleted);
-        const goal = activeGoals[0];
-        if (goal) return `Tu meta "${goal.name}" lleva Q${goal.currentAmount.toFixed(0)} de Q${goal.targetAmount.toFixed(0)} (${goal.targetAmount > 0 ? Math.round(goal.currentAmount / goal.targetAmount * 100) : 0}%). Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}.`;
-        return `Tu balance neto este período es Q${(incomeQ - expenseQ).toFixed(0)}. Para mejores consejos de ahorro, configurá una meta en la sección de Presupuesto.`;
-    }
-    if (msg.match(/deuda|tarjeta|credito|cuota|visa/)) {
-        return `Compromisos de crédito (separados de tu patrimonio): Q${installmentsPendingQ.toFixed(0)} pendientes en visacuotas. Tenés Q${installTotal.toFixed(0)} en cuotas mensuales activas, lo que representa ${(installTotal / Math.max(settings.monthlyIncome, 1) * 100).toFixed(0)}% de tu ingreso mensual.`;
-    }
-    if (msg.match(/cuenta|banco|saldo|billetera/)) {
-        const nonCreditAccounts = accounts.filter(a => a.isActive && a.type !== 'credit');
-        if (accounts.filter(a => a.isActive).length > 0) {
-            const creditPart = accounts.filter(a => a.isActive && a.type === 'credit').map(a => {
-                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
-                return `${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(0)}/mes en cuotas` : "sin cuotas activas"}`;
-            });
-            const parts = [...nonCreditAccounts.map(a => `${a.name}: Q${a.balance.toFixed(0)}`), ...creditPart];
-            return `Tus cuentas suman Q${totalBalance.toFixed(2)} en total (sin incluir tarjetas de crédito, que no tienen saldo propio). ${parts.join(", ")}.`;
-        }
-        return `No tenés cuentas bancarias configuradas. Podés agregarlas en la sección de Cuentas.`;
-    }
-    if (msg.match(/fijo|recurrente|servicios|pagos fijos/)) {
-        return `Gastos fijos activos: Q${fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0).toFixed(0)}/período. Pendientes de pago: Q${fixedPending.toFixed(0)}.`;
-    }
-
-    if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
-        return `Disponés de Q${remaining.toFixed(0)} en tu presupuesto para este período (${100 - pct}% restante) y quedan ${daysLeft} días para tu próximo pago. ¿Deseas que analicemos algún movimiento o meta de ahorro específica?`;
-    }
-    return `Tenés Q${remaining.toFixed(0)} disponibles este período (${100 - pct}% del presupuesto, ${daysLeft} días hasta tu pago). Para análisis avanzados con IA real, configurá tu API Key de Gemini en Ajustes — es gratuita en aistudio.google.com.`;
-}
-
-// ─────────────────────────────────────────────────────────────
 // BURBUJA DE MENSAJE
 // ─────────────────────────────────────────────────────────────
 function MessageBubble({ message }: { message: Message }) {
@@ -433,16 +350,6 @@ function MessageBubble({ message }: { message: Message }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// SUGERENCIAS RÁPIDAS
-// ─────────────────────────────────────────────────────────────
-const QUICK_SUGGESTIONS = [
-    "¿Cómo voy este mes?",
-    "¿En qué gasté más?",
-    "¿Puedo ahorrar más?",
-    "Dame un consejo",
-];
-
-// ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 interface Props {
@@ -462,13 +369,20 @@ export default function AIAdvisor({
 }: Props) {
     const hasApiKey = !!(settings.geminiApiKey && settings.geminiApiKey.length > 20);
 
+    const metrics = useMemo(
+        () => computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets),
+        [transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]
+    );
+
+    const getWelcomeText = (): string => hasApiKey
+        ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
+        : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+
     const [messages, setMessages] = useState<Message[]>([
         {
             id: "welcome",
             role: "ai",
-            text: hasApiKey
-                ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
-                : `¡Hola ${settings.userName}! Soy tu asesor financiero. Para respuestas avanzadas con IA real, configurá tu API Key de Gemini en Ajustes (es gratuita). Por ahora puedo responderte con análisis básico de tus datos.`,
+            text: getWelcomeText(),
         }
     ]);
     const [input, setInput] = useState("");
@@ -476,25 +390,24 @@ export default function AIAdvisor({
     const [geminiHistory, setGeminiHistory] = useState<GeminiMessage[]>([]);
     const scrollRef = useRef<ScrollView>(null);
     const inputRef = useRef<TextInput>(null);
+    const headerRef = useTutorialRef('advisor_header');
+    const inputBoxRef = useTutorialRef('advisor_input');
 
     useEffect(() => {
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
     }, [messages]);
 
     useEffect(() => {
+        const text = getWelcomeText();
         setMessages(prev => {
             if (prev.length > 0 && (prev[0].id === "welcome" || prev[0].id === "welcome_new")) {
-                const updatedWelcome = {
-                    ...prev[0],
-                    text: hasApiKey
-                        ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
-                        : `¡Hola ${settings.userName}! Soy tu asesor financiero. Para respuestas avanzadas con IA real, configurá tu API Key de Gemini en Ajustes (es gratuita). Por ahora puedo responderte con análisis básico de tus datos.`,
-                };
+                if (prev[0].text === text) return prev;
+                const updatedWelcome = { ...prev[0], text };
                 return [updatedWelcome, ...prev.slice(1)];
             }
             return prev;
         });
-    }, [hasApiKey, settings.userName]);
+    }, [hasApiKey, settings, transactions, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]);
 
     const handleSend = async (text?: string) => {
         const userText = (text || input).trim();
@@ -536,7 +449,7 @@ export default function AIAdvisor({
             } else {
                 // Fallback local
                 await new Promise(r => setTimeout(r, 600)); // Simular delay
-                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
+                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
             }
         } catch (e: any) {
             const errStr = e.message || "";
@@ -565,12 +478,18 @@ export default function AIAdvisor({
         setLoading(false);
     };
 
+    const quickReplies = useMemo(() => getQuickReplies(metrics), [metrics]);
+    const lastUserText = [...messages].reverse().find(m => m.role === "user")?.text ?? "";
+    const visibleReplies = quickReplies.filter(q => q !== lastUserText);
+
     const handleClearChat = () => {
         if (loading) return;
         setMessages([{
             id: "welcome_new",
             role: "ai",
-            text: `Chat reiniciado. ¿En qué te puedo ayudar, ${settings.userName}?`,
+            text: hasApiKey
+                ? `Chat reiniciado. ¿En qué te puedo ayudar, ${settings.userName}?`
+                : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets),
         }]);
         setGeminiHistory([]);
     };
@@ -584,7 +503,7 @@ export default function AIAdvisor({
             <View style={s.screen}>
 
                 {/* HEADER */}
-                <View style={s.header}>
+                <View ref={headerRef} collapsable={false} style={s.header}>
                     <View style={s.headerLeft}>
                         <View style={s.iconBg}>
                             <Ionicons name="sparkles" size={22} color={C.primaryLight} />
@@ -592,7 +511,7 @@ export default function AIAdvisor({
                         <View>
                             <Text style={s.title}>Asesor IA</Text>
                             <Text style={s.subtitle}>
-                                {hasApiKey ? "● Gemini activo" : "○ Modo básico"}
+                                {hasApiKey ? "● Gemini activo" : "○ Modo local"}
                             </Text>
                         </View>
                     </View>
@@ -604,9 +523,9 @@ export default function AIAdvisor({
                 {/* BADGE sin API Key */}
                 {!hasApiKey && (
                     <View style={s.apiKeyBanner}>
-                        <Ionicons name="key-outline" size={14} color={C.warning} />
+                        <Ionicons name="shield-checkmark-outline" size={14} color={C.primaryLight} />
                         <Text style={s.apiKeyTxt}>
-                            Configurá tu API Key de Gemini en Ajustes para respuestas avanzadas (gratuita)
+                            Modo local: analizo tus datos en tu teléfono, sin internet. Gemini es opcional (Ajustes).
                         </Text>
                     </View>
                 )}
@@ -623,18 +542,19 @@ export default function AIAdvisor({
                 </ScrollView>
 
                 {/* SUGERENCIAS RÁPIDAS */}
-                {messages.length <= 2 && (
+                {!loading && input.trim() === "" && visibleReplies.length > 0 && (
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator={false}
                         style={s.suggestionsRow}
                         contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
                     >
-                        {QUICK_SUGGESTIONS.map(q => (
+                        {visibleReplies.map(q => (
                             <TouchableOpacity
                                 key={q}
                                 style={s.suggestionChip}
                                 onPress={() => handleSend(q)}
+                                disabled={loading}
                             >
                                 <Text style={s.suggestionTxt}>{q}</Text>
                             </TouchableOpacity>
@@ -643,7 +563,7 @@ export default function AIAdvisor({
                 )}
 
                 {/* INPUT */}
-                <View style={s.inputContainer}>
+                <View ref={inputBoxRef} collapsable={false} style={s.inputContainer}>
                     <TextInput
                         ref={inputRef}
                         style={s.input}
@@ -685,8 +605,8 @@ const s = StyleSheet.create({
     title: { color: C.textPrimary, fontSize: 20, fontWeight: "900" },
     subtitle: { color: C.textMuted, fontSize: 11, marginTop: 2 },
     clearBtn: { padding: 10, borderRadius: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-    apiKeyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.warning + "11", borderWidth: 1, borderColor: C.warning + "33", marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10 },
-    apiKeyTxt: { color: C.warning, fontSize: 12, flex: 1 },
+    apiKeyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary + "11", borderWidth: 1, borderColor: C.primary + "33", marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10 },
+    apiKeyTxt: { color: C.textMuted, fontSize: 12, flex: 1 },
     chatList: { flex: 1, paddingHorizontal: 16 },
     suggestionsRow: { maxHeight: 48, marginBottom: 8 },
     suggestionChip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.primaryDark + "33", borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },

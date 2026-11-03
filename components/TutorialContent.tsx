@@ -2,9 +2,7 @@ import React, {
     createContext, useCallback, useContext,
     useRef, useState,
 } from 'react';
-import { Dimensions, View } from 'react-native';
-
-const { width: SW, height: SH } = Dimensions.get('window');
+import { View } from 'react-native';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -43,19 +41,18 @@ export function TutorialProvider({ children }: { children: React.ReactNode }) {
             const ref = refs.current[id];
             if (!ref) { resolve(null); return; }
 
-            // measureInWindow da coordenadas absolutas en pantalla
-            ref.measureInWindow((x, y, width, height) => {
-                if (width === 0 && height === 0) {
-                    resolve(null);
-                    return;
-                }
-                resolve({
-                    x: Math.max(0, x),
-                    y: Math.max(0, y),
-                    width: Math.min(width, SW - x),
-                    height: Math.min(height, SH - y),
+            try {
+                // measureInWindow da coordenadas absolutas en pantalla
+                ref.measureInWindow((x, y, width, height) => {
+                    if (width === 0 && height === 0) {
+                        resolve(null);
+                        return;
+                    }
+                    resolve({ x, y, width, height });
                 });
-            });
+            } catch {
+                resolve(null);
+            }
         });
     }, []);
 

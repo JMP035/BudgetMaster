@@ -115,4 +115,5 @@ export const CATEGORY_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
     "diamond-outline", "earth-outline", "flower-outline", "football-outline",
     "hardware-chip-outline", "headset-outline", "heart-outline", "key-outline",
     "leaf-outline", "map-outline", "musical-notes-outline", "shield-outline",
+    "person-outline", "people-outline", "body-outline",
 ];

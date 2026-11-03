@@ -9,6 +9,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { Currency, CustomCategory, StorageService, UserSettings, parseAmount } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
+import { openTutorialMenu } from "./TutorialOverlay";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
 
@@ -94,7 +95,7 @@ function NewCategoryModal({ onSave, onClose }: {
 
                         <Text style={nc.lbl}>ÍCONO</Text>
                         <View style={nc.iconGrid}>
-                            {CATEGORY_ICONS.slice(0, 24).map(ic => (
+                            {CATEGORY_ICONS.map(ic => (
                                 <TouchableOpacity key={ic} style={[nc.iconBtn, icon === ic && { borderColor: color, backgroundColor: color + "22" }]} onPress={() => setIcon(ic as any)}>
                                     <Ionicons name={ic} size={22} color={icon === ic ? color : C.textSub} />
                                 </TouchableOpacity>
@@ -415,11 +416,15 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
 
                 {/* ACADEMIA / TUTORIALES */}
                 <Section icon="school-outline" title="Academia BudgetMaster" description="Tutoriales interactivos para aprender a usar todas las funciones de la app.">
+                    <TouchableOpacity style={[s.tutorialBtn, { marginBottom: 10 }]} onPress={openTutorialMenu}>
+                        <Ionicons name="play-circle-outline" size={18} color={C.accent} />
+                        <Text style={s.tutorialBtnTxt}>Ver tutoriales</Text>
+                    </TouchableOpacity>
                     <TouchableOpacity style={s.tutorialBtn} onPress={handleResetTutorials}>
                         <Ionicons name="refresh-outline" size={18} color={C.accent} />
                         <Text style={s.tutorialBtnTxt}>Reiniciar todos los tutoriales</Text>
                     </TouchableOpacity>
-                    <Text style={s.hint}>Al reiniciar, el tour inicial aparecerá la próxima vez que abras la app. También podés acceder a cualquier tutorial desde el ícono "?" en el header.</Text>
+                    <Text style={s.hint}>Abrí "Ver tutoriales" (o el ícono "?" en Inicio) para elegir cualquier tutorial. Al reiniciar, el tour inicial aparecerá la próxima vez que abras la app.</Text>
                 </Section>
 
                 {/* GUARDAR */}

@@ -8,6 +8,7 @@ import Svg, { Circle, G, Path, Text as SvgText } from "react-native-svg";
 import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
 import { EXPENSE_CATEGORIES, getCat } from "../categories";
 import { C, shadow } from "../theme";
+import { useTutorialRef } from "../context/TutorialContext";
 
 const { width } = Dimensions.get("window");
 
@@ -169,6 +170,10 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
 
+    const filterRef = useTutorialRef('stats_filter');
+    const pieRef = useTutorialRef('stats_pie');
+    const projRef = useTutorialRef('stats_projected');
+
     const now = new Date();
     const m = now.getMonth();
     const y = now.getFullYear();
@@ -317,7 +322,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
             </View>
 
             {/* FILTRO PERÍODO */}
-            <View style={s.filterRow}>
+            <View ref={filterRef} collapsable={false} style={s.filterRow}>
                 {([
                     { key: "current", label: "Per. Actual" },
                     { key: "prev",    label: "Per. Anterior" },
@@ -357,7 +362,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* ── GRÁFICA DE PASTEL ── */}
             {byCat.length > 0 && (
-                <View style={s.card}>
+                <View ref={pieRef} collapsable={false} style={s.card}>
                     <View style={s.cardHeader}>
                         <View style={[s.cardIcon, { backgroundColor: C.primary + "22" }]}>
                             <Ionicons name="pie-chart-outline" size={18} color={C.primaryLight} />
@@ -421,9 +426,11 @@ export default function StatsScreen({ transactions, settings }: Props) {
             )}
 
             {/* STAT 1 — Flujo proyectado */}
-            <StatCard icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
-                subtitle={stat1Subtitle}
-            />
+            <View ref={projRef} collapsable={false}>
+                <StatCard icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
+                    subtitle={stat1Subtitle}
+                />
+            </View>
 
             {/* STAT 2 — Comparativa mes a mes */}
             <StatCard icon="bar-chart-outline" title="Comparativa Últimos 6 Meses" value="" color={C.primary}>

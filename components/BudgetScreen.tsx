@@ -6,7 +6,7 @@ import {
     TouchableOpacity, View
 } from "react-native";
 import {
-    CategoryBudget, Currency, FixedExpense, SavingsGoal,
+    CategoryBudget, CustomCategory, Currency, FixedExpense, SavingsGoal,
     StorageService, Transaction, UserSettings,
     getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
     parseAmount
@@ -95,18 +95,20 @@ const t = StyleSheet.create({
     container: { flexDirection: "row", backgroundColor: C.card, borderRadius: 14, padding: 4, marginBottom: 20, position: "relative", borderWidth: 1, borderColor: C.cardBorder },
     indicator: { position: "absolute", top: 4, width: "33.33%", bottom: 4, backgroundColor: C.primaryDark + "66", borderRadius: 10, borderWidth: 1, borderColor: C.primary + "55" },
     tab: { flex: 1, paddingVertical: 10, alignItems: "center", zIndex: 1 },
-    label: { color: C.textMuted, fontSize: 12, fontWeight: "700" },
+    label: { color: C.textSub, fontSize: 12, fontWeight: "700" },
     labelActive: { color: C.primaryLight, fontWeight: "900" },
 });
 
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVO GASTO FIJO
 // ─────────────────────────────────────────────────────────────
-function FixedExpenseModal({ onSave, onClose, existing }: {
+function FixedExpenseModal({ onSave, onClose, existing, customCategories }: {
     onSave: (e: FixedExpense) => void;
     onClose: () => void;
     existing?: FixedExpense;
+    customCategories?: CustomCategory[];
 }) {
+    const allCats = getAllExpenseCategories(customCategories);
     const [name, setName] = useState(existing?.name || "");
     const [amount, setAmount] = useState(existing?.amount.toString() || "");
     const [currency, setCurrency] = useState<Currency>(existing?.currency || "Q");
@@ -183,7 +185,7 @@ function FixedExpenseModal({ onSave, onClose, existing }: {
                             <Text style={md.lbl}>CATEGORÍA</Text>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
                                 <View style={{ flexDirection: "row", gap: 8 }}>
-                                    {EXPENSE_CATEGORIES.slice(0, 12).map(cat => (
+                                    {allCats.map(cat => (
                                         <TouchableOpacity key={cat.id} style={[md.catChip, category === cat.id && { borderColor: cat.color, backgroundColor: cat.color + "22" }]} onPress={() => setCategory(cat.id)}>
                                             <Ionicons name={cat.icon} size={16} color={category === cat.id ? cat.color : C.textMuted} />
                                             <Text style={[md.catChipTxt, category === cat.id && { color: cat.color }]}>{cat.label}</Text>
@@ -533,6 +535,7 @@ function FixedExpensesTab({
                     existing={editing}
                     onSave={handleSave}
                     onClose={() => { setShowModal(false); setEditing(undefined); }}
+                    customCategories={settings.customCategories}
                 />
             )}
         </View>

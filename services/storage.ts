@@ -381,6 +381,9 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
   const today = now.getDate();
   const m = now.getMonth();
   const y = now.getFullYear();
+  // Medianoche de "hoy" en hora local — se usa para contar días transcurridos
+  // sin que el resultado cambie según la hora del día en que se consulte.
+  const todayMidnight = new Date(y, m, today);
 
   // ── Ciclo irregular → usa mes calendario ────────────────────
   if (settings.paymentCycle === 'irregular') {
@@ -438,8 +441,12 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
       prevStart = D(y, m - 1, e1(m - 1));
       prevEnd = dayBefore(start);
     }
-    const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-    const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
+    // `end` ya está fijado a las 23:59:59 del último día (dayBefore), así que
+    // el redondeo de (end-start) ya da el total de días inclusive — sumarle 1
+    // lo contaba doble. `daysPassed` se calcula contra la medianoche de hoy
+    // (no la hora exacta) para que no salte un día de más pasado el mediodía.
+    const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000);
+    const daysPassed = Math.min(Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
     return {
       start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
       prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
@@ -467,8 +474,11 @@ export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeri
   end = dayBefore(nextStart);
   prevEnd = dayBefore(start);
 
-  const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000) + 1;
-  const daysPassed = Math.min(Math.round((now.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
+  // Mismo criterio que en el ciclo quincenal: `end` ya incluye el día
+  // completo (23:59:59), y `daysPassed` usa la medianoche de hoy para no
+  // saltar un día de más pasado el mediodía.
+  const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000);
+  const daysPassed = Math.min(Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
 
   return {
     start, end, label: fmt_d(start) + ' – ' + fmt_d(end),

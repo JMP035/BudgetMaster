@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════
-// THEME — Grafito Metálico × Cobre Brillante
+// THEME — Ónix Profundo × Bronce Metálico
+// Vidrio neutro (Liquid Glass) — el bronce vive en el contenido, no en el vidrio
 // ════════════════════════════════════════════════════════════
 export const C = {
     bg: "#0C0C0C",
@@ -8,22 +9,28 @@ export const C = {
     cardHigh: "#1E1E1E",
     cardBorder: "#2A2A2A",
     shimmer: "#2E2E2E",
-    primary: "#B87333",      // Cobre real neto
-    primaryLight: "#E59E6D", // Reflejos claros de cobre
-    primaryDark: "#703816",  // Sombras metálicas profundas
-    primaryGlow: "#FFC8A3",  // Destello brillante 
+    primary: "#B8864B",      // Bronce medio, metal en sombra neutra
+    primaryLight: "#E3BC7E", // Donde pega la luz
+    primaryDark: "#5E4123",  // Sombra profunda
+    primaryGlow: "#FCE1B0",  // Reflejo especular
     accent: "#4CB19F",       // Verde pátina (cobre oxidado)
     accentLight: "#7CD6C6",  // Pátina luminosa
-    warning: "#D4A373",
+    warning: "#E9A23B",      // Ámbar saturado, se distingue del bronce
     danger: "#E05A47",
     success: "#4CB19F",      // Usando la pátina para connotaciones positivas (ingresos)
-    text: "#F0E4DB",
-    textPrimary: "#D59262",
-    textSub: "#8A7969",
-    textMuted: "#5A4C40",
+    text: "#EFE8DE",         // Blanco cálido neutro
+    textPrimary: "#D2A86E",  // Bronce legible para títulos
+    textSub: "#9A8B78",
+    textMuted: "#6F6253",
     income: "#4CB19F",       // Ingresos ahora en tono pátina contrastante
     expense: "#E05A47",
     separator: "#241A13",    // Separador sutil cobrizo oscuro
+    // Material Liquid Glass — usar tal cual, NO concatenar sufijos hex (son rgba)
+    glassFill: "rgba(255,255,255,0.055)",
+    glassSheen: "rgba(255,255,255,0.03)",
+    glassBorder: "rgba(255,255,255,0.09)",
+    glassHighlight: "rgba(252,225,176,0.55)",
+    glassHighlightSoft: "rgba(252,225,176,0.15)",
 } as const;
 
 export const shadow = (color: string, r = 12, op = 0.5) => ({
