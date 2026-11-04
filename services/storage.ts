@@ -134,6 +134,8 @@ export interface UserSettings {
   userTitle: string;
   budgetLimit: number;
   budgetLimitUSD: number;
+  /** 'auto' (default): el equivalente en USD se deriva de budgetLimit / exchangeRate. 'manual': se usa budgetLimitUSD tal cual. */
+  budgetLimitUSDMode?: 'auto' | 'manual';
   currency: Currency;
   paymentCycle: PaymentCycle;
   paymentDay: number;
@@ -147,6 +149,11 @@ export interface UserSettings {
   externalSavingsUSD: number;
   preferredBanks: string[];
   exchangeRate: number;
+  /** 'auto' (default): se sincroniza con ExchangeRateService. 'manual': el usuario lo fijó a mano. */
+  exchangeRateMode?: 'auto' | 'manual';
+  exchangeRateSource?: string;
+  /** ISO de la última actualización automática del tipo de cambio */
+  exchangeRateUpdatedAt?: string;
   smsEnabled: boolean;
   biometricEnabled: boolean;
   geminiApiKey?: string;
@@ -206,6 +213,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   userTitle: 'BudgetMaster Pro',
   budgetLimit: 6000,
   budgetLimitUSD: 800,
+  budgetLimitUSDMode: 'auto',
   currency: 'Q',
   paymentCycle: 'monthly',
   paymentDay: 30,
@@ -219,6 +227,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   externalSavingsUSD: 0,
   preferredBanks: [],
   exchangeRate: 7.70,
+  exchangeRateMode: 'auto',
   smsEnabled: true,
   biometricEnabled: false,
   geminiApiKey: '',
@@ -229,6 +238,16 @@ export const DEFAULT_SETTINGS: UserSettings = {
   financialScoreHistory: [],
   activeDebtsList: [],
 };
+
+/**
+ * Equivalente en USD del presupuesto mensual. En modo 'manual' se respeta el valor
+ * guardado; en 'auto' (default) se deriva de budgetLimit y el tipo de cambio vigente.
+ */
+export function getBudgetLimitUSD(s: UserSettings): number {
+  if (s.budgetLimitUSDMode === 'manual') return s.budgetLimitUSD;
+  const r = s.exchangeRate > 0 ? s.exchangeRate : 7.7;
+  return Math.round((s.budgetLimit / r) * 100) / 100;
+}
 
 // ─────────────────────────────────────────────────────────────
 // HELPERS

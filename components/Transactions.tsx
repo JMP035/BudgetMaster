@@ -1,13 +1,26 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useMemo, useState } from "react";
 import {
-    Alert, FlatList, KeyboardAvoidingView, Modal, Platform, ScrollView,
-    StyleSheet, Text, TextInput, TouchableOpacity, View
+    FlatList, KeyboardAvoidingView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
+import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
+import { GlassBackground, GlassCard } from "./GlassCard";
+import { useGlassDialog } from "./GlassDialogProvider";
+import { GlassSheet } from "./GlassSheet";
+import { GlassSegmented } from "./GlassSegmented";
+import { GlassButton } from "./GlassButton";
+import { ScreenHeader } from "./ScreenHeader";
+import { HelpButton } from "./HelpButton";
 import InstallmentModal from "./InstallmentModal";
+
+const DELETE_CONFIRM = {
+    title: "Eliminar movimiento",
+    message: "Este registro se borrará de forma permanente y se recalcularán tus estadísticas.",
+    confirmLabel: "Eliminar",
+};
 
 // ─────────────────────────────────────────────────────────────
 // MODAL DE DETALLE / EDICIÓN
@@ -22,6 +35,7 @@ interface DetailModalProps {
 }
 
 function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInstallment }: DetailModalProps) {
+    const dialog = useGlassDialog();
     const [category, setCategory] = useState(tx.category);
     const [currency, setCurrency] = useState<Currency>(tx.currency || 'Q');
     const [description, setDescription] = useState(tx.description);
@@ -33,7 +47,12 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
         : getAllIncomeCategories(settings.customCategories);
 
     const selectedCat = getCat(category, settings.customCategories, tx.type);
-    const currencies: Currency[] = ['Q', 'USD', 'EUR', '£'];
+    const currencyOptions: { value: Currency; label: string }[] = [
+        { value: 'Q', label: 'Q' },
+        { value: 'USD', label: 'USD' },
+        { value: 'EUR', label: 'EUR' },
+        { value: '£', label: '£' },
+    ];
 
     const handleSave = async () => {
         setSaving(true);
@@ -44,148 +63,122 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
         onClose();
     };
 
-    const handleDelete = () => {
-        if (Platform.OS === 'web') {
-            if (window.confirm("¿Borrar este registro permanentemente?")) onDelete(tx.id);
-        } else {
-            Alert.alert("Eliminar", "¿Borrar este registro permanentemente?", [
-                { text: "Cancelar", style: "cancel" },
-                { text: "Eliminar", style: "destructive", onPress: () => { onDelete(tx.id); onClose(); } },
-            ]);
+    const handleDelete = async () => {
+        if (await dialog.confirm(DELETE_CONFIRM)) {
+            onDelete(tx.id);
+            onClose();
         }
     };
 
     return (
-        <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-            <View style={m.overlay}>
-                <KeyboardAvoidingView behavior="padding" style={m.kav}>
-                <View style={m.sheet}>
-
-                    {/* HEADER */}
-                    <View style={m.header}>
-                        <View style={[m.catIcon, { backgroundColor: selectedCat.color + "22", borderColor: selectedCat.color + "55" }]}>
-                            <Ionicons name={selectedCat.icon} size={28} color={selectedCat.color} />
-                        </View>
-                        <View style={{ flex: 1, marginLeft: 12 }}>
-                            <Text style={m.amount}>
-                                <Text style={{ color: tx.type === 'income' ? C.income : C.expense }}>
-                                    {tx.type === 'income' ? '+' : '-'}
-                                </Text>
-                                {' '}{tx.currency || 'Q'} {tx.amount.toFixed(2)}
-                            </Text>
-                            <Text style={m.date}>
-                                {new Date(tx.date).toLocaleDateString("es-GT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
-                            </Text>
-                        </View>
-                        <TouchableOpacity onPress={onClose} style={m.closeBtn}>
-                            <Ionicons name="close" size={22} color={C.textMuted} />
-                        </TouchableOpacity>
-                    </View>
-
-                    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
-                        {/* BANCO / FUENTE */}
-                        {tx.bank && (
-                            <View style={m.infoRow}>
-                                <Ionicons name="business-outline" size={16} color={C.textMuted} style={m.infoIcon} />
-                                <Text style={m.infoLabel}>Banco</Text>
-                                <Text style={m.infoValue}>{tx.bank}</Text>
-                            </View>
-                        )}
-
-                        {/* FUENTE */}
-                        <View style={m.infoRow}>
-                            <Ionicons name={tx.source === 'sms' ? "chatbubble-outline" : "pencil-outline"} size={16} color={C.textMuted} style={m.infoIcon} />
-                            <Text style={m.infoLabel}>Fuente</Text>
-                            <Text style={m.infoValue}>{tx.source === 'sms' ? 'Detectado por SMS' : 'Ingreso manual'}</Text>
-                        </View>
-
-                        {/* DESCRIPCIÓN EDITABLE */}
-                        <View style={m.section}>
-                            <Text style={m.sectionLabel}>DESCRIPCIÓN</Text>
-                            <TextInput
-                                style={m.input}
-                                value={description}
-                                onChangeText={setDescription}
-                                placeholderTextColor={C.textMuted}
-                                placeholder="Descripción del movimiento..."
-                                multiline
-                            />
-                        </View>
-
-                        {/* MONEDA EDITABLE */}
-                        <View style={m.section}>
-                            <Text style={m.sectionLabel}>MONEDA</Text>
-                            <View style={m.currencyRow}>
-                                {currencies.map(cur => (
-                                    <TouchableOpacity
-                                        key={cur}
-                                        style={[m.currencyBtn, currency === cur && m.currencyBtnActive]}
-                                        onPress={() => setCurrency(cur)}
-                                    >
-                                        <Text style={[m.currencyTxt, currency === cur && { color: C.primaryLight }]}>{cur}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-
-                        {/* CATEGORÍA EDITABLE */}
-                        <View style={m.section}>
-                            <Text style={m.sectionLabel}>CATEGORÍA</Text>
-                            <View style={m.catGrid}>
-                                {cats.map(cat => (
-                                    <TouchableOpacity
-                                        key={cat.id}
-                                        style={[m.catItem, category === cat.id && m.catItemActive]}
-                                        onPress={() => setCategory(cat.id)}
-                                    >
-                                        <Ionicons name={cat.icon} size={20} color={category === cat.id ? C.primaryLight : C.textSub} />
-                                        <Text style={[m.catLabel, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
-                                            {cat.label}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-
-                        {/* SMS ORIGINAL */}
-                        {tx.originalSMS && (
-                            <View style={m.section}>
-                                <TouchableOpacity style={m.smsToggle} onPress={() => setShowSMS(!showSMS)}>
-                                    <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.accent} />
-                                    <Text style={m.smsToggleTxt}>Ver SMS original</Text>
-                                    <Ionicons name={showSMS ? "chevron-up" : "chevron-down"} size={16} color={C.accent} />
-                                </TouchableOpacity>
-                                {showSMS && (
-                                    <View style={m.smsBox}>
-                                        <Text style={m.smsTxt}>{tx.originalSMS}</Text>
-                                    </View>
-                                )}
-                            </View>
-                        )}
-
-                        {/* BOTONES */}
-                        <TouchableOpacity style={m.saveBtn} onPress={handleSave} disabled={saving}>
-                            <Ionicons name="save-outline" size={20} color="#1A0E00" />
-                            <Text style={m.saveBtnTxt}>{saving ? "Guardando..." : "Guardar Cambios"}</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={m.convertBtn} onPress={onConvertToInstallment}>
-                            <Ionicons name="card-outline" size={18} color={C.primaryLight} />
-                            <Text style={m.convertBtnTxt}>Convertir a Visacuota</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={m.deleteBtn} onPress={handleDelete}>
-                            <Ionicons name="trash-outline" size={18} color={C.danger} />
-                            <Text style={m.deleteBtnTxt}>Eliminar Transacción</Text>
-                        </TouchableOpacity>
-
-                        <View style={{ height: 40 }} />
-                    </ScrollView>
+        <GlassSheet title="Detalle del movimiento" onClose={onClose}
+            footer={
+                <View style={m.footer}>
+                    <GlassButton
+                        kind="primary"
+                        icon="save-outline"
+                        label={saving ? "Guardando..." : "Guardar cambios"}
+                        onPress={handleSave}
+                        loading={saving}
+                    />
+                    <GlassButton kind="secondary" icon="card-outline" label="Convertir a Visacuota" onPress={onConvertToInstallment} />
+                    <GlassButton kind="destructive" icon="trash-outline" label="Eliminar transacción" onPress={handleDelete} />
                 </View>
-                </KeyboardAvoidingView>
+            }
+        >
+            {/* HEADER CON MONTO */}
+            <View style={m.header}>
+                <View style={[m.catIcon, { backgroundColor: selectedCat.color + "22", borderColor: selectedCat.color + "55" }]}>
+                    <Ionicons name={selectedCat.icon} size={28} color={selectedCat.color} />
+                </View>
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={m.amount}>
+                        <Text style={{ color: tx.type === 'income' ? C.income : C.expense }}>
+                            {tx.type === 'income' ? '+' : '-'}
+                        </Text>
+                        {' '}{tx.currency || 'Q'} {tx.amount.toFixed(2)}
+                    </Text>
+                    <Text style={m.date}>
+                        {new Date(tx.date).toLocaleDateString("es-GT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+                    </Text>
+                </View>
             </View>
-        </Modal>
+
+            {/* BANCO / FUENTE */}
+            {tx.bank && (
+                <View style={m.infoRow}>
+                    <Ionicons name="business-outline" size={16} color={C.textSub} style={m.infoIcon} />
+                    <Text style={m.infoLabel}>Banco</Text>
+                    <Text style={m.infoValue}>{tx.bank}</Text>
+                </View>
+            )}
+
+            {/* FUENTE */}
+            <View style={m.infoRow}>
+                <Ionicons name={tx.source === 'sms' ? "chatbubble-outline" : "pencil-outline"} size={16} color={C.textSub} style={m.infoIcon} />
+                <Text style={m.infoLabel}>Fuente</Text>
+                <Text style={m.infoValue}>{tx.source === 'sms' ? 'Detectado por SMS' : 'Ingreso manual'}</Text>
+            </View>
+
+            {/* DESCRIPCIÓN EDITABLE */}
+            <View style={m.section}>
+                <Text style={m.sectionLabel}>DESCRIPCIÓN</Text>
+                <TextInput
+                    style={m.input}
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholderTextColor={C.textMuted}
+                    placeholder="Descripción del movimiento..."
+                    multiline
+                />
+            </View>
+
+            {/* MONEDA EDITABLE */}
+            <View style={m.section}>
+                <Text style={m.sectionLabel}>MONEDA</Text>
+                <GlassSegmented options={currencyOptions} value={currency} onChange={setCurrency} />
+            </View>
+
+            {/* CATEGORÍA EDITABLE */}
+            <View style={m.section}>
+                <Text style={m.sectionLabel}>CATEGORÍA</Text>
+                <View style={m.catGrid}>
+                    {cats.map(cat => (
+                        <TouchableOpacity
+                            key={cat.id}
+                            style={[m.catItem, category === cat.id && m.catItemActive]}
+                            onPress={() => setCategory(cat.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={cat.label}
+                            accessibilityState={{ selected: category === cat.id }}
+                        >
+                            <Ionicons name={cat.icon} size={20} color={category === cat.id ? C.primaryLight : C.textSub} />
+                            <Text style={[m.catLabel, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
+                                {cat.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+
+            {/* SMS ORIGINAL */}
+            {tx.originalSMS && (
+                <View style={m.section}>
+                    <TouchableOpacity style={m.smsToggle} onPress={() => setShowSMS(!showSMS)}>
+                        <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.accent} />
+                        <Text style={m.smsToggleTxt}>Ver SMS original</Text>
+                        <Ionicons name={showSMS ? "chevron-up" : "chevron-down"} size={16} color={C.accent} />
+                    </TouchableOpacity>
+                    {showSMS && (
+                        <View style={m.smsBox}>
+                            <Text style={m.smsTxt}>{tx.originalSMS}</Text>
+                        </View>
+                    )}
+                </View>
+            )}
+
+            <View style={{ height: 16 }} />
+        </GlassSheet>
     );
 }
 
@@ -200,61 +193,61 @@ interface TxCardProps {
 }
 
 export function TxCard({ tx, settings, onDelete, onPress }: TxCardProps) {
+    const dialog = useGlassDialog();
     const cat = getCat(tx.category, settings.customCategories, tx.type);
     const isIncome = tx.type === "income";
     const txCurrency = tx.currency || 'Q';
 
+    const handleDelete = async () => {
+        if (await dialog.confirm(DELETE_CONFIRM)) onDelete(tx.id);
+    };
+
     return (
-        <TouchableOpacity style={s.txCard} onPress={() => onPress(tx)} activeOpacity={0.75}>
-            <View style={[s.txIconGlass, { backgroundColor: cat.color + "22", borderColor: cat.color + "44", borderTopColor: cat.color + "99", shadowColor: cat.color }]}>
-                <Ionicons name={cat.icon} size={22} color={cat.color} style={{ opacity: 0.9 }} />
-            </View>
-
-            <View style={{ flex: 1 }}>
-                <Text style={s.txDesc} numberOfLines={1}>{tx.description || cat.label}</Text>
-                <View style={s.txMeta}>
-                    <Text style={s.txDate}>
-                        {new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short", year: "numeric" })}
-                    </Text>
-                    {tx.bank && (
-                        <View style={s.bankBadge}>
-                            <Text style={s.bankTxt}>{tx.bank.toUpperCase()}</Text>
-                        </View>
-                    )}
-                    {tx.source === "sms" && (
-                        <View style={s.smsBadge}>
-                            <Text style={s.smsBadgeTxt}>SMS</Text>
-                        </View>
-                    )}
-                    {txCurrency !== 'Q' && (
-                        <View style={[s.currencyBadge, { backgroundColor: "#4A9EE822", borderColor: "#4A9EE844" }]}>
-                            <Text style={[s.currencyBadgeTxt, { color: "#4A9EE8" }]}>{txCurrency}</Text>
-                        </View>
-                    )}
-                    <Text style={[s.txCat, { color: cat.color + "cc" }]}>{cat.label}</Text>
+        <TouchableOpacity onPress={() => onPress(tx)} activeOpacity={0.75}>
+            <GlassCard radius={18} blur={false} style={{ marginBottom: 12 }} contentStyle={s.txRow}>
+                <View style={[s.txIconGlass, { backgroundColor: cat.color + "22", borderColor: cat.color + "44", borderTopColor: cat.color + "99" }]}>
+                    <Ionicons name={cat.icon} size={22} color={cat.color} style={{ opacity: 0.9 }} />
                 </View>
-            </View>
 
-            <View style={{ alignItems: "flex-end" }}>
-                <Text style={[s.txAmount, { color: isIncome ? C.income : C.expense }]}>
-                    {isIncome ? "+" : "-"}{txCurrency} {tx.amount.toFixed(2)}
-                </Text>
-                <TouchableOpacity
-                    style={s.delBtn}
-                    onPress={() => {
-                        if (Platform.OS === 'web') {
-                            if (window.confirm("¿Borrar este registro permanentemente?")) onDelete(tx.id);
-                        } else {
-                            Alert.alert("Eliminar", "¿Borrar este registro?", [
-                                { text: "Cancelar", style: "cancel" },
-                                { text: "Eliminar", style: "destructive", onPress: () => onDelete(tx.id) },
-                            ]);
-                        }
-                    }}
-                >
-                    <Ionicons name="trash-outline" size={18} color={C.danger} />
-                </TouchableOpacity>
-            </View>
+                <View style={{ flex: 1 }}>
+                    <Text style={s.txDesc} numberOfLines={1}>{tx.description || cat.label}</Text>
+                    <View style={s.txMeta}>
+                        <Text style={s.txDate}>
+                            {new Date(tx.date).toLocaleDateString("es-GT", { day: "2-digit", month: "short", year: "numeric" })}
+                        </Text>
+                        {tx.bank && (
+                            <View style={s.bankBadge}>
+                                <Text style={s.bankTxt}>{tx.bank.toUpperCase()}</Text>
+                            </View>
+                        )}
+                        {tx.source === "sms" && (
+                            <View style={s.smsBadge}>
+                                <Text style={s.smsBadgeTxt}>SMS</Text>
+                            </View>
+                        )}
+                        {txCurrency !== 'Q' && (
+                            <View style={[s.currencyBadge, { backgroundColor: C.fx + "22", borderColor: C.fx + "44" }]}>
+                                <Text style={[s.currencyBadgeTxt, { color: C.fx }]}>{txCurrency}</Text>
+                            </View>
+                        )}
+                        <Text style={[s.txCat, { color: cat.color + "cc" }]}>{cat.label}</Text>
+                    </View>
+                </View>
+
+                <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[s.txAmount, { color: isIncome ? C.income : C.expense }]}>
+                        {isIncome ? "+" : "-"}{txCurrency} {tx.amount.toFixed(2)}
+                    </Text>
+                    <TouchableOpacity
+                        style={s.delBtn}
+                        onPress={handleDelete}
+                        accessibilityRole="button"
+                        accessibilityLabel="Eliminar movimiento"
+                    >
+                        <Ionicons name="trash-outline" size={18} color={C.danger} />
+                    </TouchableOpacity>
+                </View>
+            </GlassCard>
         </TouchableOpacity>
     );
 }
@@ -271,12 +264,29 @@ interface Props {
     onConvertToInstallment: (item: CreditInstallment, originalTxId: string) => void;
 }
 
+type TypeFilter = "all" | "expense" | "income";
+type CurrencyFilter = "all" | "Q" | "USD" | "EUR";
+
+const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
+    { value: "all", label: "Todos" },
+    { value: "expense", label: "Gastos" },
+    { value: "income", label: "Ingresos" },
+];
+
 export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, accounts, onConvertToInstallment }: Props) {
-    const [filter, setFilter] = useState<"all" | "expense" | "income">("all");
-    const [currency, setCurrency] = useState<"all" | "Q" | "USD" | "EUR">("all");
+    const [filter, setFilter] = useState<TypeFilter>("all");
+    const [currency, setCurrency] = useState<CurrencyFilter>("all");
     const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<Transaction | null>(null);
     const [convertingTx, setConvertingTx] = useState<Transaction | null>(null);
+
+    // Tutorial
+    const headerRef = useTutorialRef('tx_header');
+    const searchRef = useTutorialRef('tx_search');
+    const typeFilterRef = useTutorialRef('tx_type_filter');
+    const currencyFilterRef = useTutorialRef('tx_currency_filter');
+    const firstRef = useTutorialRef('tx_first');
+    const txScroll = useTutorialScroll('transactions');
 
     // Memoizar el filtrado para no recalcular en cada render
     const filtered = useMemo(() => transactions
@@ -293,23 +303,41 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
     const hasUSD = transactions.some(t => t.currency === 'USD');
     const hasEUR = transactions.some(t => t.currency === 'EUR');
 
+    const currencyOptions = useMemo(() => {
+        const opts: { value: CurrencyFilter; label: string }[] = [
+            { value: "all", label: "Todas" },
+            { value: "Q", label: "Q" },
+        ];
+        if (hasUSD) opts.push({ value: "USD", label: "USD" });
+        if (hasEUR) opts.push({ value: "EUR", label: "EUR" });
+        return opts;
+    }, [hasUSD, hasEUR]);
+
     // Renderizador memoizado para FlatList (evita re-renders innecesarios)
-    const renderItem = useCallback(({ item }: { item: Transaction }) => (
-        <TxCard
-            tx={item}
-            settings={settings}
-            onDelete={onDelete}
-            onPress={setSelected}
-        />
-    ), [settings, onDelete]);
+    const renderItem = useCallback(({ item, index }: { item: Transaction; index: number }) => {
+        const card = (
+            <TxCard
+                tx={item}
+                settings={settings}
+                onDelete={onDelete}
+                onPress={setSelected}
+            />
+        );
+        return index === 0
+            ? <View ref={firstRef} collapsable={false}>{card}</View>
+            : card;
+    }, [settings, onDelete, firstRef]);
 
     const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
             <View style={s.screen}>
                 {/* LISTA — FlatList para rendimiento óptimo con 500+ registros */}
                 <FlatList
+                    ref={txScroll.ref}
+                    onScroll={txScroll.onScroll}
+                    scrollEventThrottle={txScroll.scrollEventThrottle}
                     data={filtered}
                     renderItem={renderItem}
                     keyExtractor={keyExtractor}
@@ -320,14 +348,17 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     removeClippedSubviews={true}
                     ListHeaderComponent={
                         <View style={{ paddingBottom: 10 }}>
-                            <View style={s.header}>
-                                <Text style={s.title}>Movimientos</Text>
-                                <Text style={s.sub}>{filtered.length} registros</Text>
-                            </View>
+                            <ScreenHeader
+                                title="Movimientos"
+                                subtitle={`${filtered.length} registros`}
+                                right={<HelpButton tutorialId="tutorial_movimientos" />}
+                                headerRef={headerRef}
+                            />
 
                             {/* BÚSQUEDA */}
-                            <View style={s.searchBox}>
-                                <Ionicons name="search" size={18} color={C.textMuted} style={{ marginRight: 8 }} />
+                            <View ref={searchRef} collapsable={false} style={s.searchBox}>
+                                <GlassBackground radius={12} blur={false} />
+                                <Ionicons name="search" size={18} color={C.textSub} style={{ marginRight: 8 }} />
                                 <TextInput
                                     style={s.searchInput}
                                     value={search}
@@ -336,34 +367,34 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                                     placeholderTextColor={C.textMuted}
                                 />
                                 {search.length > 0 && (
-                                    <TouchableOpacity onPress={() => setSearch("")}>
-                                        <Ionicons name="close-circle" size={18} color={C.textMuted} />
+                                    <TouchableOpacity
+                                        onPress={() => setSearch("")}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Borrar búsqueda"
+                                    >
+                                        <Ionicons name="close-circle" size={18} color={C.textSub} />
                                     </TouchableOpacity>
                                 )}
                             </View>
 
                             {/* FILTRO TIPO */}
-                            <View style={s.filterRow}>
-                                {(["all", "expense", "income"] as const).map(f => (
-                                    <TouchableOpacity key={f} style={[s.filterTab, filter === f && s.filterTabActive]} onPress={() => setFilter(f)}>
-                                        <Text style={[s.filterTxt, filter === f && s.filterTxtActive]}>
-                                            {f === "all" ? "Todos" : f === "expense" ? "Gastos" : "Ingresos"}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
+                            <GlassSegmented
+                                options={TYPE_OPTIONS}
+                                value={filter}
+                                onChange={setFilter}
+                                containerRef={typeFilterRef}
+                                style={s.filterRow}
+                            />
 
                             {/* FILTRO MONEDA (solo si hay múltiples) */}
                             {(hasUSD || hasEUR) && (
-                                <View style={[s.filterRow, { marginBottom: 10 }]}>
-                                    {(["all", "Q", ...(hasUSD ? ["USD"] : []), ...(hasEUR ? ["EUR"] : [])] as const).map((cur: any) => (
-                                        <TouchableOpacity key={cur} style={[s.filterTab, currency === cur && s.filterTabActive]} onPress={() => setCurrency(cur)}>
-                                            <Text style={[s.filterTxt, currency === cur && s.filterTxtActive]}>
-                                                {cur === "all" ? "Todas" : cur}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))}
-                                </View>
+                                <GlassSegmented
+                                    options={currencyOptions}
+                                    value={currency}
+                                    onChange={setCurrency}
+                                    containerRef={currencyFilterRef}
+                                    style={s.filterRow}
+                                />
                             )}
                         </View>
                     }
@@ -407,25 +438,18 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
 // ESTILOS PANTALLA
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-    screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-    header: { marginBottom: 18 },
-    title: { color: C.textPrimary, fontSize: 26, fontWeight: "800", letterSpacing: 0.5 },
-    sub: { color: C.textSub, fontSize: 13, marginTop: 2 },
-    searchBox: { flexDirection: "row", alignItems: "center", backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12 },
+    screen: { flex: 1, paddingHorizontal: 16 },
+    searchBox: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, overflow: "hidden" },
     searchInput: { flex: 1, color: C.text, fontSize: 14 },
-    filterRow: { flexDirection: "row", gap: 8, marginBottom: 16 },
-    filterTab: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", backgroundColor: C.bgDeep },
-    filterTabActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.3) },
-    filterTxt: { color: C.textSub, fontSize: 12, fontWeight: "700", textTransform: "uppercase" },
-    filterTxtActive: { color: C.primaryLight, fontWeight: "900" },
+    filterRow: { marginBottom: 12 },
     empty: { alignItems: "center", marginTop: 60, gap: 12 },
-    emptyTxt: { color: C.textMuted, fontSize: 14 },
-    txCard: { flexDirection: "row", alignItems: "center", backgroundColor: C.cardHigh, borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 1, borderColor: C.cardBorder, borderTopColor: C.shimmer, ...shadow("#000", 10, 0.4) },
-    txIconGlass: { width: 48, height: 48, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginRight: 14, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 10, elevation: 8 },
+    emptyTxt: { color: C.textSub, fontSize: 14 },
+    txRow: { flexDirection: "row", alignItems: "center", padding: 14 },
+    txIconGlass: { width: 48, height: 48, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginRight: 14 },
     txDesc: { color: C.text, fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },
     txMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" },
-    txDate: { color: C.textMuted, fontSize: 11 },
-    txCat: { color: C.textMuted, fontSize: 11 },
+    txDate: { color: C.textSub, fontSize: 11 },
+    txCat: { color: C.textSub, fontSize: 11 },
     txAmount: { fontSize: 16, fontWeight: "800", marginBottom: 6 },
     delBtn: { backgroundColor: C.danger + "22", padding: 6, borderRadius: 8, borderWidth: 1, borderColor: C.danger + "44" },
     bankBadge: { backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.primary + "55" },
@@ -440,37 +464,24 @@ const s = StyleSheet.create({
 // ESTILOS MODAL
 // ─────────────────────────────────────────────────────────────
 const m = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
-    kav: { flex: 1, width: "100%", justifyContent: "flex-end" },
-    sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "55", padding: 24, maxHeight: "90%", ...shadow(C.primaryGlow, 20, 0.4) },
-    header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+    header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
     catIcon: { width: 56, height: 56, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
     amount: { color: C.text, fontSize: 22, fontWeight: "900" },
-    date: { color: C.textMuted, fontSize: 12, marginTop: 2, textTransform: "capitalize" },
-    closeBtn: { padding: 8, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
+    date: { color: C.textSub, fontSize: 12, marginTop: 2, textTransform: "capitalize" },
     infoRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.separator },
     infoIcon: { marginRight: 10 },
-    infoLabel: { color: C.textMuted, fontSize: 13, flex: 1 },
-    infoValue: { color: C.text, fontSize: 13, fontWeight: "700" },
+    infoLabel: { color: C.textSub, fontSize: 13, flex: 1 },
+    infoValue: { color: C.text, fontSize: 13, fontWeight: "700", flexShrink: 1, textAlign: "right" },
     section: { marginTop: 18 },
-    sectionLabel: { color: C.textMuted, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10 },
-    input: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, padding: 12, color: C.text, fontSize: 14 },
-    currencyRow: { flexDirection: "row", gap: 8 },
-    currencyBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
-    currencyBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + "33" },
-    currencyTxt: { color: C.textSub, fontSize: 14, fontWeight: "700" },
+    sectionLabel: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10 },
+    input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 12, color: C.text, fontSize: 14 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    catItem: { width: "30%", alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
-    catItemActive: { borderColor: C.primary, backgroundColor: C.primaryDark + "33" },
+    catItem: { width: "30%", flexGrow: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    catItemActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catLabel: { color: C.textSub, fontSize: 10, marginTop: 4, fontWeight: "600", textAlign: "center" },
     smsToggle: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, backgroundColor: C.accent + "11", borderRadius: 10, borderWidth: 1, borderColor: C.accent + "33" },
     smsToggleTxt: { color: C.accentLight, fontSize: 13, fontWeight: "700", flex: 1 },
-    smsBox: { marginTop: 8, padding: 12, backgroundColor: C.bgDeep, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder },
+    smsBox: { marginTop: 8, padding: 12, backgroundColor: C.glassInput, borderRadius: 10, borderWidth: 1, borderColor: C.glassInputBorder },
     smsTxt: { color: C.textSub, fontSize: 12, lineHeight: 18 },
-    saveBtn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 14, paddingVertical: 16, alignItems: "center", justifyContent: "center", gap: 10, marginTop: 20, ...shadow(C.primaryGlow, 10, 0.4) },
-    saveBtnTxt: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
-    convertBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: C.primary + "44", backgroundColor: C.primary + "11" },
-    convertBtnTxt: { color: C.primaryLight, fontSize: 14, fontWeight: "700" },
-    deleteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 14, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: C.danger + "44", backgroundColor: C.danger + "11" },
-    deleteBtnTxt: { color: C.danger, fontSize: 14, fontWeight: "700" },
+    footer: { gap: 10, paddingTop: 12 },
 });

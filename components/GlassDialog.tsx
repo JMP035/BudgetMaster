@@ -194,7 +194,7 @@ export function GlassDialog({
                             {ordered.map((a, i) => {
                                 const kind = a.kind ?? "secondary";
                                 const isPrimary = kind === "primary";
-                                const textColor = isPrimary ? "#1A0E00" : kind === "destructive" ? C.danger : C.text;
+                                const textColor = isPrimary ? C.onPrimary : kind === "destructive" ? C.danger : C.text;
                                 const flexStyle = stacked
                                     ? s.btnStacked
                                     : hasPrimary && !isPrimary

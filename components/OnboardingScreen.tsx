@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
 import {
-    Animated, Dimensions, Easing, KeyboardAvoidingView,
+    Animated, Easing, KeyboardAvoidingView,
     Platform, ScrollView, StyleSheet, Text, TextInput,
     TouchableOpacity, View, Keyboard, TouchableWithoutFeedback
 } from "react-native";
-import { Currency, PaymentCycle, UserSettings } from "../services/storage";
-import { C, shadow } from "../theme";
-
-const { width, height } = Dimensions.get("window");
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Currency, PaymentCycle, parseAmount } from "../services/storage";
+import { C } from "../theme";
+import { GlassBackground, GlassCard } from "./GlassCard";
+import { GlassButton } from "./GlassButton";
+import { InlineNotice } from "./InlineNotice";
+import { useKeyboardHeight } from "./useKeyboardHeight";
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -40,6 +43,12 @@ interface Props { onComplete: (data: OnboardingData) => void; }
 
 const BANKS = ["BAC", "BANRURAL", "GTC", "BANTRAB", "PROMERICA", "BI", "CHASE", "OTRO"];
 
+/** Monto escrito por el usuario → número (acepta "7,400"); vacío o inválido = 0 */
+const amt = (v: string): number => {
+    const n = parseAmount(v || "0");
+    return isNaN(n) ? 0 : n;
+};
+
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO
 // ─────────────────────────────────────────────────────────────
@@ -67,10 +76,10 @@ function ProgressBar({ current, total }: { current: number; total: number }) {
 
 const p = StyleSheet.create({
     wrap: { width: "100%", marginBottom: 24 },
-    track: { height: 3, backgroundColor: C.card, borderRadius: 2, overflow: "hidden", marginBottom: 6 },
+    track: { height: 3, backgroundColor: C.glassInput, borderRadius: 2, overflow: "hidden", marginBottom: 6 },
     fill: { height: "100%", backgroundColor: C.primary, borderRadius: 2 },
     glow: { position: "absolute", right: 0, top: -3, width: 16, height: 9, backgroundColor: C.primaryGlow, borderRadius: 4, opacity: 0.9 },
-    label: { color: C.textMuted, fontSize: 11, letterSpacing: 1, textAlign: "right" },
+    label: { color: C.textSub, fontSize: 11, letterSpacing: 1, textAlign: "right" },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -111,6 +120,7 @@ function OptionBtn({ label, selected, onPress, icon, desc }: {
     return (
         <Animated.View style={{ transform: [{ scale }] }}>
             <TouchableOpacity style={[o.btn, selected && o.btnActive]} onPress={handlePress} activeOpacity={0.8}>
+                {!selected && <GlassBackground radius={14} blur={false} />}
                 {icon && <Ionicons name={icon} size={22} color={selected ? C.primaryLight : C.textSub} style={{ marginRight: 12 }} />}
                 <View style={{ flex: 1 }}>
                     <Text style={[o.label, selected && { color: C.primaryLight }]}>{label}</Text>
@@ -123,10 +133,10 @@ function OptionBtn({ label, selected, onPress, icon, desc }: {
 }
 
 const o = StyleSheet.create({
-    btn: { flexDirection: "row", alignItems: "center", backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 10 },
-    btnActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.3) },
+    btn: { flexDirection: "row", alignItems: "center", borderRadius: 14, borderWidth: 1, borderColor: "transparent", padding: 16, marginBottom: 10, overflow: "hidden" },
+    btnActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     label: { color: C.textSub, fontSize: 15, fontWeight: "700" },
-    desc: { color: C.textMuted, fontSize: 12, marginTop: 3 },
+    desc: { color: C.textSub, fontSize: 12, marginTop: 3 },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -156,15 +166,17 @@ function StyledInput({ value, onChangeText, placeholder, keyboardType, prefix, s
 }
 
 const i = StyleSheet.create({
-    row: { flexDirection: "row", alignItems: "center", backgroundColor: C.bgDeep, borderRadius: 14, borderWidth: 1.5, borderColor: C.primary + "55", paddingHorizontal: 16, paddingVertical: 14, marginTop: 12 },
+    row: { flexDirection: "row", alignItems: "center", backgroundColor: C.glassInput, borderRadius: 14, borderWidth: 1.5, borderColor: C.glassActiveBorder, paddingHorizontal: 16, paddingVertical: 14, marginTop: 12 },
     input: { flex: 1, color: C.text, fontSize: 18, fontWeight: "700" },
-    fix: { color: C.textMuted, fontSize: 16, fontWeight: "700", marginHorizontal: 6 },
+    fix: { color: C.textSub, fontSize: 16, fontWeight: "700", marginHorizontal: 6 },
 });
 
 // ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 export default function OnboardingScreen({ onComplete }: Props) {
+    const insets = useSafeAreaInsets();
+    const kb = useKeyboardHeight();
     const [step, setStep] = useState(0);
     const [dir, setDir] = useState(1);
     const [data, setData] = useState<OnboardingData>({
@@ -199,7 +211,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
             totalAmount: newDebtTotal || "0",
         };
         const updatedList = [...data.activeDebtsList, debt];
-        const totalMonthly = updatedList.reduce((s, d) => s + parseFloat(d.monthlyPayment || "0"), 0);
+        const totalMonthly = updatedList.reduce((s, d) => s + amt(d.monthlyPayment), 0);
         setData(d => ({
             ...d,
             activeDebtsList: updatedList,
@@ -213,7 +225,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
     const removeDebt = (id: string) => {
         const updatedList = data.activeDebtsList.filter(d => d.id !== id);
-        const totalMonthly = updatedList.reduce((s, d) => s + parseFloat(d.monthlyPayment || "0"), 0);
+        const totalMonthly = updatedList.reduce((s, d) => s + amt(d.monthlyPayment), 0);
         setData(d => ({
             ...d,
             activeDebtsList: updatedList,
@@ -265,12 +277,15 @@ export default function OnboardingScreen({ onComplete }: Props) {
         return true;
     };
 
+    // Espacio extra al final de cada paso para que el teclado no tape el último campo
+    const kbSpacer = <View style={{ height: 24 + kb }} />;
+
     const steps = [
         // PASO 0 — Nombre
         <AnimatedCard key={0} direction={dir}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={s.stepHeader}>
-                    <View style={[s.stepIcon, { backgroundColor: C.primary + "22" }]}>
+                    <View style={s.stepIcon}>
                         <Ionicons name="person-outline" size={28} color={C.primaryLight} />
                     </View>
                     <Text style={s.stepTitle}>¡Bienvenido a BudgetMaster!</Text>
@@ -280,6 +295,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     </Text>
                 </View>
                 <StyledInput value={data.name} onChangeText={v => setData(d => ({ ...d, name: v }))} placeholder="Tu nombre..." autoFocus />
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -295,12 +311,14 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 </View>
                 <View style={s.currencyRow}>
                     {(["Q", "USD"] as Currency[]).map(cur => (
-                        <TouchableOpacity key={cur} style={[s.currBtn, data.currency === cur && s.currBtnActive]} onPress={() => setData(d => ({ ...d, currency: cur }))}>
+                        <TouchableOpacity key={cur} style={[s.currBtn, data.currency === cur && s.chipActive]} onPress={() => setData(d => ({ ...d, currency: cur }))}>
+                            {data.currency !== cur && <GlassBackground radius={12} blur={false} />}
                             <Text style={[s.currTxt, data.currency === cur && { color: C.primaryLight }]}>{cur}</Text>
                         </TouchableOpacity>
                     ))}
                 </View>
                 <StyledInput value={data.monthlyIncome} onChangeText={v => setData(d => ({ ...d, monthlyIncome: v }))} placeholder="0.00" keyboardType="decimal-pad" prefix={data.currency} autoFocus />
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -308,8 +326,8 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <AnimatedCard key={2} direction={dir}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={s.stepHeader}>
-                    <View style={[s.stepIcon, { backgroundColor: "#4A9EE822" }]}>
-                        <Ionicons name="calendar-outline" size={28} color="#4A9EE8" />
+                    <View style={s.stepIcon}>
+                        <Ionicons name="calendar-outline" size={28} color={C.primaryLight} />
                     </View>
                     <Text style={s.stepTitle}>¿Cada cuándo te pagan?</Text>
                     <Text style={s.stepSubtitle}>Esto me permite calcular cuántos días te quedan hasta tu próximo ingreso y proyectar si tu dinero alcanzará.</Text>
@@ -318,6 +336,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 <OptionBtn label="Quincenal" icon="git-branch-outline" desc="Me pagan los días 15 y 30" selected={data.paymentCycle === "biweekly"} onPress={() => setData(d => ({ ...d, paymentCycle: "biweekly" }))} />
                 <OptionBtn label="Semanal" icon="refresh-outline" desc="Me pagan cada semana" selected={data.paymentCycle === "weekly"} onPress={() => setData(d => ({ ...d, paymentCycle: "weekly" }))} />
                 <OptionBtn label="Irregular" icon="shuffle-outline" desc="Freelance — ingresos variables" selected={data.paymentCycle === "irregular"} onPress={() => setData(d => ({ ...d, paymentCycle: "irregular" }))} />
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -325,7 +344,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <AnimatedCard key={3} direction={dir}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={s.stepHeader}>
-                    <View style={[s.stepIcon, { backgroundColor: C.primary + "22" }]}>
+                    <View style={s.stepIcon}>
                         <Ionicons name="today-outline" size={28} color={C.primaryLight} />
                     </View>
                     <Text style={s.stepTitle}>{data.paymentCycle === "biweekly" ? "¿Qué días te depositan?" : "¿Qué día del mes te pagan?"}</Text>
@@ -345,14 +364,17 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     autoFocus
                 />
                 {step === 3 && !canContinue() && (
-                    <Text style={s.dayError}>
-                        {data.paymentCycle === "biweekly"
+                    <InlineNotice
+                        variant="error"
+                        style={{ marginTop: 10 }}
+                        text={data.paymentCycle === "biweekly"
                             ? "Ingresa dos días válidos (1-31) separados por coma, ej: 15,30"
                             : data.paymentCycle === "weekly"
                                 ? "Ingresa un día de la semana entre 1 y 7"
                                 : "Ingresa un día del mes entre 1 y 31"}
-                    </Text>
+                    />
                 )}
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -368,6 +390,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 </View>
                 <StyledInput value={data.biggestExpense} onChangeText={v => setData(d => ({ ...d, biggestExpense: v }))} placeholder="0.00" keyboardType="decimal-pad" prefix="Q" autoFocus />
                 <Text style={s.hint}>Podés agregar todos tus gastos fijos en detalle después en la sección Presupuesto.</Text>
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -393,7 +416,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 )}
 
                 {data.activeDebtsList.map(debt => (
-                    <View key={debt.id} style={s.debtCard}>
+                    <GlassCard key={debt.id} radius={14} blur={false} leftAccentColor={C.danger} style={s.debtCard} contentStyle={s.debtCardContent}>
                         <View style={s.debtCardLeft}>
                             <Ionicons
                                 name={debt.type === 'credit' ? 'card-outline' : debt.type === 'loan' ? 'cash-outline' : debt.type === 'installment' ? 'receipt-outline' : 'help-circle-outline'}
@@ -410,29 +433,38 @@ export default function OnboardingScreen({ onComplete }: Props) {
                                 </Text>
                             </View>
                         </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={s.debtAmount}>{data.currency} {parseFloat(debt.monthlyPayment).toFixed(2)}/mes</Text>
-                            <TouchableOpacity onPress={() => removeDebt(debt.id)}>
+                        <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
+                            <Text style={s.debtAmount}>{data.currency} {amt(debt.monthlyPayment).toFixed(2)}/mes</Text>
+                            <TouchableOpacity
+                                onPress={() => removeDebt(debt.id)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Quitar deuda ${debt.name}`}
+                            >
                                 <Ionicons name="trash-outline" size={16} color={C.danger} />
                             </TouchableOpacity>
                         </View>
-                    </View>
+                    </GlassCard>
                 ))}
 
                 {/* Resumen total */}
                 {data.activeDebtsList.length > 0 && (
                     <View style={s.debtTotal}>
                         <Text style={s.debtTotalLbl}>TOTAL MENSUAL EN DEUDAS</Text>
-                        <Text style={s.debtTotalVal}>{data.currency} {parseFloat(data.activeDebts || "0").toFixed(2)}</Text>
-                        {parseFloat(data.activeDebts) > parseFloat(data.monthlyIncome) * 0.3 && (
-                            <Text style={s.debtWarning}>⚠️ Superas el 30% de tu ingreso en deudas. Zona de alerta.</Text>
+                        <Text style={s.debtTotalVal}>{data.currency} {amt(data.activeDebts).toFixed(2)}</Text>
+                        {amt(data.activeDebts) > amt(data.monthlyIncome) * 0.3 && (
+                            <InlineNotice
+                                variant="warning"
+                                style={{ marginTop: 10, alignSelf: 'stretch' }}
+                                text="Superas el 30% de tu ingreso en deudas. Zona de alerta."
+                            />
                         )}
                     </View>
                 )}
 
                 {/* Formulario para agregar deuda */}
                 {showDebtForm ? (
-                    <View style={s.debtForm}>
+                    <GlassCard radius={14} blur={false} style={s.debtForm} contentStyle={s.debtFormContent}>
                         <Text style={s.debtFormTitle}>Nueva Deuda</Text>
 
                         <Text style={s.debtFormLbl}>NOMBRE DE LA DEUDA</Text>
@@ -450,10 +482,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
                             {([['credit', 'card-outline', 'Tarjeta'], ['loan', 'cash-outline', 'Préstamo'], ['installment', 'receipt-outline', 'Visacuota'], ['other', 'help-circle-outline', 'Otra']] as [DebtEntry['type'], any, string][]).map(([type, icon, label]) => (
                                 <TouchableOpacity
                                     key={type}
-                                    style={[s.debtTypeBtn, newDebtType === type && s.debtTypeBtnActive]}
+                                    style={[s.debtTypeBtn, newDebtType === type && s.chipActive]}
                                     onPress={() => setNewDebtType(type)}
                                 >
-                                    <Ionicons name={icon} size={16} color={newDebtType === type ? C.primaryLight : C.textMuted} />
+                                    {newDebtType !== type && <GlassBackground radius={10} blur={false} />}
+                                    <Ionicons name={icon} size={16} color={newDebtType === type ? C.primaryLight : C.textSub} />
                                     <Text style={[s.debtTypeTxt, newDebtType === type && { color: C.primaryLight }]}>{label}</Text>
                                 </TouchableOpacity>
                             ))}
@@ -469,32 +502,36 @@ export default function OnboardingScreen({ onComplete }: Props) {
                         />
 
                         <View style={s.debtFormBtns}>
-                            <TouchableOpacity style={s.debtCancelBtn} onPress={() => setShowDebtForm(false)}>
-                                <Text style={{ color: C.textMuted, fontWeight: '700' }}>Cancelar</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[s.debtAddConfirmBtn, (!newDebtName.trim() || !newDebtMonthly.trim()) && { opacity: 0.5 }]}
+                            <GlassButton label="Cancelar" kind="secondary" onPress={() => setShowDebtForm(false)} style={{ flex: 1 }} />
+                            <GlassButton
+                                label="Agregar"
+                                icon="checkmark"
                                 onPress={addDebt}
                                 disabled={!newDebtName.trim() || !newDebtMonthly.trim()}
-                            >
-                                <Ionicons name="checkmark" size={18} color="#1A0E00" />
-                                <Text style={s.debtAddConfirmTxt}>Agregar</Text>
-                            </TouchableOpacity>
+                                style={{ flex: 2 }}
+                            />
                         </View>
-                    </View>
+                    </GlassCard>
                 ) : (
-                    <TouchableOpacity style={s.addDebtBtn} onPress={() => setShowDebtForm(true)}>
-                        <Ionicons name="add-circle-outline" size={20} color={C.primaryLight} />
-                        <Text style={s.addDebtTxt}>Agregar deuda</Text>
-                    </TouchableOpacity>
+                    <GlassButton
+                        label="Agregar deuda"
+                        icon="add-circle-outline"
+                        kind="secondary"
+                        onPress={() => setShowDebtForm(true)}
+                        style={{ marginTop: 14 }}
+                    />
                 )}
 
                 {data.activeDebtsList.length === 0 && !showDebtForm && (
-                    <TouchableOpacity style={s.noDebtBtn} onPress={() => setData(d => ({...d, activeDebts: "0"}))}>
-                        <Ionicons name="thumbs-up-outline" size={18} color={C.income} />
-                        <Text style={s.noDebtBtnTxt}>No tengo deudas 🎉</Text>
-                    </TouchableOpacity>
+                    <GlassButton
+                        label="No tengo deudas"
+                        icon="thumbs-up-outline"
+                        kind="secondary"
+                        onPress={() => setData(d => ({ ...d, activeDebts: "0" }))}
+                        style={{ marginTop: 10 }}
+                    />
                 )}
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -507,11 +544,12 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     </View>
                     <Text style={s.stepTitle}>¿Cuánto querés ahorrar al mes?</Text>
                     <Text style={s.stepSubtitle}>
-                        Los expertos recomiendan mínimo el 20% de tu ingreso. Con {data.monthlyIncome ? `${data.currency} ${data.monthlyIncome}` : 'tu ingreso'}, eso sería {data.currency} {data.monthlyIncome ? (parseFloat(data.monthlyIncome || "0") * 0.20).toFixed(0) : "0"} al mes.{"\n\n"}
+                        Los expertos recomiendan mínimo el 20% de tu ingreso. Con {data.monthlyIncome ? `${data.currency} ${data.monthlyIncome}` : 'tu ingreso'}, eso sería {data.currency} {data.monthlyIncome ? (amt(data.monthlyIncome) * 0.20).toFixed(0) : "0"} al mes.{"\n\n"}
                         "Págate a ti mismo primero." — El Hombre Más Rico de Babilonia
                     </Text>
                 </View>
                 <StyledInput value={data.monthlySavings} onChangeText={v => setData(d => ({ ...d, monthlySavings: v }))} placeholder="0.00" keyboardType="decimal-pad" prefix="Q" autoFocus />
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
 
@@ -519,22 +557,27 @@ export default function OnboardingScreen({ onComplete }: Props) {
         <AnimatedCard key={7} direction={dir}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 <View style={s.stepHeader}>
-                    <View style={[s.stepIcon, { backgroundColor: C.primary + "22" }]}>
+                    <View style={s.stepIcon}>
                         <Ionicons name="business-outline" size={28} color={C.primaryLight} />
                     </View>
                     <Text style={s.stepTitle}>¿Qué bancos usás?</Text>
                     <Text style={s.stepSubtitle}>Seleccioná los bancos de los que querés detectar SMS automáticamente.</Text>
                 </View>
                 <View style={s.bankGrid}>
-                    {BANKS.map(bank => (
-                        <TouchableOpacity key={bank} style={[s.bankBtn, data.preferredBanks.includes(bank) && s.bankBtnActive]} onPress={() => toggleBank(bank)}>
-                            <Ionicons name="business-outline" size={14} color={data.preferredBanks.includes(bank) ? C.primaryLight : C.textMuted} style={{ marginRight: 6 }} />
-                            <Text style={[s.bankTxt, data.preferredBanks.includes(bank) && { color: C.primaryLight }]}>{bank}</Text>
-                        </TouchableOpacity>
-                    ))}
+                    {BANKS.map(bank => {
+                        const active = data.preferredBanks.includes(bank);
+                        return (
+                            <TouchableOpacity key={bank} style={[s.bankBtn, active && s.chipActive]} onPress={() => toggleBank(bank)}>
+                                {!active && <GlassBackground radius={10} blur={false} />}
+                                <Ionicons name="business-outline" size={14} color={active ? C.primaryLight : C.textSub} style={{ marginRight: 6 }} />
+                                <Text style={[s.bankTxt, active && { color: C.primaryLight }]}>{bank}</Text>
+                            </TouchableOpacity>
+                        );
+                    })}
                 </View>
                 <Text style={[s.hint, { marginTop: 16 }]}>¿Tenés ahorros en el banco actualmente?</Text>
                 <StyledInput value={data.externalSavings} onChangeText={v => setData(d => ({ ...d, externalSavings: v }))} placeholder="0.00" keyboardType="decimal-pad" prefix="Q" />
+                {kbSpacer}
             </ScrollView>
         </AnimatedCard>,
     ];
@@ -542,11 +585,11 @@ export default function OnboardingScreen({ onComplete }: Props) {
     return (
         <KeyboardAvoidingView
             style={{ flex: 1, backgroundColor: C.bg }}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "android" ? 20 : 0}
+            behavior="padding"
+            keyboardVerticalOffset={0}
         >
             <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                <View style={s.container}>
+                <View style={[s.container, { paddingTop: insets.top + 12, paddingBottom: kb > 0 ? 16 : insets.bottom + 16 }]}>
 
                     {/* HEADER */}
                     <View style={s.header}>
@@ -565,18 +608,15 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     {/* BOTONES */}
                     <View style={s.footer}>
                         {step > 0 && (
-                            <TouchableOpacity style={s.backBtn} onPress={goBack}>
-                                <Ionicons name="arrow-back" size={20} color={C.textSub} />
-                            </TouchableOpacity>
+                            <GlassButton label="Atrás" icon="arrow-back" kind="secondary" onPress={goBack} style={s.backBtn} />
                         )}
-                        <TouchableOpacity
-                            style={[s.nextBtn, !canContinue() && { opacity: 0.5 }]}
+                        <GlassButton
+                            label={step === TOTAL_STEPS - 1 ? "¡Comenzar!" : "Continuar"}
+                            icon={step === TOTAL_STEPS - 1 ? "rocket-outline" : "arrow-forward"}
                             onPress={goNext}
                             disabled={!canContinue()}
-                        >
-                            <Text style={s.nextTxt}>{step === TOTAL_STEPS - 1 ? "¡Comenzar!" : "Continuar"}</Text>
-                            <Ionicons name={step === TOTAL_STEPS - 1 ? "rocket-outline" : "arrow-forward"} size={20} color="#1A0E00" style={{ marginLeft: 8 }} />
-                        </TouchableOpacity>
+                            style={s.nextBtn}
+                        />
                     </View>
 
                 </View>
@@ -589,56 +629,47 @@ export default function OnboardingScreen({ onComplete }: Props) {
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-    container: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 24, paddingTop: 52, paddingBottom: 16 },
+    container: { flex: 1, backgroundColor: C.bg, paddingHorizontal: 24 },
     header: { marginBottom: 4 },
-    cfoTag: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, alignSelf: "flex-start", backgroundColor: C.primaryDark + "44", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "55" },
+    cfoTag: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, alignSelf: "flex-start", backgroundColor: C.glassActive, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.glassActiveBorder },
     cfoTxt: { color: C.primaryLight, fontSize: 11, fontWeight: "900", letterSpacing: 2 },
     content: { flex: 1 },
     stepHeader: { marginBottom: 20 },
-    stepIcon: { width: 60, height: 60, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 16, borderWidth: 1, borderColor: C.cardBorder },
+    stepIcon: { width: 60, height: 60, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 16, borderWidth: 1, borderColor: C.glassBorder, backgroundColor: C.glassActive },
     stepTitle: { color: C.textPrimary, fontSize: 24, fontWeight: "900", marginBottom: 10, lineHeight: 30 },
     stepSubtitle: { color: C.textSub, fontSize: 14, lineHeight: 22 },
-    hint: { color: C.textMuted, fontSize: 12, marginTop: 10, lineHeight: 18 },
-    dayError: { color: C.danger, fontSize: 12, marginTop: 8 },
+    hint: { color: C.textSub, fontSize: 12, marginTop: 10, lineHeight: 18 },
     currencyRow: { flexDirection: "row", gap: 10, marginBottom: 4 },
-    currBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.card },
-    currBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + "33" },
+    currBtn: { flex: 1, paddingVertical: 12, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: "transparent", overflow: "hidden" },
     currTxt: { color: C.textSub, fontSize: 16, fontWeight: "900" },
+    // Chip seleccionado (moneda, banco, tipo de deuda)
+    chipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     bankGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    bankBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.card },
-    bankBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + "33" },
-    bankTxt: { color: C.textMuted, fontSize: 13, fontWeight: "700" },
+    bankBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: "transparent", overflow: "hidden" },
+    bankTxt: { color: C.textSub, fontSize: 13, fontWeight: "700" },
     footer: { flexDirection: "row", alignItems: "center", gap: 12, paddingTop: 12 },
-    backBtn: { width: 52, height: 52, borderRadius: 16, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", justifyContent: "center" },
-    nextBtn: { flex: 1, flexDirection: "row", backgroundColor: C.primary, borderRadius: 16, paddingVertical: 18, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.primaryLight, ...shadow(C.primaryGlow, 12, 0.5) },
-    nextTxt: { color: "#1A0E00", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
+    backBtn: { paddingHorizontal: 16 },
+    nextBtn: { flex: 1 },
 
     // Estilos del sistema de deudas
     noDebtBox: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16, backgroundColor: C.income + '11', borderRadius: 12, borderWidth: 1, borderColor: C.income + '33', marginTop: 8 },
     noDebtTxt: { color: C.income, fontSize: 14, fontWeight: '700', flex: 1 },
-    debtCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.danger + '33', padding: 14, marginTop: 10, justifyContent: 'space-between' },
+    debtCard: { marginTop: 10 },
+    debtCardContent: { flexDirection: 'row', alignItems: 'center', padding: 14, justifyContent: 'space-between', gap: 8 },
     debtCardLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
     debtName: { color: C.text, fontSize: 14, fontWeight: '700' },
-    debtType: { color: C.textMuted, fontSize: 11, marginTop: 2 },
+    debtType: { color: C.textSub, fontSize: 11, marginTop: 2 },
     debtAmount: { color: C.danger, fontSize: 13, fontWeight: '800' },
     debtTotal: { marginTop: 14, padding: 14, backgroundColor: C.danger + '11', borderRadius: 12, borderWidth: 1, borderColor: C.danger + '33', alignItems: 'center' },
-    debtTotalLbl: { color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
+    debtTotalLbl: { color: C.textSub, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
     debtTotalVal: { color: C.danger, fontSize: 22, fontWeight: '900', marginTop: 4 },
-    debtWarning: { color: C.warning, fontSize: 11, fontWeight: '700', marginTop: 6, textAlign: 'center' },
-    addDebtBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: C.primary + '44', backgroundColor: C.primaryDark + '22', justifyContent: 'center' },
-    addDebtTxt: { color: C.primaryLight, fontSize: 14, fontWeight: '700' },
-    noDebtBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.income + '44', backgroundColor: C.income + '11', justifyContent: 'center' },
-    noDebtBtnTxt: { color: C.income, fontSize: 14, fontWeight: '700' },
-    debtForm: { marginTop: 14, padding: 16, backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder },
+    debtForm: { marginTop: 14 },
+    debtFormContent: { padding: 16 },
     debtFormTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '900', marginBottom: 12 },
-    debtFormLbl: { color: C.textMuted, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginTop: 12, marginBottom: 4 },
-    debtInput: { backgroundColor: C.bgDeep, borderRadius: 10, borderWidth: 1.5, borderColor: C.cardBorder, padding: 12, color: C.text, fontSize: 14, fontWeight: '600' },
+    debtFormLbl: { color: C.textSub, fontSize: 10, fontWeight: '800', letterSpacing: 1, marginTop: 12, marginBottom: 4 },
+    debtInput: { backgroundColor: C.glassInput, borderRadius: 10, borderWidth: 1.5, borderColor: C.glassInputBorder, padding: 12, color: C.text, fontSize: 14, fontWeight: '600' },
     debtTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
-    debtTypeBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
-    debtTypeBtnActive: { borderColor: C.primary, backgroundColor: C.primaryDark + '33' },
-    debtTypeTxt: { color: C.textMuted, fontSize: 11, fontWeight: '700' },
+    debtTypeBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: 'transparent', overflow: 'hidden' },
+    debtTypeTxt: { color: C.textSub, fontSize: 11, fontWeight: '700' },
     debtFormBtns: { flexDirection: 'row', gap: 10, marginTop: 14 },
-    debtCancelBtn: { flex: 1, padding: 12, alignItems: 'center', borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder },
-    debtAddConfirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, padding: 12, borderRadius: 10, backgroundColor: C.primary },
-    debtAddConfirmTxt: { color: '#1A0E00', fontSize: 14, fontWeight: '900' },
 });

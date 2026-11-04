@@ -12,8 +12,12 @@ import {
     getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
 import { buildLocalOpening, computeLocalMetrics, getLocalResponse, getQuickReplies } from "../services/LocalAdvisorEngine";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
+import { GlassBackground, GlassCard } from "./GlassCard";
+import { HelpButton } from "./HelpButton";
+import { InlineNotice } from "./InlineNotice";
+import { ScreenHeader } from "./ScreenHeader";
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -335,16 +339,22 @@ function MessageBubble({ message }: { message: Message }) {
                     <Ionicons name="sparkles" size={14} color={C.primaryLight} />
                 </View>
             )}
-            <View style={[bs.bubble, isUser ? bs.userBubble : bs.aiBubble]}>
-                {message.loading ? (
-                    <View style={bs.loadingRow}>
-                        <ActivityIndicator size="small" color={C.primary} />
-                        <Text style={bs.loadingTxt}>Analizando...</Text>
-                    </View>
-                ) : (
-                    <Text style={[bs.text, isUser && bs.userText]}>{message.text}</Text>
-                )}
-            </View>
+            {isUser ? (
+                <View style={[bs.bubble, bs.userBubble]}>
+                    <Text style={[bs.text, bs.userText]}>{message.text}</Text>
+                </View>
+            ) : (
+                <GlassCard radius={18} blur={false} style={bs.aiBubble} contentStyle={bs.aiBubbleContent}>
+                    {message.loading ? (
+                        <View style={bs.loadingRow}>
+                            <ActivityIndicator size="small" color={C.primary} />
+                            <Text style={bs.loadingTxt}>Analizando...</Text>
+                        </View>
+                    ) : (
+                        <Text style={bs.text}>{message.text}</Text>
+                    )}
+                </GlassCard>
+            )}
         </Animated.View>
     );
 }
@@ -391,7 +401,10 @@ export default function AIAdvisor({
     const scrollRef = useRef<ScrollView>(null);
     const inputRef = useRef<TextInput>(null);
     const headerRef = useTutorialRef('advisor_header');
+    const chatRef = useTutorialRef('advisor_chat');
+    const suggestionsRef = useTutorialRef('advisor_suggestions');
     const inputBoxRef = useTutorialRef('advisor_input');
+    const clearRef = useTutorialRef('advisor_clear');
 
     useEffect(() => {
         setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -455,18 +468,18 @@ export default function AIAdvisor({
             const errStr = e.message || "";
             if (e.name === "AbortError" || errStr.toLowerCase().includes("abort")) {
                 const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
-                response = `⏱️ Gemini tardó demasiado en responder (más de 14s). Te respondo en modo local mientras tanto: ${offlineResp}`;
+                response = `Gemini tardó demasiado en responder (más de 14s). Te respondo en modo local mientras tanto: ${offlineResp}`;
             } else if (errStr.includes("429")) {
-                response = "⚠️ Límite de solicitudes alcanzado en Gemini. Espera unos segundos e intenta de nuevo.";
+                response = "Límite de solicitudes alcanzado en Gemini. Espera unos segundos e intenta de nuevo.";
             } else if (errStr.includes("400")) {
-                response = "⚠️ Error 400 (Solicitud incorrecta): Verifica que tu API Key de Gemini en Ajustes esté bien escrita y no contenga espacios adicionales.";
+                response = "Error 400 (Solicitud incorrecta): Verifica que tu API Key de Gemini en Ajustes esté bien escrita y no contenga espacios adicionales.";
             } else if (errStr.includes("403")) {
-                response = "⚠️ Error 403 (Acceso denegado): La API Key ingresada no es válida para Gemini. Por favor, asegúrate de haber copiado la clave completa en Ajustes.";
+                response = "Error 403 (Acceso denegado): La API Key ingresada no es válida para Gemini. Por favor, asegúrate de haber copiado la clave completa en Ajustes.";
             } else if (errStr.includes("404")) {
-                response = "⚠️ Error 404 (Modelo no encontrado): El modelo de Gemini configurado no está disponible actualmente.";
+                response = "Error 404 (Modelo no encontrado): El modelo de Gemini configurado no está disponible actualmente.";
             } else {
                 const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
-                response = `🔌 (Asistente local sin conexión) ${offlineResp}`;
+                response = `(Asistente local sin conexión) ${offlineResp}`;
             }
         }
 
@@ -497,73 +510,95 @@ export default function AIAdvisor({
     return (
         <KeyboardAvoidingView
             style={{ flex: 1 }}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            keyboardVerticalOffset={Platform.OS === "android" ? 20 : 90}
+            behavior="padding"
+            keyboardVerticalOffset={0}
         >
             <View style={s.screen}>
 
                 {/* HEADER */}
-                <View ref={headerRef} collapsable={false} style={s.header}>
-                    <View style={s.headerLeft}>
-                        <View style={s.iconBg}>
-                            <Ionicons name="sparkles" size={22} color={C.primaryLight} />
-                        </View>
-                        <View>
-                            <Text style={s.title}>Asesor IA</Text>
-                            <Text style={s.subtitle}>
-                                {hasApiKey ? "● Gemini activo" : "○ Modo local"}
-                            </Text>
-                        </View>
-                    </View>
-                    <TouchableOpacity onPress={handleClearChat} disabled={loading} style={[s.clearBtn, loading && { opacity: 0.4 }]}>
-                        <Ionicons name="refresh-outline" size={18} color={C.textMuted} />
-                    </TouchableOpacity>
+                <View style={s.headerWrap}>
+                    <ScreenHeader
+                        title="Asesor IA"
+                        subtitle={hasApiKey ? "Gemini activo" : "Modo local"}
+                        compact
+                        headerRef={headerRef}
+                        left={
+                            <View style={s.iconBg}>
+                                <GlassBackground radius={14} blur={false} />
+                                <Ionicons name="sparkles" size={22} color={C.primaryLight} />
+                            </View>
+                        }
+                        right={
+                            <>
+                                <HelpButton tutorialId="tutorial_ia" />
+                                <View ref={clearRef} collapsable={false}>
+                                    <TouchableOpacity
+                                        onPress={handleClearChat}
+                                        disabled={loading}
+                                        activeOpacity={0.7}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Reiniciar el chat"
+                                        style={[s.clearBtn, loading && { opacity: 0.4 }]}
+                                    >
+                                        <GlassBackground radius={18} blur={false} />
+                                        <Ionicons name="refresh-outline" size={18} color={C.primaryLight} />
+                                    </TouchableOpacity>
+                                </View>
+                            </>
+                        }
+                    />
                 </View>
 
-                {/* BADGE sin API Key */}
+                {/* AVISO sin API Key */}
                 {!hasApiKey && (
-                    <View style={s.apiKeyBanner}>
-                        <Ionicons name="shield-checkmark-outline" size={14} color={C.primaryLight} />
-                        <Text style={s.apiKeyTxt}>
-                            Modo local: analizo tus datos en tu teléfono, sin internet. Gemini es opcional (Ajustes).
-                        </Text>
-                    </View>
+                    <InlineNotice
+                        variant="info"
+                        icon="shield-checkmark-outline"
+                        text="Modo local: analizo tus datos en tu teléfono, sin internet. Gemini es opcional (Ajustes)."
+                        style={s.banner}
+                    />
                 )}
 
                 {/* MENSAJES */}
-                <ScrollView
-                    ref={scrollRef}
-                    style={s.chatList}
-                    contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                >
-                    {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
-                </ScrollView>
+                <View ref={chatRef} collapsable={false} style={s.chatWrap}>
+                    <ScrollView
+                        ref={scrollRef}
+                        style={s.chatList}
+                        contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                    >
+                        {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
+                    </ScrollView>
+                </View>
 
                 {/* SUGERENCIAS RÁPIDAS */}
                 {!loading && input.trim() === "" && visibleReplies.length > 0 && (
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={s.suggestionsRow}
-                        contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-                    >
-                        {visibleReplies.map(q => (
-                            <TouchableOpacity
-                                key={q}
-                                style={s.suggestionChip}
-                                onPress={() => handleSend(q)}
-                                disabled={loading}
-                            >
-                                <Text style={s.suggestionTxt}>{q}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </ScrollView>
+                    <View ref={suggestionsRef} collapsable={false}>
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            keyboardShouldPersistTaps="handled"
+                            style={s.suggestionsRow}
+                            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+                        >
+                            {visibleReplies.map(q => (
+                                <TouchableOpacity
+                                    key={q}
+                                    style={s.suggestionChip}
+                                    onPress={() => handleSend(q)}
+                                    disabled={loading}
+                                >
+                                    <Text style={s.suggestionTxt}>{q}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    </View>
                 )}
 
                 {/* INPUT */}
                 <View ref={inputBoxRef} collapsable={false} style={s.inputContainer}>
+                    <GlassBackground radius={0} blur={false} />
                     <TextInput
                         ref={inputRef}
                         style={s.input}
@@ -583,8 +618,8 @@ export default function AIAdvisor({
                         disabled={!input.trim() || loading}
                     >
                         {loading
-                            ? <ActivityIndicator size="small" color="#1A0E00" />
-                            : <Ionicons name="send" size={20} color="#1A0E00" />
+                            ? <ActivityIndicator size="small" color={C.onPrimary} />
+                            : <Ionicons name="send" size={20} color={C.onPrimary} />
                         }
                     </TouchableOpacity>
                 </View>
@@ -599,14 +634,11 @@ export default function AIAdvisor({
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
     screen: { flex: 1, backgroundColor: C.bg },
-    header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingTop: 52, paddingBottom: 16 },
-    headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-    iconBg: { width: 44, height: 44, borderRadius: 14, backgroundColor: C.primaryDark + "44", borderWidth: 1, borderColor: C.primary + "55", alignItems: "center", justifyContent: "center", ...shadow(C.primaryGlow, 8, 0.4) },
-    title: { color: C.textPrimary, fontSize: 20, fontWeight: "900" },
-    subtitle: { color: C.textMuted, fontSize: 11, marginTop: 2 },
-    clearBtn: { padding: 10, borderRadius: 12, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-    apiKeyBanner: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: C.primary + "11", borderWidth: 1, borderColor: C.primary + "33", marginHorizontal: 16, marginBottom: 8, padding: 10, borderRadius: 10 },
-    apiKeyTxt: { color: C.textMuted, fontSize: 12, flex: 1 },
+    headerWrap: { paddingHorizontal: 16 },
+    iconBg: { width: 44, height: 44, borderRadius: 14, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+    clearBtn: { width: 36, height: 36, borderRadius: 18, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+    banner: { marginHorizontal: 16, marginBottom: 8 },
+    chatWrap: { flex: 1 },
     chatList: { flex: 1, paddingHorizontal: 16 },
     suggestionsRow: { maxHeight: 48, marginBottom: 8 },
     suggestionChip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.primaryDark + "33", borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
@@ -617,11 +649,9 @@ const s = StyleSheet.create({
         alignItems: "flex-end",
         padding: 12,
         paddingBottom: 16,
-        backgroundColor: C.card,
         borderTopWidth: 1,
-        borderTopColor: C.shimmer,
+        borderTopColor: C.glassBorder,
         gap: 8,
-        ...shadow("#000", 8, 0.3),
         // Asegurar que el contenedor no desborde
         flexWrap: "nowrap",
         overflow: "hidden",
@@ -630,10 +660,10 @@ const s = StyleSheet.create({
         flex: 1,
         // minWidth: 0 es clave para que el TextInput se contraiga cuando hay poco espacio
         minWidth: 0,
-        backgroundColor: C.bgDeep,
+        backgroundColor: C.glassInput,
         borderRadius: 20,
         borderWidth: 1,
-        borderColor: C.cardBorder,
+        borderColor: C.glassInputBorder,
         paddingHorizontal: 16,
         paddingVertical: 10,
         color: C.text,
@@ -649,7 +679,6 @@ const s = StyleSheet.create({
         backgroundColor: C.primary,
         alignItems: "center",
         justifyContent: "center",
-        ...shadow(C.primaryGlow, 8, 0.5),
     },
 });
 
@@ -660,9 +689,10 @@ const bs = StyleSheet.create({
     aiAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.primaryDark + "44", borderWidth: 1, borderColor: C.primary + "55", alignItems: "center", justifyContent: "center", marginTop: 4 },
     bubble: { maxWidth: "80%", padding: 14, borderRadius: 18 },
     userBubble: { backgroundColor: C.primary, borderBottomRightRadius: 4, borderWidth: 1, borderColor: C.primaryLight },
-    aiBubble: { backgroundColor: C.card, borderBottomLeftRadius: 4, borderWidth: 1, borderColor: C.cardBorder },
+    aiBubble: { maxWidth: "80%", flexShrink: 1, borderBottomLeftRadius: 4 },
+    aiBubbleContent: { padding: 14 },
     text: { color: C.text, fontSize: 14, lineHeight: 22 },
-    userText: { color: "#1A0E00" },
+    userText: { color: C.onPrimary },
     loadingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-    loadingTxt: { color: C.textMuted, fontSize: 13 },
+    loadingTxt: { color: C.textSub, fontSize: 13 },
 });

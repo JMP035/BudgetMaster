@@ -3,7 +3,7 @@ import {
     Transaction, UserSettings, FinancialPeriod,
     calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
-    getDaysUntilNextPayment, parseAmount,
+    getDaysUntilNextPayment, parseAmount, parseDateOnly, storedDateToDateOnly,
 } from './storage';
 import { getCat, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
@@ -537,7 +537,7 @@ export function getLocalResponse(
             ];
             let text = variantsA[pickVariant('meta_nombre', variantsA.length, 'random')]();
 
-            const deadline = new Date(g.deadline);
+            const deadline = parseDateOnly(storedDateToDateOnly(g.deadline)) ?? new Date(g.deadline);
             if (g.deadline && !isNaN(deadline.getTime())) {
                 const daysLeftGoal = Math.ceil((deadline.getTime() - m.now.getTime()) / 86400000);
                 if (daysLeftGoal > 0 && falta > 0) {

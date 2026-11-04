@@ -3,6 +3,7 @@ import {
     Animated, Dimensions, Easing, StyleSheet, Text, View
 } from "react-native";
 import { C } from "../theme";
+import { GlassBackground } from "./GlassCard";
 
 const { width, height } = Dimensions.get("window");
 
@@ -243,6 +244,8 @@ export default function SplashScreen({ onDone }: Props) {
                 opacity: logoOpacity,
                 transform: [{ scale: logoScale }],
             }]}>
+                <GlassBackground radius={30} blur={false} />
+
                 {/* Shimmer interior */}
                 <Animated.View style={[s.logoShimmer, { opacity: shimmerOpacity }]} />
 
@@ -328,7 +331,6 @@ const s = StyleSheet.create({
         width: 110,
         height: 110,
         borderRadius: 30,
-        backgroundColor: C.card,
         borderWidth: 1.5,
         borderColor: C.primary,
         alignItems: "center",
@@ -346,7 +348,7 @@ const s = StyleSheet.create({
         left: 0,
         right: 0,
         height: "50%",
-        backgroundColor: "#FFFFFF",
+        backgroundColor: C.glassHighlight,
         borderTopLeftRadius: 28,
         borderTopRightRadius: 28,
     },
@@ -397,7 +399,7 @@ const s = StyleSheet.create({
         marginBottom: 12,
     },
     tagline: {
-        color: C.textMuted,
+        color: C.textSub,
         fontSize: 11,
         letterSpacing: 1.5,
         textAlign: "center",
@@ -408,12 +410,12 @@ const s = StyleSheet.create({
     barTrack: {
         width: "100%",
         height: 3,
-        backgroundColor: C.card,
+        backgroundColor: C.glassInput,
         borderRadius: 2,
         overflow: "hidden",
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: C.cardBorder,
+        borderColor: C.glassBorder,
     },
     barFill: {
         height: "100%",
@@ -431,7 +433,7 @@ const s = StyleSheet.create({
         opacity: 0.9,
     },
     barLabel: {
-        color: C.textMuted,
+        color: C.textSub,
         fontSize: 11,
         letterSpacing: 1,
     },

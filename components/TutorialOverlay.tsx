@@ -1,14 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    Animated, BackHandler, Dimensions, Easing, Keyboard, LayoutChangeEvent, Modal,
+    Animated, BackHandler, Easing, Keyboard, LayoutChangeEvent, Modal,
     ScrollView, StyleSheet, Text,
     TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTutorial } from "../context/TutorialContext";
 import { Tutorial, TutorialScreen, TutorialService, TutorialStep, TUTORIALS } from "../services/TutorialService";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
+import { GlassBackground, GlassCard } from "./GlassCard";
+import { GlassButton } from "./GlassButton";
+import { InlineNotice } from "./InlineNotice";
 
 const PADDING = 10;
 
@@ -18,15 +21,20 @@ const NAV_SETTLE_MS = 300;
 const STEP_SETTLE_MS = 120;
 const MEASURE_RETRY_MS = 250;
 const MEASURE_ATTEMPTS = 3;
+const ACTION_RETRIES = 4;
+const ACTION_RETRY_MS = 200;
+const ACTION_SETTLE_MS = 420;
+
+const DEFAULT_EMPTY_HINT = "Esta sección aparece cuando tengas datos registrados en este módulo.";
 
 interface Rect { x: number; y: number; width: number; height: number; }
 
 // ─────────────────────────────────────────────────────────────
 // SPOTLIGHT MASK — 4 rectángulos oscuros alrededor del elemento
 // ─────────────────────────────────────────────────────────────
-function SpotlightMask({ rect, padding = PADDING }: { rect: Rect | null; padding?: number }) {
+function SpotlightMask({ rect, padding = PADDING, soft = false }: { rect: Rect | null; padding?: number; soft?: boolean }) {
     if (!rect) {
-        return <View style={[StyleSheet.absoluteFill, { backgroundColor: "rgba(0,0,0,0.82)" }]} />;
+        return <View style={[StyleSheet.absoluteFill, { backgroundColor: soft ? C.scrimSoft : C.scrimTutorial }]} />;
     }
 
     const sp = Math.max(0, padding);
@@ -37,17 +45,25 @@ function SpotlightMask({ rect, padding = PADDING }: { rect: Rect | null; padding
 
     return (
         <>
-            <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: sy, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            <View style={{ position: "absolute", top: sy, left: 0, width: sx, height: sh, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            <View style={{ position: "absolute", top: sy, left: sx + sw, right: 0, height: sh, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            <View style={{ position: "absolute", top: sy + sh, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)" }} />
-            {/* Borde brillante */}
+            <View style={{ position: "absolute", top: 0, left: 0, right: 0, height: sy, backgroundColor: C.scrimTutorial }} />
+            <View style={{ position: "absolute", top: sy, left: 0, width: sx, height: sh, backgroundColor: C.scrimTutorial }} />
+            <View style={{ position: "absolute", top: sy, left: sx + sw, right: 0, height: sh, backgroundColor: C.scrimTutorial }} />
+            <View style={{ position: "absolute", top: sy + sh, left: 0, right: 0, bottom: 0, backgroundColor: C.scrimTutorial }} />
+            {/* Anillo exterior (resplandor) */}
+            <View style={{
+                position: "absolute",
+                top: sy - 6, left: sx - 6,
+                width: sw + 12, height: sh + 12,
+                borderRadius: 18, borderWidth: 6,
+                borderColor: C.spotlightGlow,
+            }} />
+            {/* Anillo interior (bronce) */}
             <View style={{
                 position: "absolute",
                 top: sy - 2, left: sx - 2,
                 width: sw + 4, height: sh + 4,
                 borderRadius: 14, borderWidth: 2,
-                borderColor: C.primary + "99",
+                borderColor: C.spotlightRing,
             }} />
         </>
     );
@@ -61,6 +77,7 @@ interface StepCardProps {
     step: TutorialStep;
     stepIndex: number;
     rect: Rect | null;
+    fallback: boolean;
     containerHeight: number;
     onNext: () => void;
     onSkip: () => void;
@@ -69,15 +86,21 @@ interface StepCardProps {
 // Alto aproximado de los elementos fijos de la tarjeta (paddings, barra de
 // progreso, ícono, contador y botones) — usado para calcular cuánto espacio
 // le queda al título + descripción cuando hay que limitarlos con ScrollView.
-const FIXED_CHROME_HEIGHT = 220;
+const FIXED_CHROME_HEIGHT = 250;
+const CARD_MAX_WIDTH = 440;
+const MIN_SIDE_SPACE = 160;
 
-function StepCard({ tutorial, step, stepIndex, rect, containerHeight, onNext, onSkip }: StepCardProps) {
+function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, onNext, onSkip }: StepCardProps) {
+    const insets = useSafeAreaInsets();
+    const { width: winW } = useWindowDimensions();
     const slideAnim = useRef(new Animated.Value(40)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const isLast = stepIndex === tutorial.steps.length - 1;
     // Estimación inicial del alto de la tarjeta; se corrige con la medición real (onLayout).
     const [cardHeight, setCardHeight] = useState(300);
+
+    const sideMargin = Math.max(20, (winW - CARD_MAX_WIDTH) / 2);
 
     useEffect(() => {
         slideAnim.setValue(40);
@@ -105,7 +128,9 @@ function StepCard({ tutorial, step, stepIndex, rect, containerHeight, onNext, on
 
     // Posicionar la card según espacio disponible
     const cardPosition = (): { top: number; maxContentHeight?: number } => {
-        if (!rect) return { top: containerHeight * 0.35 };
+        if (!rect) {
+            return { top: Math.max(insets.top + 20, (containerHeight - cardHeight) / 2) };
+        }
 
         const spaceBelow = containerHeight - (rect.y + rect.height + PADDING);
         const spaceAbove = rect.y - PADDING;
@@ -125,6 +150,12 @@ function StepCard({ tutorial, step, stepIndex, rect, containerHeight, onNext, on
         }
         if (fitsBelow) {
             return { top: rect.y + rect.height + PADDING + 16 };
+        }
+
+        // El elemento ocupa casi toda el área visible: la tarjeta se apoya sobre
+        // el borde inferior (sobre el elemento resaltado) en vez de quedar aplastada.
+        if (Math.max(spaceAbove, spaceBelow) < MIN_SIDE_SPACE) {
+            return { top: Math.max(insets.top + 20, containerHeight - cardHeight - Math.max(16, insets.bottom + 8)) };
         }
 
         // Fallback: ni arriba ni abajo alcanza el alto ideal — se usa el lado
@@ -151,49 +182,55 @@ function StepCard({ tutorial, step, stepIndex, rect, containerHeight, onNext, on
             onLayout={handleCardLayout}
             style={[
                 card.container,
+                { left: sideMargin, right: sideMargin },
                 { opacity: fadeAnim, transform: [{ translateY: slideAnim }], top: pos.top },
             ]}
         >
+            <GlassBackground radius={22} blur={false} />
+
             {/* Progreso */}
             <View style={card.progressRow}>
                 {tutorial.steps.map((_, i) => (
                     <View key={i} style={[
                         card.progressDot,
-                        { backgroundColor: i <= stepIndex ? tutorial.color : C.cardBorder, width: i === stepIndex ? 24 : 8 }
+                        { backgroundColor: i <= stepIndex ? C.primaryLight : C.glassBorder, width: i === stepIndex ? 24 : 8 }
                     ]} />
                 ))}
             </View>
 
             {/* Ícono */}
-            <Animated.View style={[card.iconWrap, {
-                backgroundColor: tutorial.color + "22",
-                borderColor: tutorial.color + "44",
-                transform: [{ scale: pulseAnim }],
-            }]}>
-                <Ionicons name={step.icon as any} size={28} color={tutorial.color} />
+            <Animated.View style={[card.iconWrap, { transform: [{ scale: pulseAnim }] }]}>
+                <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
             </Animated.View>
 
             {pos.maxContentHeight != null ? (
                 <ScrollView style={{ maxHeight: pos.maxContentHeight }} showsVerticalScrollIndicator={false}>
                     <Text style={card.title}>{step.title}</Text>
                     <Text style={card.desc}>{step.description}</Text>
+                    {fallback && (
+                        <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
+                    )}
                 </ScrollView>
             ) : (
                 <>
                     <Text style={card.title}>{step.title}</Text>
                     <Text style={card.desc}>{step.description}</Text>
+                    {fallback && (
+                        <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
+                    )}
                 </>
             )}
             <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
 
             <View style={card.btnRow}>
-                <TouchableOpacity style={card.skipBtn} onPress={onSkip}>
-                    <Text style={card.skipTxt} numberOfLines={2}>Omitir tutorial</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[card.nextBtn, { backgroundColor: tutorial.color }]} onPress={onNext}>
-                    <Text style={card.nextTxt}>{isLast ? "¡Listo!" : "Siguiente"}</Text>
-                    <Ionicons name={isLast ? "checkmark" : "arrow-forward"} size={18} color="#1A0E00" style={{ marginLeft: 6 }} />
-                </TouchableOpacity>
+                <GlassButton kind="ghost" label="Omitir tutorial" onPress={onSkip} style={card.skipBtn} />
+                <GlassButton
+                    kind="primary"
+                    label={isLast ? "¡Listo!" : "Siguiente"}
+                    icon={isLast ? "checkmark" : "arrow-forward"}
+                    onPress={onNext}
+                    style={card.nextBtn}
+                />
             </View>
         </Animated.View>
     );
@@ -228,42 +265,51 @@ function TutorialMenu({ onSelect, onClose, completed }: MenuProps) {
                     <View style={StyleSheet.absoluteFill} />
                 </TouchableWithoutFeedback>
                 <Animated.View style={[mn.sheet, { maxHeight: winH * 0.85, paddingBottom: Math.max(24, insets.bottom + 16) }, { transform: [{ translateY: slideAnim }] }]}>
+                    <GlassBackground radius={28} blur={false} />
                     <View style={mn.handle} />
                     <View style={mn.header}>
                         <Ionicons name="school-outline" size={22} color={C.primaryLight} />
                         <Text style={mn.title}>Academia BudgetMaster</Text>
-                        <TouchableOpacity onPress={close} style={mn.closeBtn}>
-                            <Ionicons name="close" size={20} color={C.textMuted} />
+                        <TouchableOpacity
+                            onPress={close}
+                            style={mn.closeBtn}
+                            accessibilityRole="button"
+                            accessibilityLabel="Cerrar"
+                        >
+                            <GlassBackground radius={18} blur={false} />
+                            <Ionicons name="close" size={20} color={C.textSub} />
                         </TouchableOpacity>
                     </View>
-                    <Text style={mn.subtitle}>Seleccioná el tutorial que querés ver</Text>
+                    <Text style={mn.subtitle}>Elegí un tutorial. También podés abrir el de cada módulo con el botón ? de su encabezado.</Text>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {TUTORIALS.map(tut => {
                             const done = completed.includes(tut.id);
                             return (
                                 <TouchableOpacity
                                     key={tut.id}
-                                    style={[mn.item, { borderLeftColor: tut.color }]}
+                                    style={mn.itemWrap}
                                     onPress={() => { close(); setTimeout(() => onSelect(tut), 320); }}
                                     activeOpacity={0.8}
                                 >
-                                    <View style={[mn.itemIcon, { backgroundColor: tut.color + "22" }]}>
-                                        <Ionicons name={tut.icon as any} size={22} color={tut.color} />
-                                    </View>
-                                    <View style={{ flex: 1, minWidth: 0 }}>
-                                        <View style={mn.titleRow}>
-                                            <Text style={mn.itemTitle}>{tut.title}</Text>
-                                            {done && (
-                                                <View style={mn.doneBadge}>
-                                                    <Ionicons name="checkmark" size={10} color={C.income} />
-                                                    <Text style={mn.doneTxt}>Visto</Text>
-                                                </View>
-                                            )}
+                                    <GlassCard radius={16} blur={false} leftAccentColor={tut.color} contentStyle={mn.item}>
+                                        <View style={mn.itemIcon}>
+                                            <Ionicons name={tut.icon as any} size={22} color={tut.color} />
                                         </View>
-                                        <Text style={mn.itemDesc}>{tut.description}</Text>
-                                        <Text style={mn.itemSteps}>{tut.steps.length} pasos</Text>
-                                    </View>
-                                    <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+                                        <View style={{ flex: 1, minWidth: 0 }}>
+                                            <View style={mn.titleRow}>
+                                                <Text style={mn.itemTitle}>{tut.title}</Text>
+                                                {done && (
+                                                    <View style={mn.doneBadge}>
+                                                        <Ionicons name="checkmark" size={10} color={C.income} />
+                                                        <Text style={mn.doneTxt}>Visto</Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <Text style={mn.itemDesc}>{tut.description}</Text>
+                                            <Text style={mn.itemSteps}>{tut.steps.length} pasos</Text>
+                                        </View>
+                                        <Ionicons name="chevron-forward" size={16} color={C.textSub} />
+                                    </GlassCard>
                                 </TouchableOpacity>
                             );
                         })}
@@ -288,16 +334,19 @@ interface Props {
 }
 
 export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu, currentScreen, onNavigateToScreen }: Props) {
-    const { measureElement } = useTutorial();
+    const { measureElement, ensureVisible, runAction } = useTutorial();
 
     const [activeTutorial, setActiveTutorial] = useState<Tutorial | null>(null);
     const [stepIndex, setStepIndex] = useState(0);
     const [spotlightRect, setSpotlightRect] = useState<Rect | null>(null);
+    const [fallback, setFallback] = useState(false);
     const [completed, setCompleted] = useState<string[]>([]);
     const [measuredKey, setMeasuredKey] = useState<string | null>(null);
     const measureSeqRef = useRef(0);
     const isMountedRef = useRef(true);
 
+    const activeTutorialRef = useRef<Tutorial | null>(null);
+    activeTutorialRef.current = activeTutorial;
     const currentScreenRef = useRef<TutorialScreen>(currentScreen ?? 'dashboard');
     currentScreenRef.current = currentScreen ?? 'dashboard';
     const onNavigateRef = useRef(onNavigateToScreen);
@@ -317,12 +366,32 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         TutorialService.getCompleted().then(setCompleted);
     }, []);
 
+    // API imperativa (sin deps para tener siempre el closure fresco)
     useEffect(() => {
-        if (activeTutorialId) {
-            const t = TutorialService.getTutorial(activeTutorialId);
+        _start = (id: string) => {
+            if (_activeFlag || activeTutorialRef.current) return;
+            const t = TutorialService.getTutorial(id);
             if (t) startTutorial(t);
-        }
+        };
+        return () => { _start = null; };
+    });
+
+    useEffect(() => {
+        _activeFlag = !!activeTutorial;
+    }, [activeTutorial]);
+
+    // Ignorar activeTutorialId si ya hay un tutorial en curso
+    useEffect(() => {
+        if (!activeTutorialId) return;
+        if (activeTutorialRef.current) return;
+        const t = TutorialService.getTutorial(activeTutorialId);
+        if (t) startTutorial(t);
     }, [activeTutorialId]);
+
+    // Si se pide el menú con un tutorial activo, se descarta la petición
+    useEffect(() => {
+        if (showMenu && activeTutorial) onCloseMenu?.();
+    }, [showMenu, activeTutorial]);
 
     useEffect(() => {
         if (!activeTutorial) {
@@ -334,8 +403,9 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
 
     // Convierte un rect medido en coordenadas de pantalla (measureInWindow) a
     // coordenadas relativas al overlay, y recorta lo que no es visible —
-    // excluyendo la barra inferior cuando clipToContent (navegación con step.screen).
-    const toOverlayRect = useCallback(async (raw: Rect, clipToContent: boolean): Promise<Rect | null> => {
+    // limitándolo al contenedor indicado por clipId (p. ej. 'app_content' para
+    // excluir la barra inferior, o 'accounts_root' para el módulo de Cuentas).
+    const toOverlayRect = useCallback(async (raw: Rect, clipId: string | null): Promise<Rect | null> => {
         const origin = await new Promise<{ x: number; y: number }>(resolve => {
             const node = overlayRootRef.current;
             if (!node) { resolve({ x: 0, y: 0 }); return; }
@@ -351,8 +421,8 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
 
         let top = 0;
         let bottom = overlaySizeRef.current.height;
-        if (clipToContent) {
-            const c = await measureElement('app_content').catch(() => null);
+        if (clipId) {
+            const c = await measureElement(clipId).catch(() => null);
             if (c) {
                 top = c.y - origin.y;
                 bottom = c.y + c.height - origin.y;
@@ -373,51 +443,102 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         return { x: cx, y: visTop, width: cw, height: visH };
     }, [measureElement]);
 
-    // FIX: usa step.elementId (antes era step.targetRef)
     const measureStep = useCallback(async (step: TutorialStep, key: string) => {
         const seq = ++measureSeqRef.current;
         const stale = () => !isMountedRef.current || seq !== measureSeqRef.current;
-        Keyboard.dismiss();
-
-        let navigated = false;
-        if (step.screen && step.screen !== currentScreenRef.current && onNavigateRef.current) {
-            onNavigateRef.current(step.screen);
-            navigated = true;
-        }
-
-        if (!step.elementId) {
-            setSpotlightRect(null);
-            setMeasuredKey(key);
-            return;
-        }
-
-        if (navigated) {
-            await sleep(NAV_MOUNT_MS);
-            if (stale()) return;
+        try {
+            // 1. Teclado fuera
             Keyboard.dismiss();
-            await sleep(NAV_SETTLE_MS);
-        } else {
-            await sleep(STEP_SETTLE_MS);
-        }
 
-        let raw: Rect | null = null;
-        for (let i = 0; i < MEASURE_ATTEMPTS; i++) {
+            // 2. Navegar si el paso pertenece a otra pantalla
+            let navigated = false;
+            if (step.screen && step.screen !== currentScreenRef.current && onNavigateRef.current) {
+                onNavigateRef.current(step.screen);
+                navigated = true;
+            }
+
+            // 3. Acción (p. ej. cambiar de pestaña interna)
+            let waitedMount = false;
+            if (step.action) {
+                if (navigated) {
+                    await sleep(NAV_MOUNT_MS);
+                    waitedMount = true;
+                    if (stale()) return;
+                }
+                for (let i = 0; i < ACTION_RETRIES; i++) {
+                    if (runAction(step.action.id, step.action.arg)) break;
+                    await sleep(ACTION_RETRY_MS);
+                    if (stale()) return;
+                }
+                await sleep(ACTION_SETTLE_MS);
+                if (stale()) return;
+            }
+
+            // 4. Paso sin elemento: tarjeta centrada sin resaltar nada
+            if (!step.elementId) {
+                setSpotlightRect(null);
+                setFallback(false);
+                setMeasuredKey(key);
+                return;
+            }
+
+            // 5. Esperar a que la pantalla termine de montarse/asentarse
+            if (navigated) {
+                if (!waitedMount) {
+                    await sleep(NAV_MOUNT_MS);
+                    if (stale()) return;
+                }
+                Keyboard.dismiss();
+                await sleep(NAV_SETTLE_MS);
+            } else {
+                await sleep(STEP_SETTLE_MS);
+            }
             if (stale()) return;
-            raw = await measureElement(step.elementId).catch(() => null);
-            if (raw) break;
-            await sleep(MEASURE_RETRY_MS);
-        }
 
-        const rect = raw ? await toOverlayRect(raw, !!step.screen) : null;
-        if (stale()) return;
-        setSpotlightRect(rect);
-        setMeasuredKey(key);
-    }, [measureElement, toOverlayRect]);
+            // 6. Scroll automático hasta el elemento
+            const scrollKey = step.scrollKey ?? step.screen;
+            if (scrollKey) {
+                await ensureVisible(scrollKey, step.elementId).catch(() => false);
+                if (stale()) return;
+            }
+
+            // 7. Medición con reintentos
+            let raw: Rect | null = null;
+            for (let i = 0; i < MEASURE_ATTEMPTS; i++) {
+                if (stale()) return;
+                raw = await measureElement(step.elementId).catch(() => null);
+                if (raw) break;
+                await sleep(MEASURE_RETRY_MS);
+            }
+
+            // 8. Recorte al contenedor de la pantalla
+            const clipId = step.screen === 'accounts' ? 'accounts_root' : step.screen ? 'app_content' : null;
+            const rect = raw ? await toOverlayRect(raw, clipId) : null;
+            if (stale()) return;
+
+            // 9. Sin rect visible: tarjeta centrada con nota de fallback
+            setSpotlightRect(rect);
+            setFallback(!rect);
+            setMeasuredKey(key);
+        } catch (e) {
+            if (stale()) return;
+            console.warn('[Tutorial] measureStep:', e);
+            setSpotlightRect(null);
+            setFallback(!!step.elementId);
+            setMeasuredKey(key);
+        }
+    }, [measureElement, ensureVisible, runAction, toOverlayRect]);
 
     const startTutorial = (tutorial: Tutorial) => {
+        // Si Cuentas está abierto y el tutorial no es de Cuentas, volver a una pantalla normal
+        if (currentScreenRef.current === 'accounts' && !tutorial.steps.some(s => s.screen === 'accounts')) {
+            onNavigateRef.current?.(tutorial.steps.find(s => s.screen)?.screen ?? 'dashboard');
+        }
+        _activeFlag = true;
         setActiveTutorial(tutorial);
         setStepIndex(0);
         setSpotlightRect(null);
+        setFallback(false);
         setMeasuredKey(null);
     };
 
@@ -425,6 +546,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         if (!activeTutorial) return;
         if (stepIndex < activeTutorial.steps.length - 1) {
             setSpotlightRect(null);
+            setFallback(false);
             setStepIndex(i => i + 1);
         } else {
             await endTutorial();
@@ -436,15 +558,17 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
             await TutorialService.markCompleted(activeTutorial.id);
             setCompleted(await TutorialService.getCompleted());
         }
+        _activeFlag = false;
         setActiveTutorial(null);
         setStepIndex(0);
         setSpotlightRect(null);
+        setFallback(false);
         setMeasuredKey(null);
         onTutorialEnd?.();
     };
 
     // El botón Atrás de Android cierra el tutorial en vez de salir de la pantalla
-    // en la que el tutorial nos dejó.
+    // en la que el tutorial nos dejó (incluido el módulo de Cuentas).
     useEffect(() => {
         if (!activeTutorial) return;
         const sub = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -483,7 +607,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                         setOverlaySize({ width, height });
                     }}
                 >
-                    <SpotlightMask rect={spotlightRect} padding={currentStep.padding ?? PADDING} />
+                    <SpotlightMask rect={spotlightRect} padding={currentStep.padding ?? PADDING} soft={fallback} />
                     {/* Bloquea todos los toques */}
                     <TouchableWithoutFeedback onPress={() => { }}>
                         <View style={StyleSheet.absoluteFill} />
@@ -495,6 +619,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                             step={currentStep}
                             stepIndex={stepIndex}
                             rect={spotlightRect}
+                            fallback={fallback}
                             containerHeight={overlaySize.height}
                             onNext={handleNext}
                             onSkip={endTutorial}
@@ -504,10 +629,14 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
             )}
 
             {/* MENÚ */}
-            {showMenu && (
+            {showMenu && !activeTutorial && (
                 <TutorialMenu
                     completed={completed}
-                    onSelect={t => { onCloseMenu?.(); startTutorial(t); }}
+                    onSelect={t => {
+                        onCloseMenu?.();
+                        if (activeTutorialRef.current) return;
+                        startTutorial(t);
+                    }}
                     onClose={() => onCloseMenu?.()}
                 />
             )}
@@ -519,6 +648,22 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
 // EXPORTS AUXILIARES
 // ─────────────────────────────────────────────────────────────
 let _openMenu: (() => void) | null = null;
+let _start: ((id: string) => void) | null = null;
+let _activeFlag = false;
+
+/** Inicia un tutorial por id desde cualquier pantalla. Se ignora si ya hay uno activo. */
+export function startTutorialById(id: string) {
+    try {
+        _start?.(id);
+    } catch (e) {
+        console.warn('[Tutorial] startTutorialById:', e);
+    }
+}
+
+/** true mientras hay un tutorial en curso. */
+export function isTutorialActive() {
+    return _activeFlag;
+}
 
 export function TutorialMenuButton() {
     return (
@@ -527,7 +672,7 @@ export function TutorialMenuButton() {
             onPress={() => _openMenu?.()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-            <Ionicons name="help-circle-outline" size={24} color={C.textMuted} />
+            <Ionicons name="help-circle-outline" size={24} color={C.primaryLight} />
         </TouchableOpacity>
     );
 }
@@ -546,41 +691,41 @@ export function openTutorialMenu() {
 // ─────────────────────────────────────────────────────────────
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
-// elevation 9999 (mayor que la que usa shadow() en la TabBar, que es 8) para
-// que el overlay del tutorial quede siempre encima en Android.
+// elevation 9999 (mayor que la de la TabBar y de AccountsScreen, que usan <= 50)
+// para que el overlay del tutorial quede siempre encima en Android.
 const ov = StyleSheet.create({
     root: { ...StyleSheet.absoluteFillObject, zIndex: 9999, elevation: 9999 },
 });
 
 const card = StyleSheet.create({
-    container: { position: "absolute", left: 20, right: 20, backgroundColor: C.card, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder, padding: 22, zIndex: 9999, ...shadow("#000", 24, 0.6) },
+    container: { position: "absolute", borderRadius: 22, overflow: "hidden", backgroundColor: C.cardHigh, padding: 22, zIndex: 9999 },
     progressRow: { flexDirection: "row", gap: 6, marginBottom: 18, alignItems: "center" },
     progressDot: { height: 6, borderRadius: 3 },
-    iconWrap: { width: 58, height: 58, borderRadius: 18, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+    iconWrap: { width: 58, height: 58, borderRadius: 18, borderWidth: 1.5, backgroundColor: C.glassActive, borderColor: C.glassActiveBorder, alignItems: "center", justifyContent: "center", marginBottom: 14 },
     title: { color: C.textPrimary, fontSize: 19, fontWeight: "900", marginBottom: 8, lineHeight: 26 },
-    desc: { color: C.textSub, fontSize: 14, lineHeight: 22, marginBottom: 14 },
-    counter: { color: C.textMuted, fontSize: 11, letterSpacing: 1, marginBottom: 14 },
+    desc: { color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 14 },
+    notice: { marginBottom: 14 },
+    counter: { color: C.textSub, fontSize: 11, letterSpacing: 1, marginBottom: 14 },
     btnRow: { flexDirection: "row", alignItems: "center", gap: 12 },
-    skipBtn: { flex: 1, paddingVertical: 12, paddingHorizontal: 4, alignItems: "center" },
-    skipTxt: { color: C.textMuted, fontSize: 13, fontWeight: "600", textAlign: "center" },
-    nextBtn: { flex: 2, flexDirection: "row", paddingVertical: 14, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-    nextTxt: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
+    skipBtn: { flex: 1, paddingHorizontal: 4 },
+    nextBtn: { flex: 2 },
 });
 
 const mn = StyleSheet.create({
     overlay: { flex: 1, justifyContent: "flex-end" },
-    sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "44", paddingTop: 24, paddingHorizontal: 16, ...shadow(C.primaryGlow, 20, 0.4) },
-    handle: { width: 40, height: 4, backgroundColor: C.cardBorder, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
+    sheet: { backgroundColor: C.bg, overflow: "hidden", borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 24, paddingHorizontal: 16 },
+    handle: { width: 40, height: 4, backgroundColor: C.glassBorder, borderRadius: 2, alignSelf: "center", marginBottom: 16 },
     header: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
     title: { color: C.textPrimary, fontSize: 20, fontWeight: "900", flex: 1, flexShrink: 1 },
-    closeBtn: { padding: 8, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-    subtitle: { color: C.textMuted, fontSize: 13, marginBottom: 20 },
-    item: { flexDirection: "row", alignItems: "center", backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderLeftWidth: 4, padding: 12, marginBottom: 10, gap: 10 },
-    itemIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+    closeBtn: { width: 36, height: 36, borderRadius: 18, overflow: "hidden", alignItems: "center", justifyContent: "center" },
+    subtitle: { color: C.textSub, fontSize: 13, marginBottom: 20 },
+    itemWrap: { marginBottom: 10 },
+    item: { flexDirection: "row", alignItems: "center", padding: 12, paddingLeft: 15, gap: 10 },
+    itemIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.glassActive, alignItems: "center", justifyContent: "center" },
     titleRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 8, rowGap: 4 },
     itemTitle: { color: C.textPrimary, fontSize: 15, fontWeight: "800", flexShrink: 1 },
     itemDesc: { color: C.textSub, fontSize: 12, marginTop: 3, flexShrink: 1 },
-    itemSteps: { color: C.textMuted, fontSize: 11, marginTop: 4 },
+    itemSteps: { color: C.textSub, fontSize: 11, marginTop: 4 },
     doneBadge: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: C.income + "22", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, flexShrink: 0 },
     doneTxt: { color: C.income, fontSize: 10, fontWeight: "700" },
 });

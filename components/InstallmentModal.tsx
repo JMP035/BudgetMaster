@@ -2,7 +2,6 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Modal,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import {
@@ -10,7 +9,10 @@ import {
   formatDateOnly, parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
+import { GlassButton } from "./GlassButton";
+import { GlassSheet } from "./GlassSheet";
+import { InlineNotice } from "./InlineNotice";
 
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVA / EDITAR VISACUOTA
@@ -35,9 +37,13 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   const [paidInstallments, setPaidInstallments] = useState(existing?.paidInstallments?.toString() || '0');
   const [startDate, setStartDate] = useState(existing?.startDate ? storedDateToDateOnly(existing.startDate) : formatDateOnly(new Date()));
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [error, setError] = useState('');
 
   const selectedAcc = accounts.find(a => a.id === accountId);
   const effectiveCurrency: Currency = existing?.currency || prefill?.currency || selectedAcc?.currency || 'Q';
+
+  // Cada cambio en un campo limpia el aviso de error
+  const ch = (set: (v: string) => void) => (v: string) => { set(v); setError(''); };
 
   // Auto-calcular cuotas al cambiar total/mensual
   React.useEffect(() => {
@@ -47,17 +53,17 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   }, [total, monthly]);
 
   const handleSave = () => {
-    if (!name.trim()) { Alert.alert('Error', 'Ingresa el nombre de la compra.'); return; }
-    if (!accountId) { Alert.alert('Error', 'Selecciona una tarjeta de crédito.'); return; }
+    if (!name.trim()) { setError('Ingresa el nombre de la compra.'); return; }
+    if (!accountId) { setError('Selecciona una tarjeta de crédito.'); return; }
     const t = parseAmount(total);
     const m = parseAmount(monthly);
     const n = parseInt(installments);
-    if (isNaN(t) || isNaN(m) || isNaN(n)) { Alert.alert('Error', 'Ingresa montos válidos.'); return; }
-    if (t <= 0 || m <= 0 || n < 1) { Alert.alert('Error', 'El monto total, la cuota mensual y el total de cuotas deben ser mayores a 0.'); return; }
+    if (isNaN(t) || isNaN(m) || isNaN(n)) { setError('Ingresa montos válidos.'); return; }
+    if (t <= 0 || m <= 0 || n < 1) { setError('El monto total, la cuota mensual y el total de cuotas deben ser mayores a 0.'); return; }
 
     const paid = parseInt(paidInstallments);
     if (isNaN(paid) || paid < 0 || paid >= n) {
-      Alert.alert('Error', 'Las cuotas ya pagadas deben ser un número entre 0 y el total de cuotas menos 1.');
+      setError('Las cuotas ya pagadas deben ser un número entre 0 y el total de cuotas menos 1.');
       return;
     }
 
@@ -83,136 +89,118 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   };
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <View style={md.overlay}>
-        <KeyboardAvoidingView behavior="padding" style={md.kav}>
-          <View style={md.sheet}>
-            <View style={md.header}>
-              <Text style={md.title}>{existing ? 'Editar' : 'Nueva'} Visacuota</Text>
-              <TouchableOpacity onPress={onClose} style={md.closeBtn}>
-                <Ionicons name="close" size={22} color={C.textMuted} />
-              </TouchableOpacity>
+    <GlassSheet
+      onClose={onClose}
+      title={`${existing ? 'Editar' : 'Nueva'} Visacuota`}
+      footer={creditAccounts.length > 0 ? (
+        <View style={md.footer}>
+          {!!error && <InlineNotice variant="error" text={error} />}
+          <GlassButton label="Guardar Visacuota" icon="card-outline" onPress={handleSave} />
+        </View>
+      ) : undefined}
+    >
+      {creditAccounts.length === 0 ? (
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Ionicons name="card-outline" size={48} color={C.textMuted} />
+          <Text style={{ color: C.textSub, fontSize: 14, textAlign: 'center', marginTop: 12 }}>
+            Primero agrega una tarjeta de crédito en la sección de Cuentas.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <Text style={md.lbl}>TARJETA DE CRÉDITO</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {creditAccounts.map(acc => (
+                <TouchableOpacity key={acc.id} style={[md.typeChip, accountId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + '22' }]} onPress={() => { setAccountId(acc.id); setError(''); }}>
+                  <Ionicons name="card-outline" size={16} color={accountId === acc.id ? acc.color : C.textSub} />
+                  <Text style={[md.typeChipTxt, accountId === acc.id && { color: acc.color }]}>{acc.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
+          </ScrollView>
 
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              {creditAccounts.length === 0 ? (
-                <View style={{ padding: 20, alignItems: 'center' }}>
-                  <Ionicons name="card-outline" size={48} color={C.textMuted} />
-                  <Text style={{ color: C.textMuted, fontSize: 14, textAlign: 'center', marginTop: 12 }}>
-                    Primero agrega una tarjeta de crédito en la sección de Cuentas.
-                  </Text>
-                </View>
-              ) : (
-                <>
-                  <Text style={md.lbl}>TARJETA DE CRÉDITO</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {creditAccounts.map(acc => (
-                        <TouchableOpacity key={acc.id} style={[md.typeChip, accountId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + '22' }]} onPress={() => setAccountId(acc.id)}>
-                          <Ionicons name="card-outline" size={16} color={accountId === acc.id ? acc.color : C.textMuted} />
-                          <Text style={[md.typeChipTxt, accountId === acc.id && { color: acc.color }]}>{acc.name}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
+          <Text style={md.lbl}>NOMBRE DE LA COMPRA</Text>
+          <TextInput style={md.input} value={name} onChangeText={ch(setName)} placeholder="Ej: Laptop, Celular, Refrigeradora..." placeholderTextColor={C.textMuted} autoFocus />
 
-                  <Text style={md.lbl}>NOMBRE DE LA COMPRA</Text>
-                  <TextInput style={md.input} value={name} onChangeText={setName} placeholder="Ej: Laptop, Celular, Refrigeradora..." placeholderTextColor={C.textMuted} autoFocus />
-
-                  <Text style={md.lbl}>MONTO TOTAL</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{effectiveCurrency}</Text>
-                    <TextInput style={md.amtInput} value={total} onChangeText={setTotal} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
-                  </View>
-
-                  <Text style={md.lbl}>CUOTA MENSUAL</Text>
-                  <View style={md.amtRow}>
-                    <Text style={md.cur}>{effectiveCurrency}</Text>
-                    <TextInput style={md.amtInput} value={monthly} onChangeText={setMonthly} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
-                  </View>
-
-                  <Text style={md.lbl}>TOTAL DE CUOTAS (auto-calculado)</Text>
-                  <View style={md.amtRow}>
-                    <TextInput style={md.amtInput} value={installments} onChangeText={setInstallments} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
-                    <Text style={md.cur}>cuotas</Text>
-                  </View>
-                  <Text style={md.hint}>La app descuenta una cuota automáticamente cada mes.</Text>
-
-                  <Text style={md.lbl}>CUOTAS YA PAGADAS</Text>
-                  <View style={md.amtRow}>
-                    <TextInput style={md.amtInput} value={paidInstallments} onChangeText={setPaidInstallments} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
-                    <Text style={md.cur}>de {installments || '0'}</Text>
-                  </View>
-                  <Text style={md.hint}>Si ya pagaste algunas cuotas antes de registrar esta compra, indícalo aquí.</Text>
-
-                  <Text style={md.lbl}>FECHA DE INICIO</Text>
-                  <TouchableOpacity style={md.amtRow} onPress={() => setShowDatePicker(true)}>
-                    <Ionicons name="calendar-outline" size={16} color={C.textMuted} style={{ marginRight: 8 }} />
-                    <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
-                      {(parseDateOnly(startDate) ?? new Date()).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
-                    </Text>
-                  </TouchableOpacity>
-                  {showDatePicker && (
-                    <DateTimePicker
-                      value={parseDateOnly(startDate) ?? new Date()}
-                      mode="date"
-                      onChange={(event, selectedDate) => {
-                        setShowDatePicker(false);
-                        if (event.type !== 'dismissed' && selectedDate) {
-                          setStartDate(formatDateOnly(selectedDate));
-                        }
-                      }}
-                    />
-                  )}
-
-                  <Text style={md.lbl}>CATEGORÍA</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      {EXPENSE_CATEGORIES.slice(0, 10).map(cat => (
-                        <TouchableOpacity key={cat.id} style={[md.typeChip, category === cat.id && { borderColor: cat.color, backgroundColor: cat.color + '22' }]} onPress={() => setCategory(cat.id)}>
-                          <Ionicons name={cat.icon} size={14} color={category === cat.id ? cat.color : C.textMuted} />
-                          <Text style={[md.typeChipTxt, category === cat.id && { color: cat.color }]}>{cat.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </ScrollView>
-
-                  <Text style={md.lbl}>NOTAS (Opcional)</Text>
-                  <TextInput style={md.input} value={notes} onChangeText={setNotes} placeholder="Ej: Comprado en Elektra, 12 cuotas sin interés..." placeholderTextColor={C.textMuted} />
-
-                  <TouchableOpacity style={md.saveBtn} onPress={handleSave}>
-                    <Ionicons name="card-outline" size={20} color="#1A0E00" />
-                    <Text style={md.saveBtnTxt}>Guardar Visacuota</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-              <View style={{ height: 40 }} />
-            </ScrollView>
+          <Text style={md.lbl}>MONTO TOTAL</Text>
+          <View style={md.amtRow}>
+            <Text style={md.cur}>{effectiveCurrency}</Text>
+            <TextInput style={md.amtInput} value={total} onChangeText={ch(setTotal)} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
           </View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+
+          <Text style={md.lbl}>CUOTA MENSUAL</Text>
+          <View style={md.amtRow}>
+            <Text style={md.cur}>{effectiveCurrency}</Text>
+            <TextInput style={md.amtInput} value={monthly} onChangeText={ch(setMonthly)} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+          </View>
+
+          <Text style={md.lbl}>TOTAL DE CUOTAS (auto-calculado)</Text>
+          <View style={md.amtRow}>
+            <TextInput style={md.amtInput} value={installments} onChangeText={ch(setInstallments)} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
+            <Text style={md.cur}>cuotas</Text>
+          </View>
+          <Text style={md.hint}>La app descuenta una cuota automáticamente cada mes.</Text>
+
+          <Text style={md.lbl}>CUOTAS YA PAGADAS</Text>
+          <View style={md.amtRow}>
+            <TextInput style={md.amtInput} value={paidInstallments} onChangeText={ch(setPaidInstallments)} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
+            <Text style={md.cur}>de {installments || '0'}</Text>
+          </View>
+          <Text style={md.hint}>Si ya pagaste algunas cuotas antes de registrar esta compra, indícalo aquí.</Text>
+
+          <Text style={md.lbl}>FECHA DE INICIO</Text>
+          <TouchableOpacity style={md.amtRow} onPress={() => setShowDatePicker(true)}>
+            <Ionicons name="calendar-outline" size={16} color={C.textSub} style={{ marginRight: 8 }} />
+            <Text style={{ color: C.text, fontSize: 15, fontWeight: '700' }}>
+              {(parseDateOnly(startDate) ?? new Date()).toLocaleDateString('es-GT', { day: '2-digit', month: 'long', year: 'numeric' })}
+            </Text>
+          </TouchableOpacity>
+          {showDatePicker && (
+            <DateTimePicker
+              value={parseDateOnly(startDate) ?? new Date()}
+              mode="date"
+              onChange={(event, selectedDate) => {
+                setShowDatePicker(false);
+                if (event.type !== 'dismissed' && selectedDate) {
+                  setStartDate(formatDateOnly(selectedDate));
+                }
+              }}
+            />
+          )}
+
+          <Text style={md.lbl}>CATEGORÍA</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {EXPENSE_CATEGORIES.slice(0, 10).map(cat => (
+                <TouchableOpacity key={cat.id} style={[md.typeChip, category === cat.id && { borderColor: cat.color, backgroundColor: cat.color + '22' }]} onPress={() => setCategory(cat.id)}>
+                  <Ionicons name={cat.icon} size={14} color={category === cat.id ? cat.color : C.textSub} />
+                  <Text style={[md.typeChipTxt, category === cat.id && { color: cat.color }]}>{cat.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          <Text style={md.lbl}>NOTAS (Opcional)</Text>
+          <TextInput style={md.input} value={notes} onChangeText={ch(setNotes)} placeholder="Ej: Comprado en Elektra, 12 cuotas sin interés..." placeholderTextColor={C.textMuted} />
+        </>
+      )}
+      <View style={{ height: 16 }} />
+    </GlassSheet>
   );
 }
 
 // ─────────────────────────────────────────────────────────────
-// ESTILOS (duplicados de AccountsScreen.tsx — ver nota en ese archivo)
+// ESTILOS (duplicados de AccountsScreen.tsx: importarlos crearía un ciclo de imports)
 // ─────────────────────────────────────────────────────────────
 const md = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
-  kav: { flex: 1, width: '100%', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + '55', padding: 24, maxHeight: '90%', ...shadow(C.primaryGlow, 20, 0.4) },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { color: C.textPrimary, fontSize: 20, fontWeight: '900' },
-  closeBtn: { padding: 8, borderRadius: 20, backgroundColor: C.card, borderWidth: 1, borderColor: C.cardBorder },
-  lbl: { color: C.textMuted, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 14 },
-  hint: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginBottom: 8 },
-  input: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, padding: 14, color: C.text, fontSize: 15 },
-  amtRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, paddingHorizontal: 14, paddingVertical: 10 },
+  footer: { gap: 10, paddingTop: 12 },
+  lbl: { color: C.textSub, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 14 },
+  hint: { color: C.textSub, fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 14, color: C.text, fontSize: 15 },
+  amtRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, paddingHorizontal: 14, paddingVertical: 10 },
   amtInput: { flex: 1, color: C.text, fontSize: 18, fontWeight: '700' },
-  cur: { color: C.textMuted, fontSize: 16, fontWeight: '700', marginRight: 8 },
-  typeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
+  cur: { color: C.textSub, fontSize: 16, fontWeight: '700', marginRight: 8 },
+  typeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
   typeChipTxt: { color: C.textSub, fontSize: 12, fontWeight: '700' },
-  saveBtn: { flexDirection: 'row', backgroundColor: C.primary, borderRadius: 14, paddingVertical: 16, alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 20, ...shadow(C.primaryGlow, 10, 0.4) },
-  saveBtnTxt: { color: '#1A0E00', fontSize: 15, fontWeight: '900' },
 });

@@ -1,16 +1,22 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
     KeyboardAvoidingView, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
-import { Account, Currency, Transaction, UserSettings, parseAmount } from "../services/storage";
+import { Account, Currency, Transaction, UserSettings, formatDateOnly, parseAmount, parseDateOnly } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
 import { SmsService } from "../services/SmsService";
-import { useTutorialRef } from "../context/TutorialContext";
+import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassDialog } from "./GlassDialog";
 import type { GlassDialogProps } from "./GlassDialog";
+import { GlassCard, GlassBackground } from "./GlassCard";
+import { GlassButton } from "./GlassButton";
+import { ScreenHeader } from "./ScreenHeader";
+import { HelpButton } from "./HelpButton";
+import { useKeyboardHeight } from "./useKeyboardHeight";
 
 interface Props {
     onAdd: (tx: Transaction) => void;
@@ -28,6 +34,10 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [smsText, setSmsText] = useState("");
     const [showSmsInput, setShowSmsInput] = useState(false);
     const [dialog, setDialog] = useState<Omit<GlassDialogProps, "visible" | "onClose"> | null>(null);
+    const [dateStr, setDateStr] = useState(formatDateOnly(new Date()));
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const kb = useKeyboardHeight();
+    const tutScroll = useTutorialScroll('add');
 
     const typeSelectorRef = useTutorialRef('add_type_selector');
     const currencyRef = useTutorialRef('add_currency');
@@ -35,6 +45,8 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const descriptionRef = useTutorialRef('add_description');
     const categoryRef = useTutorialRef('add_category');
     const smsBtnRef = useTutorialRef('add_sms_btn');
+    const headerRef = useTutorialRef('add_header');
+    const saveBtnRef = useTutorialRef('add_save_btn');
 
     const currencies: Currency[] = ['Q', 'USD', 'EUR', '£'];
 
@@ -120,12 +132,16 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
             return;
         }
         setLoading(true);
+        // Fecha elegida (solo día) combinada con la hora actual, para conservar el orden dentro del día.
+        const picked = parseDateOnly(dateStr) ?? new Date();
+        const clock = new Date();
+        const when = new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), clock.getHours(), clock.getMinutes(), clock.getSeconds(), clock.getMilliseconds());
         const tx: Transaction = {
             id: Date.now().toString(36) + Math.random().toString(36).slice(2),
             amount: amt,
             description: desc.trim(),
             category,
-            date: new Date().toISOString(),
+            date: when.toISOString(),
             type,
             source: "manual",
             currency,
@@ -134,153 +150,229 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
         // Reset
         setAmount(""); setDesc(""); setCategory("other");
         setCurrency(settings.currency || 'Q');
+        setDateStr(formatDateOnly(new Date()));
+        setShowDatePicker(false);
         setLoading(false);
     };
 
+    const pickerValue = parseDateOnly(dateStr) ?? new Date();
+    const dateLabel = pickerValue.toLocaleDateString("es-GT", { weekday: "short", day: "2-digit", month: "long", year: "numeric" });
+
     return (
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
-            <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
+        <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            <ScrollView {...tutScroll} style={s.screen} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
                 {/* HEADER */}
-                <View style={s.header}>
-                    <Text style={s.title}>Nueva Transacción</Text>
-                    <View ref={smsBtnRef} collapsable={false}>
-                        <TouchableOpacity style={s.smsBtn} onPress={() => setShowSmsInput(!showSmsInput)}>
-                            <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
-                            <Text style={s.smsBtnTxt}>Leer SMS</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
+                <ScreenHeader
+                    title="Nueva Transacción"
+                    compact
+                    headerRef={headerRef}
+                    right={
+                        <>
+                            <View ref={smsBtnRef} collapsable={false}>
+                                <TouchableOpacity
+                                    style={s.smsBtn}
+                                    onPress={() => setShowSmsInput(!showSmsInput)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Leer SMS del banco"
+                                >
+                                    <GlassBackground radius={20} blur={false} />
+                                    <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
+                                    <Text style={s.smsBtnTxt}>Leer SMS</Text>
+                                </TouchableOpacity>
+                            </View>
+                            <HelpButton tutorialId="tutorial_agregar" />
+                        </>
+                    }
+                />
 
                 {/* LEER SMS */}
                 {showSmsInput && (
-                    <View style={[s.card, { borderColor: C.accent + "55", backgroundColor: C.accent + "0A" }]}>
+                    <GlassCard blur={false} style={s.card} contentStyle={s.cardContent} leftAccentColor={C.accent}>
                         <Text style={[s.lbl, { color: C.accentLight }]}>PEGA AQUÍ EL TEXTO DEL BANCO</Text>
-                        <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 10 }}>
+                        <Text style={s.hint}>
                             Copia el SMS que te envió tu banco y pégalo aquí. La app detectará el monto, moneda y tipo automáticamente.
                         </Text>
                         <TextInput
-                            style={[s.txtInput, { minHeight: 80, textAlignVertical: "top", backgroundColor: C.bgDeep, borderRadius: 10, padding: 12 }]}
+                            style={[s.input, { minHeight: 80, textAlignVertical: "top" }]}
                             multiline
                             value={smsText}
                             onChangeText={setSmsText}
                             placeholder="Ej: PRF protege tu BAC Visa: compra Aprobada por Q 150.00 en WALMART..."
                             placeholderTextColor={C.textMuted}
                         />
-                        <TouchableOpacity style={s.parseBtn} onPress={handleParseSms}>
-                            <Ionicons name="flash" size={16} color="#1A0E00" />
-                            <Text style={s.parseBtnTxt}>Analizar SMS</Text>
-                        </TouchableOpacity>
-                    </View>
+                        <GlassButton label="Analizar SMS" icon="flash" onPress={handleParseSms} style={{ marginTop: 12 }} />
+                    </GlassCard>
                 )}
 
                 {/* TIPO: GASTO / INGRESO */}
                 <View style={s.typeRow} ref={typeSelectorRef} collapsable={false}>
                     <TouchableOpacity
-                        style={[s.typeBtn, type === "expense" && s.typeBtnExp]}
+                        style={[s.typeBtn, type === "expense" && { borderColor: C.expense, backgroundColor: C.expense + "22" }]}
                         onPress={() => { setType("expense"); setCategory("other"); }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: type === "expense" }}
                     >
-                        <Ionicons name="trending-down" size={24} color={type === "expense" ? C.expense : C.textMuted} />
+                        <GlassBackground radius={14} blur={false} />
+                        <Ionicons name="trending-down" size={24} color={type === "expense" ? C.expense : C.textSub} />
                         <Text style={[s.typeTxt, type === "expense" && { color: C.expense }]}>Gasto</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                        style={[s.typeBtn, type === "income" && s.typeBtnInc]}
+                        style={[s.typeBtn, type === "income" && { borderColor: C.income, backgroundColor: C.income + "22" }]}
                         onPress={() => { setType("income"); setCategory("other"); }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: type === "income" }}
                     >
-                        <Ionicons name="trending-up" size={24} color={type === "income" ? C.income : C.textMuted} />
+                        <GlassBackground radius={14} blur={false} />
+                        <Ionicons name="trending-up" size={24} color={type === "income" ? C.income : C.textSub} />
                         <Text style={[s.typeTxt, type === "income" && { color: C.income }]}>Ingreso</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* MONEDA */}
-                <View style={s.card} ref={currencyRef} collapsable={false}>
-                    <Text style={s.lbl}>MONEDA</Text>
-                    <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 10 }}>
-                        ¿En qué moneda es esta transacción?
-                    </Text>
-                    <View style={s.currencyRow}>
-                        {currencies.map(cur => (
-                            <TouchableOpacity
-                                key={cur}
-                                style={[s.currencyBtn, currency === cur && s.currencyBtnActive]}
-                                onPress={() => setCurrency(cur)}
-                            >
-                                <Text style={[s.currencyTxt, currency === cur && { color: C.primaryLight, fontSize: 18 }]}>{cur}</Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+                <View ref={currencyRef} collapsable={false}>
+                    <GlassCard blur={false} style={s.card} contentStyle={s.cardContent}>
+                        <Text style={s.lbl}>MONEDA</Text>
+                        <Text style={s.hint}>¿En qué moneda es esta transacción?</Text>
+                        <View style={s.currencyRow}>
+                            {currencies.map(cur => (
+                                <TouchableOpacity
+                                    key={cur}
+                                    style={[s.currencyBtn, currency === cur && s.optionActive]}
+                                    onPress={() => setCurrency(cur)}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: currency === cur }}
+                                >
+                                    <Text style={[s.currencyTxt, currency === cur && { color: C.primaryLight, fontSize: 18 }]}>{cur}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </GlassCard>
                 </View>
 
                 {/* MONTO */}
-                <View style={s.card} ref={amountRef} collapsable={false}>
-                    <Text style={s.lbl}>MONTO</Text>
-                    <View style={s.amtRow}>
-                        <Text style={s.cur}>{currency}</Text>
-                        <TextInput
-                            style={[s.amtInput, { color: type === "expense" ? C.expense : C.income }]}
-                            value={amount}
-                            onChangeText={setAmount}
-                            placeholder="0.00"
-                            placeholderTextColor={C.textMuted}
-                            keyboardType="decimal-pad"
-                            autoFocus
-                        />
-                    </View>
+                <View ref={amountRef} collapsable={false}>
+                    <GlassCard blur={false} style={s.card} contentStyle={s.cardContent}>
+                        <Text style={s.lbl}>MONTO</Text>
+                        <View style={s.amtRow}>
+                            <Text style={s.cur}>{currency}</Text>
+                            <TextInput
+                                style={[s.amtInput, { color: type === "expense" ? C.expense : C.income }]}
+                                value={amount}
+                                onChangeText={setAmount}
+                                placeholder="0.00"
+                                placeholderTextColor={C.textMuted}
+                                keyboardType="decimal-pad"
+                                autoFocus
+                            />
+                        </View>
+                    </GlassCard>
                 </View>
 
-                {/* DESCRIPCIÓN */}
-                <View style={s.card} ref={descriptionRef} collapsable={false}>
-                    <Text style={s.lbl}>DESCRIPCIÓN (Opcional)</Text>
-                    <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 8 }}>
-                        ¿En qué gastaste o de dónde viene el dinero?
-                    </Text>
-                    <View style={s.descRow}>
-                        <Ionicons name="pencil" size={18} color={C.primaryLight} style={{ marginRight: 10 }} />
-                        <TextInput
-                            style={s.txtInput}
-                            value={desc}
-                            onChangeText={setDesc}
-                            placeholder="Ej: Almuerzo, Uber, Salario, Netflix..."
-                            placeholderTextColor={C.textMuted}
-                            maxLength={80}
+                {/* FECHA */}
+                <GlassCard blur={false} style={s.card} contentStyle={s.cardContent}>
+                    <Text style={s.lbl}>FECHA</Text>
+                    <TouchableOpacity
+                        style={s.dateRow}
+                        onPress={() => setShowDatePicker(v => !v)}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Elegir la fecha del movimiento"
+                    >
+                        <Ionicons name="calendar-outline" size={18} color={C.primaryLight} />
+                        <Text style={s.dateTxt} numberOfLines={1}>{dateLabel}</Text>
+                        <Ionicons name="chevron-down" size={16} color={C.textSub} />
+                    </TouchableOpacity>
+                    {showDatePicker && Platform.OS === "android" && (
+                        <DateTimePicker
+                            value={pickerValue}
+                            mode="date"
+                            display="default"
+                            onChange={(event, selected) => {
+                                setShowDatePicker(false);
+                                if (event.type === "set" && selected) setDateStr(formatDateOnly(selected));
+                            }}
                         />
-                    </View>
+                    )}
+                    {showDatePicker && Platform.OS === "ios" && (
+                        <View style={s.iosPickerWrap}>
+                            <DateTimePicker
+                                value={pickerValue}
+                                mode="date"
+                                display="inline"
+                                themeVariant="dark"
+                                accentColor={C.primary}
+                                onChange={(_e, selected) => { if (selected) setDateStr(formatDateOnly(selected)); }}
+                            />
+                            <TouchableOpacity style={s.iosPickerDone} onPress={() => setShowDatePicker(false)}>
+                                <Text style={s.iosPickerDoneTxt}>Listo</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </GlassCard>
+
+                {/* DESCRIPCIÓN */}
+                <View ref={descriptionRef} collapsable={false}>
+                    <GlassCard blur={false} style={s.card} contentStyle={s.cardContent}>
+                        <Text style={s.lbl}>DESCRIPCIÓN (Opcional)</Text>
+                        <Text style={s.hint}>¿En qué gastaste o de dónde viene el dinero?</Text>
+                        <View style={s.descRow}>
+                            <Ionicons name="pencil" size={18} color={C.primaryLight} style={{ marginRight: 10 }} />
+                            <TextInput
+                                style={s.txtInput}
+                                value={desc}
+                                onChangeText={setDesc}
+                                placeholder="Ej: Almuerzo, Uber, Salario, Netflix..."
+                                placeholderTextColor={C.textMuted}
+                                maxLength={80}
+                            />
+                        </View>
+                    </GlassCard>
                 </View>
 
                 {/* CATEGORÍA */}
-                <View style={[s.card, { paddingBottom: 6 }]} ref={categoryRef} collapsable={false}>
-                    <Text style={s.lbl}>CATEGORÍA</Text>
-                    <Text style={{ color: C.textMuted, fontSize: 12, marginBottom: 12 }}>
-                        Clasifica tu transacción para ver estadísticas más precisas.
-                        {settings.customCategories?.length > 0 ? " Incluye tus categorías personalizadas." : " Puedes crear categorías propias en Ajustes."}
-                    </Text>
-                    <View style={s.catGrid}>
-                        {cats.map(cat => (
-                            <TouchableOpacity
-                                key={cat.id}
-                                onPress={() => setCategory(cat.id)}
-                                style={[s.catItem, category === cat.id && s.catActive]}
-                            >
-                                <Ionicons
-                                    name={cat.icon}
-                                    size={24}
-                                    color={category === cat.id ? cat.color : C.textSub}
-                                />
-                                <Text style={[s.catLbl, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
-                                    {cat.label}
-                                </Text>
-                            </TouchableOpacity>
-                        ))}
-                    </View>
+                <View ref={categoryRef} collapsable={false}>
+                    <GlassCard blur={false} style={s.card} contentStyle={[s.cardContent, { paddingBottom: 10 }]}>
+                        <Text style={s.lbl}>CATEGORÍA</Text>
+                        <Text style={[s.hint, { marginBottom: 12 }]}>
+                            Clasifica tu transacción para ver estadísticas más precisas.
+                            {settings.customCategories?.length > 0 ? " Incluye tus categorías personalizadas." : " Puedes crear categorías propias en Ajustes."}
+                        </Text>
+                        <View style={s.catGrid}>
+                            {cats.map(cat => (
+                                <TouchableOpacity
+                                    key={cat.id}
+                                    onPress={() => setCategory(cat.id)}
+                                    style={[s.catItem, category === cat.id && s.optionActive]}
+                                    accessibilityRole="button"
+                                    accessibilityState={{ selected: category === cat.id }}
+                                >
+                                    <Ionicons
+                                        name={cat.icon}
+                                        size={24}
+                                        color={category === cat.id ? cat.color : C.textSub}
+                                    />
+                                    <Text style={[s.catLbl, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
+                                        {cat.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </GlassCard>
                 </View>
 
                 {/* GUARDAR */}
-                <TouchableOpacity style={[s.btn, loading && { opacity: 0.6 }]} onPress={handleAdd} disabled={loading}>
-                    <Ionicons name="save" size={20} color="#1A0E00" style={{ marginLeft: 8 }} />
-                    <Text style={s.btnTxt}>{loading ? "Guardando..." : `Guardar ${type === 'expense' ? 'Gasto' : 'Ingreso'} en ${currency}`}</Text>
-                </TouchableOpacity>
+                <View ref={saveBtnRef} collapsable={false}>
+                    <GlassButton
+                        icon="save"
+                        label={loading ? "Guardando..." : `Guardar ${type === 'expense' ? 'Gasto' : 'Ingreso'} en ${currency}`}
+                        onPress={handleAdd}
+                        disabled={loading}
+                        style={s.btn}
+                    />
+                </View>
 
-                <View style={{ height: 140 }} />
+                <View style={{ height: 140 + kb }} />
             </ScrollView>
             {dialog && <GlassDialog visible onClose={() => setDialog(null)} {...dialog} />}
         </KeyboardAvoidingView>
@@ -288,33 +380,33 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
 }
 
 const s = StyleSheet.create({
-    screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 18 },
-    title: { color: C.textPrimary, fontSize: 26, fontWeight: "800", letterSpacing: 0.5 },
-    smsBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: C.primaryDark + "44", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
+    screen: { flex: 1, paddingHorizontal: 16 },
+    smsBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, overflow: "hidden" },
     smsBtnTxt: { color: C.primaryLight, fontSize: 12, fontWeight: "700" },
-    parseBtn: { flexDirection: "row", backgroundColor: C.accent, borderRadius: 10, paddingVertical: 12, alignItems: "center", justifyContent: "center", gap: 8, marginTop: 12 },
-    parseBtnTxt: { color: "#1A0E00", fontSize: 13, fontWeight: "800" },
     typeRow: { flexDirection: "row", gap: 12, marginBottom: 16 },
-    typeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: C.cardBorder, backgroundColor: C.card },
+    typeBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 14, borderWidth: 1.5, borderColor: "transparent", overflow: "hidden" },
     typeTxt: { color: C.textSub, fontSize: 16, fontWeight: "800", letterSpacing: 0.5 },
-    typeBtnExp: { borderColor: C.expense, backgroundColor: C.expense + "22", ...shadow(C.expense, 8, 0.3) },
-    typeBtnInc: { borderColor: C.income, backgroundColor: C.income + "22", ...shadow(C.income, 8, 0.3) },
-    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopColor: C.shimmer, padding: 18, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    card: { marginBottom: 14 },
+    cardContent: { padding: 18 },
     lbl: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 8 },
+    hint: { color: C.textSub, fontSize: 12, marginBottom: 10 },
+    input: { color: C.text, fontSize: 16, backgroundColor: C.glassInput, borderWidth: 1, borderColor: C.glassInputBorder, borderRadius: 12, padding: 12 },
     currencyRow: { flexDirection: "row", gap: 8 },
-    currencyBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep },
-    currencyBtnActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.4) },
+    currencyBtn: { flex: 1, paddingVertical: 14, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
     currencyTxt: { color: C.textSub, fontSize: 15, fontWeight: "700" },
+    optionActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     amtRow: { flexDirection: "row", alignItems: "center" },
-    cur: { color: C.textMuted, fontSize: 24, fontWeight: "600", marginRight: 8 },
+    cur: { color: C.textSub, fontSize: 24, fontWeight: "600", marginRight: 8 },
     amtInput: { flex: 1, fontSize: 44, fontWeight: "900", height: 80 },
-    descRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: C.primary + "55", paddingBottom: 8 },
-    txtInput: { flex: 1, color: C.text, fontSize: 16 },
+    dateRow: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: C.glassInput, borderWidth: 1, borderColor: C.glassInputBorder, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12 },
+    dateTxt: { flex: 1, color: C.text, fontSize: 15, fontWeight: "600", textTransform: "capitalize" },
+    iosPickerWrap: { marginTop: 8 },
+    iosPickerDone: { alignSelf: "flex-end", paddingHorizontal: 16, paddingVertical: 8 },
+    iosPickerDoneTxt: { color: C.primaryLight, fontWeight: "800" },
+    descRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.glassInput, borderWidth: 1, borderColor: C.glassInputBorder, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 4 },
+    txtInput: { flex: 1, color: C.text, fontSize: 16, paddingVertical: 10 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8 },
-    catItem: { width: "31%", alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder, backgroundColor: C.bgDeep, marginBottom: 8 },
-    catActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 8, 0.4) },
+    catItem: { width: "31%", alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput, marginBottom: 8 },
     catLbl: { color: C.textSub, fontSize: 10, marginTop: 6, fontWeight: "600", textAlign: "center" },
-    btn: { flexDirection: "row", backgroundColor: C.primary, borderRadius: 14, paddingVertical: 18, alignItems: "center", justifyContent: "center", gap: 10, borderWidth: 1, borderColor: C.primaryLight, borderTopColor: C.accentLight, marginTop: 6, ...shadow(C.primaryGlow, 12, 0.5) },
-    btnTxt: { color: "#1A0E00", fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
+    btn: { marginTop: 6, paddingVertical: 18 },
 });

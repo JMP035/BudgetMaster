@@ -12,16 +12,22 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const CACHE_KEY = '@bm_exchange_rate';
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 horas
 
-interface CachedRate {
+export interface CachedRate {
   rate: number;
   source: string;
   timestamp: number;
 }
 
-interface RateResult {
+export interface RateResult {
   rate: number;
   source: string;
+  /** Momento (ms epoch) en que se obtuvo/guardó la tasa */
+  timestamp: number;
+  /** true si no hubo red y se devolvió el último valor guardado (o el de respaldo) */
+  offline: boolean;
 }
+
+type RawRate = { rate: number; source: string };
 
 // Tasa de respaldo si no hay conexión
 const FALLBACK_RATE = 7.70;
@@ -40,7 +46,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs: 
   }
 }
 
-async function fetchFromBanguat(): Promise<RateResult> {
+async function fetchFromBanguat(): Promise<RawRate> {
   // API pública del Banco de Guatemala (tipo de cambio referencial)
   const res = await fetchWithTimeout(
     'https://apis.banguat.gob.gt/v1/cambio/referencial',
@@ -54,7 +60,7 @@ async function fetchFromBanguat(): Promise<RateResult> {
   return { rate: venta, source: 'Banco de Guatemala (Banguat)' };
 }
 
-async function fetchFromFallback(): Promise<RateResult> {
+async function fetchFromFallback(): Promise<RawRate> {
   // API pública sin clave: exchangerate-api.com
   const res = await fetchWithTimeout('https://open.er-api.com/v6/latest/USD');
   if (!res.ok) throw new Error('Exchange API no disponible');
@@ -78,7 +84,7 @@ export const ExchangeRateService = {
         // Una entrada cacheada con la fuente de respaldo es inválida (de
         // versiones anteriores que sí la cacheaban): no se usa, se reintenta.
         if (age < CACHE_TTL_MS && parsed.source !== FALLBACK_SOURCE) {
-          return { rate: parsed.rate, source: parsed.source };
+          return { rate: parsed.rate, source: parsed.source, timestamp: parsed.timestamp, offline: false };
         }
       }
     } catch { /* caché corrupto, continuar */ }
@@ -87,32 +93,50 @@ export const ExchangeRateService = {
   },
 
   /**
-   * Fuerza una actualización desde la red,
-   * ignorando la caché aunque sea reciente.
+   * Última tasa guardada en caché (aunque esté vencida), o null si no hay una
+   * válida. Ignora entradas con la fuente de respaldo.
+   */
+  async getCachedRate(): Promise<CachedRate | null> {
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (!cached) return null;
+      const parsed: CachedRate = JSON.parse(cached);
+      if (!parsed || !(parsed.rate > 0) || parsed.source === FALLBACK_SOURCE) return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Fuerza una actualización desde la red, ignorando la caché aunque sea
+   * reciente. Si ambas fuentes fallan devuelve la última tasa guardada
+   * (offline: true); solo si no existe ninguna usa FALLBACK_RATE.
    */
   async forceRefresh(): Promise<RateResult> {
-    let result: RateResult;
-    let isFallback = false;
+    let fetched: RawRate;
 
     try {
-      result = await fetchFromBanguat();
+      fetched = await fetchFromBanguat();
     } catch {
       try {
-        result = await fetchFromFallback();
+        fetched = await fetchFromFallback();
       } catch {
-        result = { rate: FALLBACK_RATE, source: FALLBACK_SOURCE };
-        isFallback = true;
+        const cached = await this.getCachedRate();
+        if (cached) {
+          return { rate: cached.rate, source: cached.source, timestamp: cached.timestamp, offline: true };
+        }
+        // El valor de respaldo nunca se cachea.
+        return { rate: FALLBACK_RATE, source: FALLBACK_SOURCE, timestamp: Date.now(), offline: true };
       }
     }
 
-    // Guardar en caché, salvo que sea el valor de respaldo: ese nunca se cachea.
-    if (!isFallback) {
-      try {
-        const toCache: CachedRate = { ...result, timestamp: Date.now() };
-        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(toCache));
-      } catch { /* ignorar error de escritura */ }
-    }
+    const timestamp = Date.now();
+    try {
+      const toCache: CachedRate = { ...fetched, timestamp };
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(toCache));
+    } catch { /* ignorar error de escritura */ }
 
-    return result;
+    return { ...fetched, timestamp, offline: false };
   },
 };

@@ -1,16 +1,19 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
 import {
-    Animated, Dimensions, Easing, ScrollView,
-    StyleSheet, Text, TouchableOpacity, View
+    Animated, Easing, ScrollView,
+    StyleSheet, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import Svg, { Circle, G, Path, Text as SvgText } from "react-native-svg";
 import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
-import { EXPENSE_CATEGORIES, getCat } from "../categories";
-import { C, shadow } from "../theme";
-import { useTutorialRef } from "../context/TutorialContext";
-
-const { width } = Dimensions.get("window");
+import { EXPENSE_CATEGORIES } from "../categories";
+import { C } from "../theme";
+import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
+import { GlassCard } from "./GlassCard";
+import { GlassSegmented } from "./GlassSegmented";
+import { GradientText } from "./GradientText";
+import { HelpButton } from "./HelpButton";
+import { ScreenHeader } from "./ScreenHeader";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
@@ -22,7 +25,7 @@ function AnimBar({ pct, color, height = 8 }: { pct: number; color: string; heigh
     }, [pct]);
     const w = anim.interpolate({ inputRange: [0, 100], outputRange: ["0%", "100%"] });
     return (
-        <View style={{ height, backgroundColor: C.bgDeep, borderRadius: 6, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder }}>
+        <View style={{ height, backgroundColor: C.glassInput, borderRadius: 6, overflow: "hidden", borderWidth: 1, borderColor: C.glassBorder }}>
             <Animated.View style={{ height: "100%", width: w, backgroundColor: color, borderRadius: 6 }} />
         </View>
     );
@@ -38,6 +41,7 @@ function PieChart({ slices, selected, onSelect }: {
     selected: string | null;
     onSelect: (id: string | null) => void;
 }) {
+    const { width } = useWindowDimensions();
     const size = width * 0.72;
     const cx = size / 2;
     const cy = size / 2;
@@ -69,7 +73,7 @@ function PieChart({ slices, selected, onSelect }: {
         <View style={{ alignItems: "center" }}>
             <Svg width={size} height={size}>
                 <G>
-                    {slices.map((slice, i) => {
+                    {slices.map((slice) => {
                         const angle = (slice.pct / 100) * 360;
                         const startAngle = cumAngle;
                         const endAngle = cumAngle + angle - 1;
@@ -87,14 +91,14 @@ function PieChart({ slices, selected, onSelect }: {
                         );
                     })}
                     {/* Centro */}
-                    <Circle cx={cx} cy={cy} r={inner - 2} fill={C.card} />
+                    <Circle cx={cx} cy={cy} r={inner - 2} fill={C.bg} />
                     {/* Texto centro */}
                     {selectedSlice ? (
                         <>
                             <SvgText x={cx} y={cy - 8} textAnchor="middle" fill={selectedSlice.color} fontSize="18" fontWeight="900">
                                 {selectedSlice.pct.toFixed(0)}%
                             </SvgText>
-                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textMuted} fontSize="10">
+                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textSub} fontSize="10">
                                 {selectedSlice.label}
                             </SvgText>
                         </>
@@ -103,7 +107,7 @@ function PieChart({ slices, selected, onSelect }: {
                             <SvgText x={cx} y={cy - 6} textAnchor="middle" fill={C.textPrimary} fontSize="14" fontWeight="900">
                                 Q {(total / 1000).toFixed(1)}k
                             </SvgText>
-                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textMuted} fontSize="10">
+                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textSub} fontSize="10">
                                 TOTAL
                             </SvgText>
                         </>
@@ -117,31 +121,47 @@ function PieChart({ slices, selected, onSelect }: {
 // ─────────────────────────────────────────────────────────────
 // STAT CARD
 // ─────────────────────────────────────────────────────────────
-function StatCard({ icon, title, value, subtitle, color, children }: {
+function StatCard({ icon, title, value, subtitle, color, children, tutRef }: {
     icon: any; title: string; value: string; subtitle?: string; color: string; children?: React.ReactNode;
+    tutRef?: (n: View | null) => void;
 }) {
+    // Valores positivos/destacables en bronce; neutros y negativos en color plano
+    const highlight = color === C.primaryLight || color === C.income;
+    const valueStyle = { fontSize: value.length > 14 ? 22 : 28, fontWeight: "900" as const };
     return (
-        <View style={[sc.card, { borderTopColor: color }]}>
-            <View style={sc.header}>
-                <View style={[sc.iconBg, { backgroundColor: color + "22" }]}>
-                    <Ionicons name={icon} size={18} color={color} />
+        <View ref={tutRef} collapsable={false} style={sc.wrap}>
+            <GlassCard radius={16} blur={false} topAccentColor={color} topAccentWidth={3} contentStyle={sc.content}>
+                <View style={sc.header}>
+                    <View style={[sc.iconBg, { backgroundColor: color + "22" }]}>
+                        <Ionicons name={icon} size={18} color={color} />
+                    </View>
+                    <Text style={sc.title}>{title}</Text>
                 </View>
-                <Text style={sc.title}>{title}</Text>
-            </View>
-            {value ? <Text style={[sc.value, { color }]}>{value}</Text> : null}
-            {subtitle && <Text style={sc.subtitle}>{subtitle}</Text>}
-            {children}
+                {value ? (
+                    highlight ? (
+                        <View style={sc.valueWrap}>
+                            <GradientText text={value} style={valueStyle} />
+                        </View>
+                    ) : (
+                        <Text style={[sc.value, valueStyle, { color }]}>{value}</Text>
+                    )
+                ) : null}
+                {subtitle && <Text style={sc.subtitle}>{subtitle}</Text>}
+                {children}
+            </GlassCard>
         </View>
     );
 }
 
 const sc = StyleSheet.create({
-    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 3, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    wrap: { marginBottom: 14 },
+    content: { padding: 16 },
     header: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
     iconBg: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
     title: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5, flex: 1 },
-    value: { fontSize: 28, fontWeight: "900", marginBottom: 4 },
-    subtitle: { color: C.textMuted, fontSize: 12, lineHeight: 17 },
+    value: { marginBottom: 4 },
+    valueWrap: { alignSelf: "flex-start", maxWidth: "100%", marginBottom: 4 },
+    subtitle: { color: C.textSub, fontSize: 12, lineHeight: 17 },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -154,7 +174,7 @@ function VertBars({ data, color, labels }: { data: number[]; color: string; labe
             {data.map((v, i) => (
                 <View key={i} style={{ flex: 1, alignItems: "center" }}>
                     <View style={{ width: "80%", height: Math.max(4, (v / max) * 60), backgroundColor: color, borderRadius: 3, opacity: i === data.length - 1 ? 1 : 0.5 }} />
-                    <Text style={{ color: C.textMuted, fontSize: 8, marginTop: 3 }}>{labels[i]}</Text>
+                    <Text style={{ color: C.textSub, fontSize: 10, marginTop: 3 }}>{labels[i]}</Text>
                 </View>
             ))}
         </View>
@@ -170,9 +190,20 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
 
+    const headerRef = useTutorialRef('stats_header');
     const filterRef = useTutorialRef('stats_filter');
+    const quickRef = useTutorialRef('stats_quick');
     const pieRef = useTutorialRef('stats_pie');
     const projRef = useTutorialRef('stats_projected');
+    const compareRef = useTutorialRef('stats_compare');
+    const accumulatedRef = useTutorialRef('stats_accumulated');
+    const dailyRef = useTutorialRef('stats_daily');
+    const noSpendRef = useTutorialRef('stats_nospend');
+    const banksRef = useTutorialRef('stats_banks');
+    const debtRef = useTutorialRef('stats_debt');
+    const velocityRef = useTutorialRef('stats_velocity');
+    const savingsProjRef = useTutorialRef('stats_savings_projection');
+    const statsScroll = useTutorialScroll('stats');
 
     const now = new Date();
     const m = now.getMonth();
@@ -312,128 +343,137 @@ export default function StatsScreen({ transactions, settings }: Props) {
             ? `A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este año. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`}`
             : `Gastaste Q${projected.toFixed(0)} en ${periodLabel} (Q${avgDaily.toFixed(0)}/día). ${projBalance >= 0 ? `Te sobró Q${projBalance.toFixed(0)}.` : `Te faltaron Q${Math.abs(projBalance).toFixed(0)}.`}`;
 
+    const savingsColor = savingsRate >= 20 ? C.income : savingsRate >= 0 ? C.warning : C.danger;
+
     return (
-        <ScrollView style={s.screen} showsVerticalScrollIndicator={false}>
+        <ScrollView
+            ref={statsScroll.ref}
+            onScroll={statsScroll.onScroll}
+            scrollEventThrottle={statsScroll.scrollEventThrottle}
+            style={s.screen}
+            showsVerticalScrollIndicator={false}
+        >
 
             {/* TÍTULO */}
-            <View style={s.pageHeader}>
-                <Text style={s.pageTitle}>Estadísticas</Text>
-                <Text style={s.pageSubtitle}>Análisis completo de tu economía</Text>
-            </View>
+            <ScreenHeader
+                title="Estadísticas"
+                subtitle="Análisis completo de tu economía"
+                right={<HelpButton tutorialId="tutorial_stats" />}
+                headerRef={headerRef}
+            />
 
             {/* FILTRO PERÍODO */}
-            <View ref={filterRef} collapsable={false} style={s.filterRow}>
-                {([
-                    { key: "current", label: "Per. Actual" },
-                    { key: "prev",    label: "Per. Anterior" },
-                    { key: "year",    label: "Este Año" },
-                    { key: "all",     label: "Todo" },
-                ] as const).map(p => (
-                    <TouchableOpacity key={p.key} style={[s.filterTab, period === p.key && s.filterTabActive]} onPress={() => { setPeriod(p.key); setSelectedSlice(null); }}>
-                        <Text numberOfLines={1} style={[s.filterTxt, period === p.key && s.filterTxtActive]}>{p.label}</Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
+            <GlassSegmented
+                containerRef={filterRef}
+                value={period}
+                onChange={(v) => { setPeriod(v); setSelectedSlice(null); }}
+                options={[
+                    { value: "current", label: "Per. Actual" },
+                    { value: "prev", label: "Per. Anterior" },
+                    { value: "year", label: "Este Año" },
+                    { value: "all", label: "Todo" },
+                ]}
+                style={{ marginBottom: 14 }}
+            />
 
             {/* ETIQUETA PERÍODO ACTIVO */}
-            <View style={{ marginBottom: 14, paddingHorizontal: 4 }}>
-                <Text style={{ color: C.textMuted, fontSize: 11, fontWeight: "700" }}>
-                    📅 {periodLabel}
-                </Text>
+            <View style={s.periodRow}>
+                <Ionicons name="calendar-outline" size={14} color={C.textSub} />
+                <Text style={s.periodTxt} numberOfLines={1}>{periodLabel}</Text>
             </View>
 
             {/* RESUMEN RÁPIDO */}
-            <View style={s.quickRow}>
-                <View style={[s.quickCard, { borderTopColor: C.income }]}>
+            <View ref={quickRef} collapsable={false} style={s.quickRow}>
+                <GlassCard radius={14} blur={false} topAccentColor={C.income} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>INGRESOS</Text>
-                    <Text style={[s.quickVal, { color: C.income }]}>Q {totalInc.toFixed(0)}</Text>
-                </View>
-                <View style={[s.quickCard, { borderTopColor: C.expense }]}>
+                    <Text style={[s.quickVal, { color: C.income }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Q {totalInc.toFixed(0)}</Text>
+                </GlassCard>
+                <GlassCard radius={14} blur={false} topAccentColor={C.expense} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>GASTOS</Text>
-                    <Text style={[s.quickVal, { color: C.expense }]}>Q {totalExp.toFixed(0)}</Text>
-                </View>
-                <View style={[s.quickCard, { borderTopColor: savings >= 0 ? C.accent : C.danger }]}>
+                    <Text style={[s.quickVal, { color: C.expense }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Q {totalExp.toFixed(0)}</Text>
+                </GlassCard>
+                <GlassCard radius={14} blur={false} topAccentColor={savings >= 0 ? C.accent : C.danger} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>AHORRO</Text>
-                    <Text style={[s.quickVal, { color: savings >= 0 ? C.accent : C.danger }]}>
+                    <Text style={[s.quickVal, { color: savings >= 0 ? C.accent : C.danger }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                         {savings >= 0 ? "+" : ""}Q {savings.toFixed(0)}
                     </Text>
-                </View>
+                </GlassCard>
             </View>
 
             {/* ── GRÁFICA DE PASTEL ── */}
             {byCat.length > 0 && (
-                <View ref={pieRef} collapsable={false} style={s.card}>
-                    <View style={s.cardHeader}>
-                        <View style={[s.cardIcon, { backgroundColor: C.primary + "22" }]}>
-                            <Ionicons name="pie-chart-outline" size={18} color={C.primaryLight} />
-                        </View>
-                        <Text style={s.cardTitle}>
-                            Desglose por Categoría — {periodLabel}
-                        </Text>
-                    </View>
-
-                    <PieChart slices={byCat} selected={selectedSlice} onSelect={setSelectedSlice} />
-
-                    {/* Detalle de slice seleccionado */}
-                    {selectedCatData && (
-                        <View style={[s.sliceDetail, { borderColor: selectedCatData.color + "55", backgroundColor: selectedCatData.color + "11" }]}>
-                            <Ionicons name={selectedCatData.icon as any} size={20} color={selectedCatData.color} />
-                            <View style={{ flex: 1, marginLeft: 10 }}>
-                                <Text style={[s.sliceName, { color: selectedCatData.color }]}>{selectedCatData.label}</Text>
-                                <Text style={s.sliceAmt}>Q {selectedCatData.value.toFixed(2)}</Text>
+                <View ref={pieRef} collapsable={false} style={s.cardWrap}>
+                    <GlassCard radius={16} blur={false} contentStyle={s.cardContent}>
+                        <View style={s.cardHeader}>
+                            <View style={[s.cardIcon, { backgroundColor: C.primary + "22" }]}>
+                                <Ionicons name="pie-chart-outline" size={18} color={C.primaryLight} />
                             </View>
-                            <Text style={[s.slicePct, { color: selectedCatData.color }]}>{selectedCatData.pct.toFixed(1)}%</Text>
-                        </View>
-                    )}
-
-                    {/* Leyenda */}
-                    <View style={{ marginTop: 16 }}>
-                        {byCat.slice(0, 6).map(cat => (
-                            <TouchableOpacity
-                                key={cat.id}
-                                style={[s.legendRow, selectedSlice === cat.id && { backgroundColor: cat.color + "11", borderRadius: 8 }]}
-                                onPress={() => setSelectedSlice(selectedSlice === cat.id ? null : cat.id)}
-                            >
-                                <View style={[s.legendDot, { backgroundColor: cat.color }]} />
-                                <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
-                                <Text style={s.legendLabel}>{cat.label}</Text>
-                                <View style={{ flex: 1, marginHorizontal: 10 }}>
-                                    <AnimBar pct={cat.pct} color={cat.color} height={5} />
-                                </View>
-                                <Text style={s.legendAmt}>Q {cat.value.toFixed(0)}</Text>
-                                <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
-                            </TouchableOpacity>
-                        ))}
-                        {byCat.length > 6 && (
-                            <Text style={{ color: C.textMuted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
-                                +{byCat.length - 6} categorías más
+                            <Text style={s.cardTitle}>
+                                Desglose por Categoría — {periodLabel}
                             </Text>
-                        )}
-                    </View>
+                        </View>
 
-                    {/* Tasa de ahorro */}
-                    <View style={[s.savingsRow, { marginTop: 16 }]}>
-                        <Text style={s.savingsLbl}>Tasa de Ahorro</Text>
-                        <Text style={[s.savingsVal, { color: savingsRate >= 20 ? C.income : savingsRate >= 0 ? C.warning : C.danger }]}>
-                            {savingsRate.toFixed(1)}%
+                        <PieChart slices={byCat} selected={selectedSlice} onSelect={setSelectedSlice} />
+
+                        {/* Detalle de slice seleccionado */}
+                        {selectedCatData && (
+                            <View style={[s.sliceDetail, { borderColor: selectedCatData.color + "55", backgroundColor: selectedCatData.color + "11" }]}>
+                                <Ionicons name={selectedCatData.icon as any} size={20} color={selectedCatData.color} />
+                                <View style={{ flex: 1, marginLeft: 10 }}>
+                                    <Text style={[s.sliceName, { color: selectedCatData.color }]}>{selectedCatData.label}</Text>
+                                    <Text style={s.sliceAmt}>Q {selectedCatData.value.toFixed(2)}</Text>
+                                </View>
+                                <Text style={[s.slicePct, { color: selectedCatData.color }]}>{selectedCatData.pct.toFixed(1)}%</Text>
+                            </View>
+                        )}
+
+                        {/* Leyenda */}
+                        <View style={{ marginTop: 16 }}>
+                            {byCat.slice(0, 6).map(cat => (
+                                <TouchableOpacity
+                                    key={cat.id}
+                                    style={[s.legendRow, selectedSlice === cat.id && { backgroundColor: cat.color + "11", borderRadius: 8 }]}
+                                    onPress={() => setSelectedSlice(selectedSlice === cat.id ? null : cat.id)}
+                                >
+                                    <View style={[s.legendDot, { backgroundColor: cat.color }]} />
+                                    <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
+                                    <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
+                                    <View style={{ flex: 1, marginHorizontal: 10 }}>
+                                        <AnimBar pct={cat.pct} color={cat.color} height={5} />
+                                    </View>
+                                    <Text style={s.legendAmt}>Q {cat.value.toFixed(0)}</Text>
+                                    <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
+                                </TouchableOpacity>
+                            ))}
+                            {byCat.length > 6 && (
+                                <Text style={{ color: C.textSub, fontSize: 11, textAlign: "center", marginTop: 6 }}>
+                                    +{byCat.length - 6} categorías más
+                                </Text>
+                            )}
+                        </View>
+
+                        {/* Tasa de ahorro */}
+                        <View style={[s.savingsRow, { marginTop: 16 }]}>
+                            <Text style={s.savingsLbl}>Tasa de Ahorro</Text>
+                            <Text style={[s.savingsVal, { color: savingsColor }]}>
+                                {savingsRate.toFixed(1)}%
+                            </Text>
+                        </View>
+                        <AnimBar pct={Math.max(0, Math.min(savingsRate, 100))} color={savingsColor} />
+                        <Text style={[s.savingsHint, { color: savingsRate >= 20 ? C.income : C.warning }]}>
+                            {savingsRate >= 20 ? "Excelente: superás el 20% recomendado" : savingsRate >= 0 ? "Bajo: apuntá al 20% mínimo" : "Negativo: gastás más de lo que ingresás"}
                         </Text>
-                    </View>
-                    <AnimBar pct={Math.max(0, Math.min(savingsRate, 100))} color={savingsRate >= 20 ? C.income : savingsRate >= 0 ? C.warning : C.danger} />
-                    <Text style={[s.savingsHint, { color: savingsRate >= 20 ? C.income : C.warning }]}>
-                        {savingsRate >= 20 ? "✅ Excelente — superás el 20% recomendado" : savingsRate >= 0 ? "⚠️ Bajo — apunta al 20% mínimo" : "🔴 Negativo — gastás más de lo que ingresás"}
-                    </Text>
+                    </GlassCard>
                 </View>
             )}
 
             {/* STAT 1 — Flujo proyectado */}
-            <View ref={projRef} collapsable={false}>
-                <StatCard icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
-                    subtitle={stat1Subtitle}
-                />
-            </View>
+            <StatCard tutRef={projRef} icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
+                subtitle={stat1Subtitle}
+            />
 
             {/* STAT 2 — Comparativa mes a mes */}
-            <StatCard icon="bar-chart-outline" title="Comparativa Últimos 6 Meses" value="" color={C.primary}>
+            <StatCard tutRef={compareRef} icon="bar-chart-outline" title="Comparativa Últimos 6 Meses" value="" color={C.primary}>
                 <Text style={s.chartLabel}>GASTOS</Text>
                 <VertBars data={expByMonth} color={C.expense} labels={last6Months.map(m => m.label)} />
                 <View style={{ height: 28 }} />
@@ -442,7 +482,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                 {period === "current" && velocityDiff !== 0 && (
                     <View style={[s.trendBadge, { backgroundColor: velocityDiff > 0 ? C.danger + "22" : C.income + "22", marginTop: 12 }]}>
                         <Ionicons name={velocityDiff > 0 ? "trending-up" : "trending-down"} size={14} color={velocityDiff > 0 ? C.danger : C.income} />
-                        <Text style={{ color: velocityDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", marginLeft: 6 }}>
+                        <Text style={{ flexShrink: 1, color: velocityDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", marginLeft: 6 }}>
                             {velocityDiff > 0 ? "+" : "-"}Q{Math.abs(velocityDiff).toFixed(0)} vs período anterior ({velocityPct.toFixed(0)}%)
                         </Text>
                     </View>
@@ -450,7 +490,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
             </StatCard>
 
             {/* STAT 3 — Ahorro acumulado (flujo de transacciones, no saldo de cuentas) */}
-            <StatCard icon="diamond-outline" title="Ahorro Acumulado" value={`Q ${(netWorthByMonth[netWorthByMonth.length - 1] || 0).toFixed(0)}`} color={C.primaryLight}
+            <StatCard tutRef={accumulatedRef} icon="diamond-outline" title="Ahorro Acumulado" value={`Q ${(netWorthByMonth[netWorthByMonth.length - 1] || 0).toFixed(0)}`} color={C.primaryLight}
                 subtitle="Ingresos menos gastos registrados en Q, acumulado en los últimos 6 meses. No es el saldo de tus cuentas (eso lo ves en Cuentas y en el Dashboard) — es tu tendencia de ahorro según lo que fuiste registrando."
             >
                 <View style={{ marginTop: 12 }}>
@@ -459,28 +499,28 @@ export default function StatsScreen({ transactions, settings }: Props) {
             </StatCard>
 
             {/* STAT 4 — Gasto promedio diario */}
-            <StatCard icon="today-outline" title="Gasto Promedio Diario" value={`Q ${avgDaily.toFixed(2)}/día`} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent}
+            <StatCard tutRef={dailyRef} icon="today-outline" title="Gasto Promedio Diario" value={`Q ${avgDaily.toFixed(2)}/día`} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent}
                 subtitle={`Tu presupuesto diario ideal es Q${avgDailyBudget.toFixed(2)}/día. Vas al ${Math.round(dailyPct)}% de ese límite.`}
             >
                 <AnimBar pct={dailyPct} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent} />
             </StatCard>
 
             {/* STAT 5 — Días sin gastar */}
-            <StatCard icon="shield-checkmark-outline" title="Días Sin Gastar" value={`${daysWithoutExpense} días`} color={daysWithoutExpense >= 3 ? C.income : C.textSub}
+            <StatCard tutRef={noSpendRef} icon="shield-checkmark-outline" title="Días Sin Gastar" value={`${daysWithoutExpense} días`} color={daysWithoutExpense >= 3 ? C.income : C.textSub}
                 subtitle={`De ${daysElapsed} días del período, gastaste en ${daysWithExpense}.`}
             />
 
             {/* STAT 6 — Desglose por banco */}
             {byBank.length > 0 && (
-                <StatCard icon="business-outline" title="Gasto por Banco / Tarjeta" value="" color="#4A9EE8">
+                <StatCard tutRef={banksRef} icon="business-outline" title="Gasto por Banco / Tarjeta" value="" color={C.fx}>
                     {byBank.map(b => (
                         <View key={b.bank} style={s.bankRow}>
                             <View style={s.bankInfo}>
-                                <Text style={s.bankName}>{b.bank}</Text>
-                                <Text style={s.bankCount}>{b.count} transacciones</Text>
+                                <Text style={s.bankName} numberOfLines={1}>{b.bank}</Text>
+                                <Text style={s.bankCount} numberOfLines={1}>{b.count} transacciones</Text>
                             </View>
                             <View style={{ flex: 1, marginHorizontal: 12 }}>
-                                <AnimBar pct={(b.amount / bankMax) * 100} color="#4A9EE8" height={6} />
+                                <AnimBar pct={(b.amount / bankMax) * 100} color={C.fx} height={6} />
                             </View>
                             <Text style={s.bankAmount}>Q {b.amount.toFixed(0)}</Text>
                         </View>
@@ -490,8 +530,8 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* STAT 7 — Ratio deuda/ingreso */}
             {settings.activeDebts > 0 && (
-                <StatCard icon="alert-circle-outline" title="Ratio Deuda / Ingreso" value={`${debtRatio.toFixed(1)}%`} color={debtColor}
-                    subtitle={debtRatio > 40 ? "⚠️ Ratio peligroso. Más del 40% de tu ingreso mensual es deuda." : debtRatio > 20 ? "📊 Ratio moderado. Busca reducirlo progresivamente." : "✅ Ratio saludable. Tu deuda está bajo control."}
+                <StatCard tutRef={debtRef} icon="alert-circle-outline" title="Ratio Deuda / Ingreso" value={`${debtRatio.toFixed(1)}%`} color={debtColor}
+                    subtitle={debtRatio > 40 ? "Ratio peligroso: más del 40% de tu ingreso mensual es deuda." : debtRatio > 20 ? "Ratio moderado: buscá reducirlo progresivamente." : "Ratio saludable: tu deuda está bajo control."}
                 >
                     <AnimBar pct={Math.min(debtRatio, 100)} color={debtColor} />
                 </StatCard>
@@ -499,15 +539,15 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* STAT 8 — Velocidad de gasto */}
             {period === "current" && (
-                <StatCard icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : `${velocityDiff > 0 ? "+" : ""}Q ${velocityDiff.toFixed(0)}`}
+                <StatCard tutRef={velocityRef} icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : `${velocityDiff > 0 ? "+" : ""}Q ${velocityDiff.toFixed(0)}`}
                     color={velocityDiff > 0 ? C.danger : velocityDiff < 0 ? C.income : C.textSub}
                     subtitle={velocityDiff > 0 ? `Gastás Q${velocityDiff.toFixed(0)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás Q${Math.abs(velocityDiff).toFixed(0)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
                 />
             )}
 
             {/* STAT 9 — Proyección de ahorro (misma métrica de flujo que la tarjeta de arriba) */}
-            <StatCard icon="rocket-outline" title="Proyección de Ahorro" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
-                subtitle={`A tu ritmo actual de ahorro (Q${avgMonthlySav.toFixed(0)}/mes), tu ahorro acumulado en 12 meses sería Q${Math.max(proj12, 0).toFixed(0)}.${avgMonthlySav < 0 ? " ⚠️ Estás en negativo." : ""} (Basado en transacciones registradas, no en el saldo de tus cuentas.)`}
+            <StatCard tutRef={savingsProjRef} icon="rocket-outline" title="Proyección de Ahorro" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
+                subtitle={`A tu ritmo actual de ahorro (Q${avgMonthlySav.toFixed(0)}/mes), tu ahorro acumulado en 12 meses sería Q${Math.max(proj12, 0).toFixed(0)}.${avgMonthlySav < 0 ? " Atención: estás en negativo." : ""} (Basado en transacciones registradas, no en el saldo de tus cuentas.)`}
             />
 
             <View style={{ height: 120 }} />
@@ -519,20 +559,16 @@ export default function StatsScreen({ transactions, settings }: Props) {
 // ESTILOS
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-    screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-    pageHeader: { marginBottom: 20 },
-    pageTitle: { color: C.textPrimary, fontSize: 28, fontWeight: "900", letterSpacing: 0.5 },
-    pageSubtitle: { color: C.textSub, fontSize: 13, marginTop: 4 },
-    filterRow: { flexDirection: "row", gap: 8, marginBottom: 20 },
-    filterTab: { flex: 1, paddingVertical: 10, paddingHorizontal: 4, borderRadius: 10, borderWidth: 1, borderColor: C.cardBorder, alignItems: "center", backgroundColor: C.bgDeep },
-    filterTabActive: { borderColor: C.primary, borderTopColor: C.primaryLight, backgroundColor: C.primaryDark + "33", ...shadow(C.primaryGlow, 6, 0.3) },
-    filterTxt: { color: C.textSub, fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
-    filterTxtActive: { color: C.primaryLight, fontWeight: "900" },
+    screen: { flex: 1, paddingHorizontal: 16 },
+    periodRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, paddingHorizontal: 4 },
+    periodTxt: { color: C.textSub, fontSize: 11, fontWeight: "700", flexShrink: 1 },
     quickRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
-    quickCard: { flex: 1, backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.cardBorder, borderTopWidth: 2, padding: 12, alignItems: "center" },
-    quickLbl: { color: C.textMuted, fontSize: 9, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
+    quickCard: { flex: 1 },
+    quickContent: { padding: 12, alignItems: "center" },
+    quickLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
     quickVal: { fontSize: 15, fontWeight: "900" },
-    card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.cardBorder, padding: 16, marginBottom: 14, ...shadow("#000", 6, 0.3) },
+    cardWrap: { marginBottom: 14 },
+    cardContent: { padding: 16 },
     cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
     cardIcon: { width: 34, height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
     cardTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5, flex: 1 },
@@ -542,18 +578,18 @@ const s = StyleSheet.create({
     slicePct: { fontSize: 22, fontWeight: "900" },
     legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6 },
     legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-    legendLabel: { color: C.text, fontSize: 12, fontWeight: "600", width: 80 },
-    legendAmt: { color: C.textSub, fontSize: 11, fontWeight: "700", width: 55, textAlign: "right" },
-    legendPct: { fontSize: 11, fontWeight: "900", width: 35, textAlign: "right" },
+    legendLabel: { color: C.text, fontSize: 12, fontWeight: "600", flex: 1, minWidth: 0 },
+    legendAmt: { color: C.textSub, fontSize: 11, fontWeight: "700", textAlign: "right" },
+    legendPct: { fontSize: 11, fontWeight: "900", minWidth: 35, textAlign: "right" },
     savingsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
     savingsLbl: { color: C.textSub, fontSize: 12, fontWeight: "600" },
     savingsVal: { fontSize: 18, fontWeight: "900" },
     savingsHint: { fontSize: 11, marginTop: 6 },
-    chartLabel: { color: C.textMuted, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 8 },
+    chartLabel: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 8 },
     trendBadge: { flexDirection: "row", alignItems: "center", padding: 10, borderRadius: 10 },
     bankRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-    bankInfo: { width: 80 },
+    bankInfo: { flexShrink: 1, maxWidth: "35%" },
     bankName: { color: C.text, fontSize: 12, fontWeight: "700" },
-    bankCount: { color: C.textMuted, fontSize: 10 },
-    bankAmount: { color: C.textPrimary, fontSize: 13, fontWeight: "800", width: 60, textAlign: "right" },
+    bankCount: { color: C.textSub, fontSize: 10 },
+    bankAmount: { color: C.textPrimary, fontSize: 13, fontWeight: "800", minWidth: 60, textAlign: "right" },
 });

@@ -276,7 +276,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                                 pressed && s.btnPressed,
                             ]}
                         >
-                            <Text style={[s.btnTxt, { color: "#1A0E00" }]}>Aplicar ({counts.total})</Text>
+                            <Text style={[s.btnTxt, { color: C.onPrimary }]}>Aplicar ({counts.total})</Text>
                         </Pressable>
                     </View>
                 </GlassCard>

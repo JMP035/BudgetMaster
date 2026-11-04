@@ -42,6 +42,23 @@ este sistema** — no estilos planos ni `Alert.alert` nativo ni grises genérico
   y `flexWrap`/`flexShrink` en filas con texto + badges, en vez de anchos fijos
   — otro bug real reportado (badge de tutorial cortado en pantallas chicas).
 
+## Componentes base (usar siempre antes de crear estilos propios)
+
+- `GlassDialogProvider` / `useGlassDialog()` — `dialog.confirm(...)` y `dialog.alert(...)`
+  reemplazan a `Alert.alert` y `window.confirm`. Nunca usar alertas nativas.
+- `InlineNotice` — mensajes de validación/estado dentro de formularios y pantallas.
+- `GlassSheet` — todo bottom sheet con formulario (ya trae teclado, scroll y safe area).
+- `GlassSegmented` — pestañas/filtros (alto explícito; nunca `flex:1` en el tocable interno).
+- `GlassButton` — botones primario/secundario/destructivo/ghost.
+- `ScreenHeader` + `HelpButton` — encabezado de cada módulo con el "?" que abre su tutorial.
+- Tokens extra de `theme.ts`: `C.onPrimary` (texto sobre bronce), `C.fx` (moneda extranjera),
+  `C.glassInput`/`C.glassInputBorder`, `C.glassActive`/`C.glassActiveBorder`.
+- Pantalla o módulo nuevo: registrar sus elementos con `useTutorialRef`, su ScrollView con
+  `useTutorialScroll(key)` y agregar su tutorial en `services/Tutorial.ts`.
+- Montos con `parseAmount` (nunca `parseFloat`); fechas con `formatDateOnly`/`parseDateOnly`
+  (nunca `new Date("YYYY-MM-DD")`); inputs en formularios con KeyboardAvoidingView
+  `behavior="padding"` + `keyboardShouldPersistTaps="handled"`.
+
 ## Referencia
 
 Ver `components/Dashboard.tsx` (ScoreWidget, CurrencyCard, AccountsWidget,

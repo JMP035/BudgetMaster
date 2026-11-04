@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   LayoutAnimation, Platform, StatusBar,
   StyleSheet, Text, TouchableOpacity,
@@ -8,15 +8,17 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Account, AppData, CategoryBudget, CreditInstallment,
-  DEFAULT_SETTINGS, FixedExpense, SavingsGoal,
+  DEFAULT_SETTINGS, FixedExpense, parseAmount, SavingsGoal,
   StorageService, Transaction, UserSettings
 } from "../services/storage";
+import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
 import { C, shadow } from "../theme";
 import { GlassBackground } from "../components/GlassCard";
+import { GlassDialogProvider } from "../components/GlassDialogProvider";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -42,28 +44,34 @@ export type Tab = "dashboard" | "transactions" | "add" | "budget" | "stats" | "s
 // ─────────────────────────────────────────────────────────────
 // ONBOARDING → SETTINGS
 // ─────────────────────────────────────────────────────────────
+// Parsea montos con separadores ambiguos (convención de Guatemala); vacío o inválido = 0
+const num = (x: any): number => {
+  const n = parseAmount(String(x ?? ""));
+  return isNaN(n) ? 0 : n;
+};
+
 function buildSettingsFromOnboarding(data: any): UserSettings {
   const totalDebts = data.activeDebtsList?.length > 0
-    ? data.activeDebtsList.reduce((s: number, d: any) => s + parseFloat(d.monthlyPayment || "0"), 0)
-    : parseFloat(data.activeDebts || "0");
+    ? data.activeDebtsList.reduce((s: number, d: any) => s + num(d.monthlyPayment), 0)
+    : num(data.activeDebts);
 
   return {
     ...DEFAULT_SETTINGS,
     userName: data.name || "Usuario",
     currency: data.currency || "Q",
-    monthlyIncome: parseFloat(data.monthlyIncome || "0"),
-    monthlyIncomeUSD: data.currency === "USD" ? parseFloat(data.monthlyIncome || "0") : 0,
+    monthlyIncome: num(data.monthlyIncome),
+    monthlyIncomeUSD: data.currency === "USD" ? num(data.monthlyIncome) : 0,
     paymentCycle: data.paymentCycle || "monthly",
     paymentDay: parseInt(data.paymentDay || "30"),
     paymentDays: (() => {
       const parsed = (data.paymentDays || "").split(",").map((d: string) => parseInt(d.trim())).filter((n: number) => !isNaN(n));
       return parsed.length > 0 ? parsed : [15, 30];
     })(),
-    budgetLimit: parseFloat(data.monthlyIncome || "6000") * 0.8,
+    budgetLimit: (num(data.monthlyIncome) || 6000) * 0.8,
     activeDebts: totalDebts,
-    monthlySavingsGoal: parseFloat(data.monthlySavings || "0"),
+    monthlySavingsGoal: num(data.monthlySavings),
     preferredBanks: data.preferredBanks || [],
-    externalSavings: parseFloat(data.externalSavings || "0"),
+    externalSavings: num(data.externalSavings),
     onboardingComplete: true,
     tutorialComplete: true,
     activeDebtsList: data.activeDebtsList || [],
@@ -124,7 +132,7 @@ function TabBar({ tab, showAI, onSwitch, onToggleAI }: TabBarProps) {
                 <Ionicons
                   name={t.icon}
                   size={isAdd ? 30 : 22}
-                  color={isAdd ? "#1A0E00" : isActive ? C.primaryLight : C.textMuted}
+                  color={isAdd ? C.onPrimary : isActive ? C.primaryLight : C.textMuted}
                 />
               </View>
               {!isAdd && (
@@ -155,6 +163,10 @@ function AppContent() {
   const [refreshing, setRefreshing] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
+  // Espejo síncrono de showAccounts y marca de "Cuentas lo abrió el tutorial" (para cerrarlo al terminar)
+  const showAccountsRef = useRef(false);
+  showAccountsRef.current = showAccounts;
+  const tutorialOpenedAccountsRef = useRef(false);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
   const contentRef = useTutorialRef('app_content');
@@ -184,18 +196,42 @@ function AppContent() {
 
     void NotificationService.syncFixedExpenseReminders(data.fixedExpenses).catch(e => console.warn("[loadData] recordatorios:", e));
 
+    // Sincronizar el tipo de cambio (salvo que el usuario lo haya fijado a mano).
+    // Sin red, getRate devuelve offline:true y no se pisa nada.
+    if (settingsToUse.exchangeRateMode !== 'manual') {
+      const current = settingsToUse;
+      void ExchangeRateService.getRate()
+        .then(async r => {
+          if (r.offline || Math.abs(r.rate - current.exchangeRate) < 1e-5) return;
+          const fresh = await StorageService.getSettings();
+          if (fresh.exchangeRateMode === 'manual') return;
+          const upd: UserSettings = {
+            ...fresh,
+            exchangeRate: r.rate,
+            exchangeRateSource: r.source,
+            exchangeRateUpdatedAt: new Date(r.timestamp).toISOString(),
+          };
+          await StorageService.saveSettings(upd);
+          setSettings(upd);
+        })
+        .catch(e => console.warn("[loadData] tipo de cambio:", e));
+    }
+
     return { ...data, settings: settingsToUse };
   }, []);
 
   useEffect(() => {
     (async () => {
       const data = await loadData();
+      // El tour automático solo corre si el onboarding ya está completo
+      if (data.settings.onboardingComplete) {
+        TutorialService.isCompleted('tour_inicial').then(done => {
+          if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
+        }).catch(() => { });
+      }
       const granted = await NotificationService.requestPermissions();
       if (granted) await NotificationService.runStartupNotifications(data);
     })().catch(e => console.warn("[startup] notificaciones:", e));
-    TutorialService.isCompleted('tour_inicial').then(done => {
-      if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
-    });
   }, [loadData]);
 
   // ── Handlers ──────────────────────────────────────────────
@@ -256,17 +292,17 @@ function AppContent() {
     if (data.activeDebtsList && data.activeDebtsList.length > 0) {
       let allInstallments = [...creditInstallments];
       for (const debt of data.activeDebtsList) {
-        const monthly = parseFloat(debt.monthlyPayment || "0");
+        const monthly = num(debt.monthlyPayment);
         if (monthly <= 0) continue;
 
         const newInstallment: CreditInstallment = {
           id: `onb_${debt.id}`,
           accountId: "",  // Sin cuenta asociada inicialmente
           name: debt.name,
-          totalAmount: parseFloat(debt.totalAmount || "0") || monthly * 12,
+          totalAmount: num(debt.totalAmount) || monthly * 12,
           monthlyPayment: monthly,
-          totalInstallments: parseFloat(debt.totalAmount || "0") > 0
-            ? Math.ceil(parseFloat(debt.totalAmount) / monthly)
+          totalInstallments: num(debt.totalAmount) > 0
+            ? Math.ceil(num(debt.totalAmount) / monthly)
             : 12,
           paidInstallments: 0,
           startDate: new Date().toISOString(),
@@ -299,6 +335,14 @@ function AppContent() {
   // Navegación automática del tutorial: sin LayoutAnimation, para que la
   // medición del spotlight no capture una animación a medias.
   const navigateForTutorial = useCallback((screen: TutorialScreen) => {
+    if (screen === 'accounts') {
+      // Si Cuentas no estaba abierto, lo abre el tutorial y lo cierra al terminar
+      if (!showAccountsRef.current) tutorialOpenedAccountsRef.current = true;
+      showAccountsRef.current = true;
+      setShowAccounts(true);
+      return;
+    }
+    tutorialOpenedAccountsRef.current = false;
     setShowAccounts(false);
     if (screen === 'advisor') {
       setShowAI(true);
@@ -415,10 +459,17 @@ function AppContent() {
         {/* TUTORIAL */}
         <TutorialOverlay
           activeTutorialId={autoTutorial}
-          onTutorialEnd={() => setAutoTutorial(undefined)}
+          onTutorialEnd={() => {
+            setAutoTutorial(undefined);
+            if (tutorialOpenedAccountsRef.current) {
+              tutorialOpenedAccountsRef.current = false;
+              setShowAccounts(false);
+              void loadData();
+            }
+          }}
           showMenu={showTutorialMenu}
           onCloseMenu={() => setShowTutorialMenu(false)}
-          currentScreen={showAI ? 'advisor' : tab}
+          currentScreen={showAccounts ? 'accounts' : showAI ? 'advisor' : tab}
           onNavigateToScreen={navigateForTutorial}
         />
       </View>
@@ -432,9 +483,11 @@ function AppContent() {
 export default function Index() {
   return (
     <TutorialProvider>
-      <BiometricGate>
-        <AppContent />
-      </BiometricGate>
+      <GlassDialogProvider>
+        <BiometricGate>
+          <AppContent />
+        </BiometricGate>
+      </GlassDialogProvider>
     </TutorialProvider>
   );
 }

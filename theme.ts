@@ -33,6 +33,17 @@ export const C = {
     glassHighlight: "rgba(252,225,176,0.55)",
     glassHighlightSoft: "rgba(252,225,176,0.15)",
     overlayScrim: "#000000AA", // fondo oscurecido detrás de modales/diálogos
+    // Tokens aditivos (infraestructura UI). Los que son rgba(...) NO se concatenan con sufijos hex.
+    onPrimary: "#1A0E00",                 // texto/ícono sobre C.primary
+    fx: "#9DB4C0",                        // moneda extranjera (USD/EUR/£)
+    glassInput: "rgba(255,255,255,0.04)",
+    glassInputBorder: "rgba(255,255,255,0.12)",
+    glassActive: "rgba(94,65,35,0.40)",   // primaryDark 40%: chip/pestaña seleccionada
+    glassActiveBorder: "rgba(184,134,75,0.55)",
+    scrimTutorial: "rgba(0,0,0,0.82)",
+    scrimSoft: "rgba(0,0,0,0.60)",
+    spotlightRing: "rgba(227,188,126,0.90)",
+    spotlightGlow: "rgba(252,225,176,0.22)",
 } as const;
 
 export const shadow = (color: string, r = 12, op = 0.5) => ({

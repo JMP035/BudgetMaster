@@ -4,6 +4,7 @@ import {
     CategoryBudget, FixedExpense, SavingsGoal,
     Transaction, UserSettings,
     getCurrentFinancialPeriod, getDaysUntilNextPayment, getEffectivePaymentDay,
+    parseDateOnly, storedDateToDateOnly,
     StorageService,
 } from './storage';
 import { QUOTES, randomQuote } from './FinancialQuotes';
@@ -555,7 +556,7 @@ Responde SOLO el texto, sin encabezados ni formato.
     async notifyGoalProgress(goal: SavingsGoal, settings: UserSettings): Promise<void> {
         const pct = (goal.currentAmount / goal.targetAmount) * 100;
         const remaining = goal.targetAmount - goal.currentAmount;
-        const deadline = new Date(goal.deadline);
+        const deadline = parseDateOnly(storedDateToDateOnly(goal.deadline)) ?? new Date(goal.deadline);
         const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
         const monthly = daysLeft > 0 ? (remaining / (daysLeft / 30)).toFixed(2) : '0';
 

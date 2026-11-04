@@ -6,7 +6,10 @@ import {
     TouchableOpacity, View
 } from "react-native";
 import { StorageService } from "../services/storage";
-import { C, shadow } from "../theme";
+import { C } from "../theme";
+import { GlassButton } from "./GlassButton";
+import { GlassCard } from "./GlassCard";
+import { InlineNotice } from "./InlineNotice";
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -207,25 +210,19 @@ export default function BiometricGate({ children }: Props) {
         return (
             <View style={s.screen}>
                 <View style={s.bgGradient} />
-                <View style={s.card}>
+                <GlassCard radius={28} blur={false} topAccentColor={C.primary} topAccentWidth={2} style={s.card} contentStyle={s.cardContent}>
                     <View style={s.logoWrap}>
                         <View style={s.logoBg}>
-                            <Ionicons name="wallet-outline" size={32} color="#1A0E00" />
+                            <Ionicons name="wallet-outline" size={32} color={C.onPrimary} />
                         </View>
                     </View>
 
                     <Text style={s.appName}>BudgetMaster</Text>
 
-                    <View style={s.errorBox}>
-                        <Ionicons name="alert-circle-outline" size={16} color={C.danger} />
-                        <Text style={s.errorText}>{error}</Text>
-                    </View>
+                    <InlineNotice variant="error" text={error} style={s.notice} />
 
-                    <TouchableOpacity style={s.retryBtn} onPress={initAuth} activeOpacity={0.8}>
-                        <Ionicons name="refresh-outline" size={18} color="#1A0E00" />
-                        <Text style={s.retryText}>Reintentar</Text>
-                    </TouchableOpacity>
-                </View>
+                    <GlassButton label="Reintentar" icon="refresh-outline" onPress={initAuth} style={s.retryBtn} />
+                </GlassCard>
             </View>
         );
     }
@@ -242,11 +239,12 @@ export default function BiometricGate({ children }: Props) {
             <View style={s.bgOrb2} />
 
             <Animated.View style={[s.card, { transform: [{ scale: scaleAnim }, { translateX: shakeAnim }] }]}>
+              <GlassCard radius={28} blur={false} topAccentColor={C.primary} topAccentWidth={2} contentStyle={s.cardContent}>
 
                 {/* LOGO */}
                 <View style={s.logoWrap}>
                     <View style={s.logoBg}>
-                        <Ionicons name="wallet-outline" size={32} color="#1A0E00" />
+                        <Ionicons name="wallet-outline" size={32} color={C.onPrimary} />
                     </View>
                 </View>
 
@@ -271,31 +269,23 @@ export default function BiometricGate({ children }: Props) {
                 <Text style={s.instruction}>Tocá el sensor para acceder</Text>
 
                 {/* ERROR */}
-                {error ? (
-                    <View style={s.errorBox}>
-                        <Ionicons name="alert-circle-outline" size={16} color={C.danger} />
-                        <Text style={s.errorText}>{error}</Text>
-                    </View>
-                ) : null}
+                {error ? <InlineNotice variant="error" text={error} style={s.notice} /> : null}
 
                 {/* BOTÓN DE REINTENTO */}
-                <TouchableOpacity
-                    style={[s.retryBtn, isAuthenticating && s.retryBtnDisabled]}
+                <GlassButton
+                    label={attempts === 0 ? "Autenticar" : "Intentar de nuevo"}
+                    icon="refresh-outline"
                     onPress={attemptAuth}
-                    activeOpacity={0.8}
                     disabled={isAuthenticating}
-                >
-                    <Ionicons name="refresh-outline" size={18} color="#1A0E00" />
-                    <Text style={s.retryText}>
-                        {attempts === 0 ? "Autenticar" : "Intentar de nuevo"}
-                    </Text>
-                </TouchableOpacity>
+                    style={s.retryBtn}
+                />
 
                 {attempts >= 3 && (
                     <Text style={s.hint}>
                         ¿Problemas? Usá PIN o patrón del dispositivo cuando se solicite.
                     </Text>
                 )}
+              </GlassCard>
             </Animated.View>
         </Animated.View>
     );
@@ -321,25 +311,19 @@ const s = StyleSheet.create({
         position: "absolute", width: 200, height: 200, borderRadius: 100,
         backgroundColor: C.accent + "22", bottom: -60, left: -60,
     },
-    card: {
-        width: "88%", backgroundColor: C.card,
-        borderRadius: 28, borderWidth: 1, borderColor: C.cardBorder,
-        borderTopColor: C.primary, borderTopWidth: 2,
-        padding: 32, alignItems: "center",
-        ...shadow(C.primaryGlow, 24, 0.4),
-    },
+    card: { width: "88%" },
+    cardContent: { padding: 32, alignItems: "center" },
     logoWrap: { marginBottom: 16 },
     logoBg: {
         width: 64, height: 64, borderRadius: 18,
         backgroundColor: C.primary, alignItems: "center", justifyContent: "center",
-        ...shadow(C.primaryGlow, 12, 0.5),
     },
     appName: {
         color: C.textPrimary, fontSize: 26, fontWeight: "900",
         letterSpacing: 0.5, marginBottom: 4,
     },
     subtitle: {
-        color: C.textMuted, fontSize: 13, marginBottom: 32,
+        color: C.textSub, fontSize: 13, marginBottom: 32,
     },
     biometricWrap: {
         width: 100, height: 100, alignItems: "center", justifyContent: "center", marginBottom: 12,
@@ -361,24 +345,12 @@ const s = StyleSheet.create({
         letterSpacing: 1, marginBottom: 4,
     },
     instruction: {
-        color: C.textMuted, fontSize: 12, marginBottom: 24,
+        color: C.textSub, fontSize: 12, marginBottom: 24,
     },
-    errorBox: {
-        flexDirection: "row", alignItems: "center", gap: 8,
-        backgroundColor: C.danger + "15", borderWidth: 1, borderColor: C.danger + "44",
-        borderRadius: 12, padding: 12, marginBottom: 16, width: "100%",
-    },
-    errorText: { color: C.danger, fontSize: 12, flex: 1 },
-    retryBtn: {
-        flexDirection: "row", alignItems: "center", justifyContent: "center",
-        gap: 10, backgroundColor: C.primary, borderRadius: 16,
-        paddingVertical: 16, paddingHorizontal: 32, width: "100%",
-        ...shadow(C.primaryGlow, 10, 0.5),
-    },
-    retryText: { color: "#1A0E00", fontSize: 15, fontWeight: "900" },
-    retryBtnDisabled: { opacity: 0.5 },
+    notice: { width: "100%", marginBottom: 16 },
+    retryBtn: { width: "100%" },
     hint: {
-        color: C.textMuted, fontSize: 11, textAlign: "center",
+        color: C.textSub, fontSize: 11, textAlign: "center",
         marginTop: 16, lineHeight: 17,
     },
 });
