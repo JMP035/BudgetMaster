@@ -1,8 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator, Alert, Animated, Easing, Linking, Modal, Platform, RefreshControl,
-    ScrollView, StyleSheet, Text, TouchableOpacity, View
+    ActivityIndicator, Animated, Easing, Linking, Modal, Platform, RefreshControl,
+    ScrollView, Share, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
@@ -12,6 +12,8 @@ import {
     getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
+import type { SmsPermissionDetail, SmsReviewItem, SyncResult } from "../services/SmsService";
+import { maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
 import { C } from "../theme";
@@ -19,6 +21,28 @@ import { useTutorialRef } from "../context/TutorialContext";
 import { TutorialMenuButton } from "./TutorialOverlay";
 import { GlassCard, GlassBackground } from "./GlassCard";
 import GradientText from "./GradientText";
+import { GlassDialog } from "./GlassDialog";
+import type { GlassDialogProps, GlassDialogStat } from "./GlassDialog";
+import SmsReviewModal from "./SmsReviewModal";
+
+type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
+
+// Estadísticas del diálogo de sincronización: las 3 primeras siempre, el resto solo si > 0.
+function buildSyncStats(r: SyncResult): { stats: GlassDialogStat[]; footnote?: string } {
+    const st = r.stats;
+    const stats: GlassDialogStat[] = [
+        { icon: "mail-outline", label: "SMS revisados (últimos 3 meses)", value: st.totalRead },
+        { icon: "business-outline", label: "Mensajes bancarios", value: st.bankCandidates },
+        { icon: "copy-outline", label: "Ya registrados", value: st.duplicates + st.dismissedByUser },
+    ];
+    if (st.installments > 0) stats.push({ icon: "layers-outline", label: "Compras a cuotas", value: st.installments, tone: "positive" });
+    if (st.neutral > 0) stats.push({ icon: "swap-horizontal-outline", label: "Pagos de tarjeta y transferencias neutras", value: st.neutral });
+    if (st.promos > 0) stats.push({ icon: "megaphone-outline", label: "Promociones y ofertas omitidas", value: st.promos, tone: "muted" });
+    if (st.otp > 0) stats.push({ icon: "key-outline", label: "Códigos y alertas de seguridad omitidos", value: st.otp, tone: "muted" });
+    if (st.declined > 0) stats.push({ icon: "close-circle-outline", label: "Transacciones rechazadas omitidas", value: st.declined, tone: "muted" });
+    if (st.unparsed > 0) stats.push({ icon: "help-circle-outline", label: "Mensajes bancarios no reconocidos", value: st.unparsed, tone: "warning" });
+    return { stats, footnote: st.installments > 0 ? "Revisalas en Cuentas → Visacuotas." : undefined };
+}
 
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
@@ -444,7 +468,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
 }
 
 const ni = StyleSheet.create({
-    overlay: { flex: 1, backgroundColor: "#000000AA", alignItems: "center", justifyContent: "center", padding: 24 },
+    overlay: { flex: 1, backgroundColor: C.overlayScrim, alignItems: "center", justifyContent: "center", padding: 24 },
     card: { width: "100%", maxWidth: 380, backgroundColor: C.cardHigh },
     content: { padding: 22 },
     iconWrap: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.primary + "22", borderWidth: 1, borderColor: C.primary + "44", alignItems: "center", justifyContent: "center", marginBottom: 12 },
@@ -494,6 +518,9 @@ export default function DashboardScreen({
     const [briefingLoading, setBriefingLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [showNetWorthInfo, setShowNetWorthInfo] = useState(false);
+    const [dialog, setDialog] = useState<SyncDialogState | null>(null);
+    const [reviewItems, setReviewItems] = useState<SmsReviewItem[]>([]);
+    const [showReview, setShowReview] = useState(false);
 
     useEffect(() => {
         const load = async () => {
@@ -505,48 +532,186 @@ export default function DashboardScreen({
         load();
     }, [transactions.length, settings.budgetLimit, settings.userName]);
 
-    const showSmsPermissionDenied = () => {
-        Alert.alert(
-            "Permiso de SMS necesario",
-            "Sin permiso para leer SMS, BudgetMaster no puede detectar tus movimientos bancarios. Podés concederlo ahora, o seguir registrando a mano (o pegando el SMS en Agregar → Leer SMS).",
-            [
-                { text: "Cancelar", style: "cancel" },
-                { text: "Reintentar", onPress: () => { void handleSmsSync(); } },
-                { text: "Abrir Ajustes", onPress: () => { void Linking.openSettings(); } },
-            ]
+    // ── Flujo de sincronización SMS (GlassDialog, sin Alert nativo) ──
+    // Android no maneja bien dos Modal a la vez: se cierra uno y se abre el otro con una pausa.
+    const SWITCH_DELAY_MS = 250;
+    const closeDialog = () => setDialog(null);
+    const afterDialogClosed = (fn: () => void) => {
+        setDialog(null);
+        setTimeout(fn, SWITCH_DELAY_MS);
+    };
+    const openSystemSettings = () => {
+        afterDialogClosed(() => { Linking.openSettings().catch(() => { }); });
+    };
+
+    const openReview = (items: SmsReviewItem[]) => {
+        setReviewItems(items);
+        afterDialogClosed(() => setShowReview(true));
+    };
+
+    // Texto compartible: no reconocidos + primeros 20 descartados como promo, con datos sensibles ocultos.
+    const diagnosticLines = (diagnostics: SyncResult["diagnostics"]) => {
+        const unparsed = diagnostics.filter(d => d.kind === "unparsed");
+        const promos = diagnostics.filter(d => d.kind === "promo").slice(0, 20);
+        return [...unparsed, ...promos].map(d =>
+            `${d.kind} | ${d.reason} | ${maskSmsForDiagnostics(d.body).replace(/\s+/g, " ").trim()}`
         );
     };
 
-    const showSmsPermissionBlocked = () => {
-        Alert.alert(
-            "Permiso de SMS bloqueado",
-            "Android tiene bloqueado el permiso de SMS para BudgetMaster (elegiste \"No volver a preguntar\"). Para activarlo: Ajustes del teléfono → Apps → BudgetMaster → Permisos → SMS → Permitir.",
-            [
-                { text: "Cancelar", style: "cancel" },
-                { text: "Abrir Ajustes", onPress: () => { void Linking.openSettings(); } },
+    const shareDiagnostics = async (lines: string[]) => {
+        try {
+            await Share.share({
+                message: `BudgetMaster - SMS no reconocidos (${lines.length})\nformato: tipo | motivo | texto\n\n${lines.join("\n")}`,
+            });
+        } catch (e) {
+            console.warn("Share diagnostics error:", e instanceof Error ? e.message : "desconocido");
+        }
+    };
+
+    const askShareDiagnostics = (diagnostics: SyncResult["diagnostics"]) => {
+        const lines = diagnosticLines(diagnostics);
+        if (lines.length === 0) return;
+        setDialog({
+            variant: "info",
+            icon: "share-social-outline",
+            title: "Compartir no reconocidos",
+            message: `Se compartirá el texto de ${lines.length} mensaje${lines.length === 1 ? "" : "s"} bancario${lines.length === 1 ? "" : "s"} con números de cuenta ocultos. Revisalo antes de enviarlo.`,
+            footnote: "Sirve para enseñarle a la app a reconocer más formatos de tu banco.",
+            actions: [
+                { label: "Cancelar", kind: "secondary", onPress: closeDialog },
+                { label: "Compartir", kind: "primary", icon: "share-social-outline", onPress: () => afterDialogClosed(() => { void shareDiagnostics(lines); }) },
+            ],
+        });
+    };
+
+    const showSmsUnavailable = () => setDialog({
+        variant: "warning",
+        icon: "construct-outline",
+        title: "Función no disponible",
+        message: "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.",
+    });
+
+    const showSmsPermissionDenied = () => setDialog({
+        variant: "warning",
+        icon: "chatbubble-ellipses-outline",
+        title: "Permiso de SMS necesario",
+        message: "Sin este permiso BudgetMaster no puede detectar tus movimientos bancarios. Todo se procesa en tu teléfono y solo se leen mensajes de bancos.",
+        footnote: "También podés pegar un SMS en Agregar → Leer SMS.",
+        actions: [
+            { label: "Reintentar", kind: "primary", onPress: () => afterDialogClosed(() => { void handleSmsSync(); }) },
+            { label: "Abrir ajustes", kind: "secondary", onPress: openSystemSettings },
+            { label: "Ahora no", kind: "secondary", onPress: closeDialog },
+        ],
+    });
+
+    const showSmsPermissionBlocked = (perm: SmsPermissionDetail) => {
+        const apiLevel = perm.apiLevel ?? 0;
+        const restricted = apiLevel >= 33;
+        const message = perm.instantDenial && restricted
+            ? "Android bloqueó el permiso sin preguntarte. Es lo normal cuando la app se instaló desde un APK (fuera de Play Store): Android lo trata como «configuración restringida»."
+            : "Android ya no muestra el aviso de permiso porque se rechazó antes con «No volver a preguntar».";
+        const steps = restricted
+            ? [
+                "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
+                "Tocá el menú de tres puntos arriba a la derecha y elegí «Permitir configuración restringida». Si no aparece, seguí al paso 3.",
+                "Entrá a Permisos → SMS → Permitir.",
+                "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
             ]
-        );
+            : [
+                "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
+                "Entrá a Permisos → SMS → Permitir.",
+                "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
+            ];
+        const maker = perm.manufacturer.toLowerCase();
+        const footnote = maker.includes("honor") || maker.includes("huawei")
+            ? "En Honor/MagicOS, si no ves la opción: Ajustes → Apps → Apps → BudgetMaster → Permisos. Algunos modelos también piden habilitarlo en Gestor del teléfono → Permisos."
+            : undefined;
+        setDialog({
+            variant: "warning",
+            icon: "lock-closed-outline",
+            title: "Permiso de SMS bloqueado",
+            message,
+            steps,
+            footnote,
+            actions: [
+                { label: "Abrir ajustes", kind: "primary", onPress: openSystemSettings },
+                { label: "Cancelar", kind: "secondary", onPress: closeDialog },
+            ],
+        });
+    };
+
+    const showSyncResult = (result: SyncResult) => {
+        const { stats, footnote } = buildSyncStats(result);
+        const imported = result.transactions.length + result.installments.length;
+        const hasReview = result.reviewItems.length > 0;
+        const hasUnparsed = result.stats.unparsed > 0 && diagnosticLines(result.diagnostics).length > 0;
+
+        const actions: GlassDialogProps["actions"] = [];
+        if (hasReview) {
+            actions.push({
+                label: `Revisar dudosos (${result.reviewItems.length})`,
+                kind: "secondary",
+                icon: "shield-checkmark-outline",
+                onPress: () => openReview(result.reviewItems),
+            });
+        }
+        if (hasUnparsed) {
+            actions.push({
+                label: "Compartir no reconocidos",
+                kind: "secondary",
+                icon: "share-social-outline",
+                onPress: () => afterDialogClosed(() => askShareDiagnostics(result.diagnostics)),
+            });
+        }
+        actions.push({ label: "Listo", kind: "primary", onPress: closeDialog });
+
+        if (imported > 0) {
+            setDialog({
+                variant: "success",
+                icon: "cloud-done-outline",
+                title: "Sincronización completa",
+                highlight: { value: String(result.stats.imported + result.stats.installments), caption: "movimientos importados" },
+                stats,
+                footnote,
+                actions,
+            });
+        } else {
+            setDialog({
+                variant: "info",
+                icon: "checkmark-done-outline",
+                title: "Todo al día",
+                message: "No encontramos movimientos nuevos para importar.",
+                stats,
+                footnote,
+                actions,
+            });
+        }
     };
 
     const handleSmsSync = async () => {
         if (syncing) return;
 
         if (Platform.OS !== 'android') {
-            Alert.alert("No disponible", "La sincronización de SMS solo funciona en Android.");
+            setDialog({
+                variant: "info",
+                icon: "phone-portrait-outline",
+                title: "Solo en Android",
+                message: "La sincronización de SMS solo funciona en Android.",
+            });
             return;
         }
 
         if (!SmsService.isSmsModuleAvailable()) {
-            Alert.alert("Función no disponible", "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.");
+            showSmsUnavailable();
             return;
         }
 
-        const perm = await SmsService.ensureReadSmsPermission();
-        if (perm === 'never_ask_again') {
-            showSmsPermissionBlocked();
+        const perm = await SmsService.requestReadSmsPermissionDetailed();
+        if (perm.status === 'never_ask_again') {
+            showSmsPermissionBlocked(perm);
             return;
         }
-        if (perm !== 'granted') {
+        if (perm.status !== 'granted') {
             showSmsPermissionDenied();
             return;
         }
@@ -554,31 +719,22 @@ export default function DashboardScreen({
         setSyncing(true);
         try {
             const result = await SmsService.syncBankSms();
-            if (result.transactions.length > 0 || result.installments.length > 0) {
-                let msg =
-                    `Se importaron ${result.transactions.length} transacción(es).\n\n` +
-                    `📨 SMS leídos: ${result.totalRead}\n` +
-                    `🏦 Bancarios: ${result.totalMatched}\n` +
-                    `⏭ Ya registrados: ${result.totalSkipped}`;
-                if (result.installments.length > 0) {
-                    msg += `\n🔁 Compras a cuotas detectadas: ${result.installments.length} (revisa Cuentas → Visacuotas)`;
-                }
-                Alert.alert("✅ Sincronización Exitosa", msg);
-                onRefresh();
-            } else {
-                Alert.alert("📭 Al día",
-                    `SMS revisados: ${result.totalRead}\n` +
-                    `Bancarios: ${result.totalMatched} | Ya registrados: ${result.totalSkipped}`
-                );
-            }
+            showSyncResult(result);
+            if (result.transactions.length > 0 || result.installments.length > 0) onRefresh();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             if (msg === 'SMS_PERMISSION_DENIED') {
                 showSmsPermissionDenied();
             } else if (msg === 'SMS_MODULE_UNAVAILABLE') {
-                Alert.alert("Función no disponible", "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.");
+                showSmsUnavailable();
             } else {
-                Alert.alert("Error al sincronizar", "No se pudieron leer los SMS: " + msg);
+                setDialog({
+                    variant: "error",
+                    icon: "warning-outline",
+                    title: "No se pudo sincronizar",
+                    message: "No se pudieron leer los SMS. Intentá de nuevo.",
+                    footnote: `Detalle técnico: ${msg}`,
+                });
             }
         } finally {
             setSyncing(false);
@@ -830,6 +986,13 @@ export default function DashboardScreen({
             </GlassCard>
             </ScrollView>
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
+            {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
+            <SmsReviewModal
+                visible={showReview}
+                items={reviewItems}
+                onClose={() => setShowReview(false)}
+                onApplied={() => { setShowReview(false); onRefresh(); }}
+            />
         </View>
     );
 }

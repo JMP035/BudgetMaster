@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-    Alert, KeyboardAvoidingView, Platform, ScrollView,
+    KeyboardAvoidingView, Platform, ScrollView,
     StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import { Account, Currency, Transaction, UserSettings, parseAmount } from "../services/storage";
@@ -9,6 +9,8 @@ import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { C, shadow } from "../theme";
 import { SmsService } from "../services/SmsService";
 import { useTutorialRef } from "../context/TutorialContext";
+import { GlassDialog } from "./GlassDialog";
+import type { GlassDialogProps } from "./GlassDialog";
 
 interface Props {
     onAdd: (tx: Transaction) => void;
@@ -25,6 +27,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [loading, setLoading] = useState(false);
     const [smsText, setSmsText] = useState("");
     const [showSmsInput, setShowSmsInput] = useState(false);
+    const [dialog, setDialog] = useState<Omit<GlassDialogProps, "visible" | "onClose"> | null>(null);
 
     const typeSelectorRef = useTutorialRef('add_type_selector');
     const currencyRef = useTutorialRef('add_currency');
@@ -40,27 +43,61 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const cats = type === "expense" ? expenseCats : incomeCats;
 
     const handleParseSms = () => {
-        if (!smsText.trim()) { Alert.alert("Error", "Pega el texto de tu SMS primero."); return; }
+        if (!smsText.trim()) {
+            setDialog({ variant: "warning", icon: "clipboard-outline", title: "Falta el SMS", message: "Pega el texto de tu SMS primero." });
+            return;
+        }
 
         const parsed = SmsService.parseSimpleSms(smsText, undefined, accounts);
 
         if (!parsed) {
-            Alert.alert("No detectado", "No se reconoció como un mensaje transaccional (puede ser promocional o un formato no soportado). Ingresa la transacción manualmente.");
+            const why = SmsService.explainSms(smsText).reasonLabel;
+            setDialog({
+                variant: "info",
+                icon: "information-circle-outline",
+                title: "No se registró",
+                message: `No se registró: ${why}`,
+                footnote: "Si es un movimiento real, ingresalo manualmente.",
+            });
             return;
         }
 
         if (parsed.kind === "installment") {
             const inst = parsed.installment!;
-            Alert.alert(
-                "Compra a cuotas detectada",
-                `${inst.name}\nTotal: ${inst.currency} ${inst.totalAmount.toFixed(2)}\nCuotas: ${inst.totalInstallments}\nPago mensual: ${inst.currency} ${inst.monthlyPayment.toFixed(2)}\n\nRegístrala desde Cuentas → Visacuotas.`
-            );
+            setDialog({
+                variant: "info",
+                icon: "layers-outline",
+                title: "Compra a cuotas detectada",
+                message: inst.name,
+                stats: [
+                    { icon: "cash-outline", label: "Total", value: `${inst.currency} ${inst.totalAmount.toFixed(2)}` },
+                    { icon: "repeat-outline", label: "Cuotas", value: inst.totalInstallments },
+                    { icon: "calendar-outline", label: "Pago mensual", value: `${inst.currency} ${inst.monthlyPayment.toFixed(2)}` },
+                ],
+                footnote: "Registrala desde Cuentas → Visacuotas.",
+            });
             setShowSmsInput(false);
             setSmsText("");
             return;
         }
 
         const tx = parsed.transaction!;
+
+        // Pago de tarjeta o desembolso: movimiento neutro, no es gasto ni ingreso.
+        if (tx.type === "transfer") {
+            const isLoan = SmsService.explainSms(smsText).kind === "loan_disbursement";
+            setDialog({
+                variant: "info",
+                icon: "swap-horizontal-outline",
+                title: isLoan ? "Desembolso detectado" : "Pago de tarjeta detectado",
+                message: `${tx.description || "Movimiento"} por ${tx.currency} ${tx.amount.toFixed(2)}.`,
+                footnote: "Es un movimiento neutro: no cuenta como gasto ni como ingreso, por eso no se carga en el formulario. La sincronización de SMS en Inicio lo registra como neutro.",
+            });
+            setShowSmsInput(false);
+            setSmsText("");
+            return;
+        }
+
         setCurrency(tx.currency);
         setAmount(tx.amount.toString());
         setType(tx.type === "income" ? "income" : "expense");
@@ -68,13 +105,18 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
         setDesc(tx.description);
         setShowSmsInput(false);
         setSmsText("");
-        Alert.alert("¡Detectado!", `Mensaje de ${tx.bank || "tu banco"} analizado correctamente.`);
+        setDialog({
+            variant: "success",
+            icon: "flash-outline",
+            title: "Detectado",
+            message: `Mensaje de ${tx.bank || "tu banco"} analizado correctamente.`,
+        });
     };
 
     const handleAdd = async () => {
         const amt = parseAmount(amount);
         if (!amount || isNaN(amt) || amt <= 0) {
-            Alert.alert("Error", "Ingresa un monto válido mayor a 0.");
+            setDialog({ variant: "warning", icon: "alert-circle-outline", title: "Monto inválido", message: "Ingresa un monto válido mayor a 0." });
             return;
         }
         setLoading(true);
@@ -240,6 +282,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
 
                 <View style={{ height: 140 }} />
             </ScrollView>
+            {dialog && <GlassDialog visible onClose={() => setDialog(null)} {...dialog} />}
         </KeyboardAvoidingView>
     );
 }

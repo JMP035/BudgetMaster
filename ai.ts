@@ -255,13 +255,4 @@ Proyección fin de mes: ${fmt(projection.projected, cur)}.`;
 // ─────────────────────────────────────────────────────────────
 // DETECCIÓN DE BANCO (para SmsService y otros)
 // ─────────────────────────────────────────────────────────────
-export function detectBankName(text: string): string {
-    // Coincidencia por palabra completa: con includes(), "BI" coincidía con
-    // "reciBIda" y "BAC" con palabras que lo contienen, etiquetando mal el banco.
-    const t = text.toUpperCase();
-    const banks = ["BANRURAL", "BAC", "BAMER", "BI", "INDUSTRIAL", "GYT", "CONTINENTAL", "PROMERICA", "BANTRAB", "CHASE", "BOFA", "SANTANDER", "BBVA", "CITI"];
-    for (const b of banks) {
-        if (new RegExp(`\\b${b}\\b`).test(t)) return b;
-    }
-    return "Banco";
-}
+export { detectBankName } from './services/BankSmsParser';

@@ -32,6 +32,7 @@ export const C = {
     glassBorder: "rgba(255,255,255,0.09)",
     glassHighlight: "rgba(252,225,176,0.55)",
     glassHighlightSoft: "rgba(252,225,176,0.15)",
+    overlayScrim: "#000000AA", // fondo oscurecido detrás de modales/diálogos
 } as const;
 
 export const shadow = (color: string, r = 12, op = 0.5) => ({

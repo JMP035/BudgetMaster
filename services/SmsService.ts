@@ -1,61 +1,57 @@
 import { PermissionsAndroid, Platform } from 'react-native';
 // @ts-ignore
 import SmsAndroid from 'react-native-get-sms-android';
-import { Account, CreditInstallment, StorageService, Transaction } from './storage';
-import { detectBankName } from '../ai';
-import { detectCategory, buildSmartDescription, extractMerchantName, normalizeText } from './Categorizer';
+import { Account, StorageService } from './storage';
 import {
-  detectCurrency, extractAmount, detectTransactionType,
-  detectInstallments, extractBankReference, isTransactionalSms, buildDedupeId,
+  buildExistingSmsIndex, buildRecordFromClassification, classifyBankSms, emptySmsStats,
+  planSmsImport, reasonLabelFor, reviewImportedSms,
 } from './BankSmsParser';
+import type { ParsedSmsResult, SmsImportPlan, SmsImportStats, SmsKind, SmsReviewItem } from './BankSmsParser';
+import type { CreditInstallment, Transaction } from './storage';
+
+// El motor de parseo vive en BankSmsParser (puro, probado con `npm run test:sms`).
+// Aquí solo queda lo que toca APIs de Android: permisos y lectura de la bandeja.
+export { buildRecordFromClassification };
+export type { ParsedSmsResult, SmsImportStats, SmsKind, SmsReviewItem };
 
 // ─────────────────────────────────────────────────────────────
-// KEYWORDS
+// RESULTADO DEL SYNC
 // ─────────────────────────────────────────────────────────────
-function msgContainsBankKeywords(text: string): boolean {
-  const t = text.toLowerCase();
-  const keywords = [
-    'compra', 'consumo', 'retiro', 'debito', 'debitado',
-    'abono', 'deposito', 'depósito', 'transferencia', 'pago',
-    'aprobada por', 'bac visa', 'bac mastercard', 'prf protege',
-    'se debito', 'se acredito', 'cuenta monetaria', 'banrural',
-    'retiro de atm', 'tarjeta de debito', 'no. autorizacion', 'monto:',
-    'informamos', 'debito ift', 'gtq',
-    'promerica', 'notificame', 'transaccion autorizada',
-    'acreditado', 'acredito', 'cargo', 'movimiento',
-    'seguro', 'insurance',
-  ];
-  return keywords.some(k => t.includes(k));
-}
-
-function isOwnTransfer(body: string): boolean {
-  const b = body.toLowerCase();
-  const ownKeywords = ['transferencia inmediata', 'tif', 'transferencias inmediatas', 'entre cuentas'];
-  const hasTransfer = ownKeywords.some(k => b.includes(k));
-  const hasDebit = b.includes('debito') || b.includes('se debito');
-  const hasCredit = b.includes('acredito') || b.includes('se acredito');
-  return hasTransfer && (hasDebit || hasCredit);
-}
-
-// ─────────────────────────────────────────────────────────────
-// RESULTADO DEL PARSEO / SYNC
-// ─────────────────────────────────────────────────────────────
-export interface ParsedSmsResult {
-  kind: 'transaction' | 'installment';
-  transaction?: Transaction;
-  installment?: CreditInstallment;
-}
-
 export interface SyncResult {
+  /** Movimientos NUEVOS creados en esta sincronización. */
   transactions: Transaction[];
+  /** Visacuotas NUEVAS creadas en esta sincronización. */
   installments: CreditInstallment[];
   totalRead: number;
+  /** Mensajes bancarios candidatos (= stats.bankCandidates). */
   totalMatched: number;
+  /** Ya registrados + descartados por el usuario (= duplicates + dismissedByUser). */
   totalSkipped: number;
+  /** Mensajes bancarios que no generaron movimiento (promos, OTP, rechazados, avisos, no reconocidos...). */
   totalIgnored: number;
+  stats: SmsImportStats;
+  /** Movimientos SMS ya guardados que conviene eliminar o corregir (hay que confirmarlo con el usuario). */
+  reviewItems: SmsReviewItem[];
+  /** Mensajes bancarios no importados (máx. 300), para el diagnóstico compartible. */
+  diagnostics: SmsImportPlan['diagnostics'];
 }
 
 export type SmsPermissionStatus = 'granted' | 'denied' | 'never_ask_again' | 'unavailable';
+
+export interface SmsPermissionDetail {
+  status: SmsPermissionStatus;
+  apiLevel: number | null;
+  /** true si Android respondió "no volver a preguntar" al instante (típico de "Configuración restringida"). */
+  instantDenial: boolean;
+  manufacturer: string;
+}
+
+function emptySyncResult(): SyncResult {
+  return {
+    transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
+    stats: emptySmsStats(), reviewItems: [], diagnostics: [],
+  };
+}
 
 // ─────────────────────────────────────────────────────────────
 // SERVICIO PRINCIPAL
@@ -66,161 +62,130 @@ export const SmsService = {
     return Platform.OS === 'android' && !!SmsAndroid && typeof SmsAndroid.list === 'function';
   },
 
-  async ensureReadSmsPermission(): Promise<SmsPermissionStatus> {
-    if (Platform.OS !== 'android') return 'unavailable';
+  async requestReadSmsPermissionDetailed(): Promise<SmsPermissionDetail> {
+    if (Platform.OS !== 'android') {
+      return { status: 'unavailable', apiLevel: null, instantDenial: false, manufacturer: '' };
+    }
+    const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : null;
+    const manufacturer = ((Platform.constants as { Manufacturer?: string } | undefined)?.Manufacturer) ?? '';
     try {
-      if (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)) return 'granted';
+      if (await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS)) {
+        return { status: 'granted', apiLevel, instantDenial: false, manufacturer };
+      }
+      const startedAt = Date.now();
       const res = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_SMS, {
         title: 'Permiso para leer SMS bancarios',
         message: 'BudgetMaster necesita leer tus SMS para detectar los mensajes de tu banco (compras, débitos, abonos) y registrarlos solo. Únicamente se procesan mensajes bancarios y todo queda en tu teléfono.',
         buttonPositive: 'Permitir',
         buttonNegative: 'Ahora no',
       });
-      if (res === PermissionsAndroid.RESULTS.GRANTED) return 'granted';
-      if (res === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) return 'never_ask_again';
-      return 'denied';
+      const elapsed = Date.now() - startedAt;
+      let status: SmsPermissionStatus = 'denied';
+      if (res === PermissionsAndroid.RESULTS.GRANTED) status = 'granted';
+      else if (res === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN) status = 'never_ask_again';
+      // Un "no volver a preguntar" sin diálogo visible (<350 ms) suele ser "Configuración restringida".
+      return { status, apiLevel, instantDenial: status === 'never_ask_again' && elapsed < 350, manufacturer };
     } catch (e) {
-      console.warn('ensureReadSmsPermission error:', e);
-      return 'denied';
+      console.warn('requestReadSmsPermissionDetailed error:', e);
+      return { status: 'denied', apiLevel, instantDenial: false, manufacturer };
     }
   },
 
+  async ensureReadSmsPermission(): Promise<SmsPermissionStatus> {
+    return (await this.requestReadSmsPermissionDetailed()).status;
+  },
+
   async syncBankSms(): Promise<SyncResult> {
-    if (Platform.OS !== 'android') {
-      return { transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 };
-    }
+    if (Platform.OS !== 'android') return emptySyncResult();
 
     if (!this.isSmsModuleAvailable()) throw new Error('SMS_MODULE_UNAVAILABLE');
     const hasPerm = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
     if (!hasPerm) throw new Error('SMS_PERMISSION_DENIED');
 
-    const filter = { box: 'inbox', indexFrom: 0, maxCount: 2000 };
-    const accounts = await StorageService.getAccounts();
+    const now = new Date();
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
+    const filter = { box: 'inbox', minDate: threeMonthsAgo, indexFrom: 0, maxCount: 5000 };
 
-    return new Promise((resolve, reject) => {
+    return new Promise<SyncResult>((resolve, reject) => {
       SmsAndroid.list(
         JSON.stringify(filter),
         (fail: string) => { console.error('SMS list failed:', fail); reject(new Error(fail)); },
         async (_count: number, smsList: string) => {
-          let messages: Array<{ body: string; date: number; address: string }> = [];
-          try { messages = JSON.parse(smsList); } catch {
-            resolve({ transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0 });
-            return;
-          }
-
-          const totalRead = messages.length;
-          let totalMatched = 0;
-          let totalSkipped = 0;
-          let totalIgnored = 0;
-          const newTransactions: Transaction[] = [];
-          const newInstallments: CreditInstallment[] = [];
-
-          const now = new Date();
-          const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
-
-          for (const sms of messages) {
-            try {
-              if (sms.date < threeMonthsAgo) continue;
-              const body = sms.body;
-              if (!msgContainsBankKeywords(body)) continue;
-              totalMatched++;
-
-              if (isOwnTransfer(body)) { totalIgnored++; continue; }
-
-              const parsed = this.parseSimpleSms(body, sms.date, accounts);
-              if (!parsed) { totalIgnored++; continue; }
-
-              const dedupeId = parsed.kind === 'transaction' ? parsed.transaction!.id : parsed.installment!.id;
-              const exists = await this.checkIfExists(dedupeId);
-              if (exists) { totalSkipped++; continue; }
-
-              if (parsed.kind === 'transaction') {
-                await StorageService.addTransaction(parsed.transaction!);
-                newTransactions.push(parsed.transaction!);
-              } else {
-                await StorageService.addCreditInstallment(parsed.installment!);
-                newInstallments.push(parsed.installment!);
-              }
-            } catch (e) {
-              console.warn('SMS parse error:', e);
-              continue;
+          try {
+            let parsedList: Array<{ body?: string; date?: number | string; address?: string }> = [];
+            try { parsedList = JSON.parse(smsList); } catch {
+              resolve(emptyResultWithRead(0));
+              return;
             }
-          }
+            const messages = (Array.isArray(parsedList) ? parsedList : [])
+              .filter(m => typeof m?.body === 'string' && Number(m.date) >= threeMonthsAgo)
+              .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
 
-          console.log(`SMS Sync: leídos=${totalRead}, bancarios=${totalMatched}, transacciones=${newTransactions.length}, cuotas=${newInstallments.length}`);
-          resolve({ transactions: newTransactions, installments: newInstallments, totalRead, totalMatched, totalSkipped, totalIgnored });
+            const [txs, insts, dismissed, kept, accounts] = await Promise.all([
+              StorageService.getTransactions(),
+              StorageService.getCreditInstallments(),
+              StorageService.getDismissedSms(),
+              StorageService.getSmsReviewKept(),
+              StorageService.getAccounts(),
+            ]);
+
+            const index = buildExistingSmsIndex(txs, insts, dismissed);
+            const plan = planSmsImport(messages, index, accounts);
+
+            const after = await StorageService.importSmsBatch(plan.transactions, plan.installments);
+            const reviewItems = reviewImportedSms(after.transactions, new Set(kept));
+
+            const s = plan.stats;
+            console.log(
+              `SMS Sync: leidos=${s.totalRead}, bancarios=${s.bankCandidates}, importados=${s.imported}, cuotas=${s.installments}, ` +
+              `duplicados=${s.duplicates}, descartados=${s.dismissedByUser}, promos=${s.promos}, otp=${s.otp}, ` +
+              `rechazados=${s.declined}, info=${s.info}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
+              `no_reconocidos=${s.unparsed}, revision=${reviewItems.length}`
+            );
+
+            resolve({
+              transactions: plan.transactions,
+              installments: plan.installments,
+              totalRead: s.totalRead,
+              totalMatched: s.bankCandidates,
+              totalSkipped: s.duplicates + s.dismissedByUser,
+              totalIgnored: s.bankCandidates - s.imported - s.installments - s.duplicates - s.dismissedByUser,
+              stats: s,
+              reviewItems,
+              diagnostics: plan.diagnostics,
+            });
+          } catch (e) {
+            console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
+            reject(e instanceof Error ? e : new Error('SMS_SYNC_FAILED'));
+          }
         }
       );
     });
   },
 
+  /**
+   * Adaptador para AddScreen (texto pegado, sin remitente). Misma firma de siempre.
+   * Devuelve null si el SMS no es un movimiento reconocible (usar explainSms para el motivo).
+   */
   parseSimpleSms(body: string, smsDate?: number, accounts: Account[] = []): ParsedSmsResult | null {
-    if (!isTransactionalSms(body)) return null;
-
-    const amount = extractAmount(body);
-    if (!amount) return null;
-
-    const type = detectTransactionType(body);
-    const currency = detectCurrency(body);
-    const bank = detectBankName(body);
-    const date = smsDate ? new Date(smsDate).toISOString() : new Date().toISOString();
-    const merchant = extractMerchantName(body);
-    const bankRef = extractBankReference(body);
-    const dedupeId = buildDedupeId({ bank, amount, merchant: merchant || '', dateISO: date, bankRef });
-
-    const installmentInfo = type === 'expense' ? detectInstallments(body) : null;
-
-    if (installmentInfo) {
-      const matches = accounts.filter(a =>
-        a.type === 'credit' && a.isActive && a.bankName &&
-        normalizeText(a.bankName).includes(normalizeText(bank))
-      );
-      const accountId = matches.length === 1 ? matches[0].id : '';
-      const monthlyPayment = Math.round((amount / installmentInfo.totalInstallments) * 100) / 100;
-
-      const installment: CreditInstallment = {
-        id: dedupeId,
-        accountId,
-        name: merchant || 'Compra a cuotas',
-        totalAmount: amount,
-        monthlyPayment,
-        totalInstallments: installmentInfo.totalInstallments,
-        paidInstallments: 0,
-        startDate: date,
-        currency,
-        category: detectCategory(body, 'expense'),
-        isActive: true,
-        notes: `Detectado automáticamente por SMS (${bank})`,
-      };
-
-      return { kind: 'installment', installment };
-    }
-
-    const category = detectCategory(body, type);
-    const description = buildSmartDescription(body, bank, type);
-
-    const transaction: Transaction = {
-      id: dedupeId,
-      amount,
-      category,
-      date,
-      description,
-      type,
-      source: 'sms',
-      currency,
-      originalSMS: body,
-      bank,
-      bankRef: bankRef || undefined,
-    };
-
-    return { kind: 'transaction', transaction };
+    const c = classifyBankSms({ body, receivedAt: smsDate });
+    return buildRecordFromClassification(c, body, accounts);
   },
 
-  async checkIfExists(id: string): Promise<boolean> {
-    const [txs, installments] = await Promise.all([
-      StorageService.getTransactions(),
-      StorageService.getCreditInstallments(),
-    ]);
-    return txs.some(t => t.id === id) || installments.some(i => i.id === id);
+  /** Explica en español por qué un SMS se aceptó o no (para mensajes de UI). */
+  explainSms(body: string): { accepted: boolean; kind: SmsKind; reasonLabel: string } {
+    const c = classifyBankSms({ body });
+    return {
+      accepted: c.accepted,
+      kind: c.kind,
+      reasonLabel: c.accepted ? 'Movimiento bancario reconocido' : reasonLabelFor(c.kind),
+    };
   },
 };
+
+function emptyResultWithRead(totalRead: number): SyncResult {
+  const r = emptySyncResult();
+  r.totalRead = totalRead;
+  r.stats.totalRead = totalRead;
+  return r;
+}

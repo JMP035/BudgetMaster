@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { buildSmsFingerprint } from './BankSmsParser';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS BASE
@@ -25,6 +26,7 @@ export interface Transaction {
   fromAccountId?: string;   // Para transferencias
   toAccountId?: string;   // Para transferencias
   bankRef?: string;        // Número de referencia bancaria (si el SMS lo trae)
+  smsFingerprint?: string; // Huella del SMS de origen (deduplicación y descartes)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -64,6 +66,8 @@ export interface CreditInstallment {
   category: string;
   isActive: boolean;
   notes?: string;
+  originalSMS?: string;     // SMS de origen (si se detectó por SMS)
+  smsFingerprint?: string;  // Huella del SMS de origen
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -190,6 +194,8 @@ const K = {
   ACCOUNTS: '@bm_accounts',
   CREDIT_INSTALLMENTS: '@bm_credit_installments',
   NOTIFICATION_STATE: '@bm_notification_state',
+  SMS_DISMISSED: '@bm_sms_dismissed',
+  SMS_REVIEW_KEPT: '@bm_sms_review_kept',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -601,6 +607,20 @@ export function getAccountMonthlyInstallmentTotal(installments: CreditInstallmen
 }
 
 // ─────────────────────────────────────────────────────────────
+// SMS: LLAVES DE DESCARTE
+// ─────────────────────────────────────────────────────────────
+const MAX_SMS_DISMISSED = 5000;
+const MAX_SMS_REVIEW_KEPT = 5000;
+
+/** Llaves (id y huella) que impiden que un movimiento SMS borrado vuelva a importarse. */
+function smsTombstoneKeys(tx: Transaction): string[] {
+  const ts = Date.parse(tx.date);
+  const fp = tx.smsFingerprint
+    ?? (tx.originalSMS ? buildSmsFingerprint(tx.originalSMS, isNaN(ts) ? undefined : ts) : '');
+  return [tx.id, fp].filter(Boolean);
+}
+
+// ─────────────────────────────────────────────────────────────
 // STORAGE SERVICE
 // ─────────────────────────────────────────────────────────────
 export const StorageService = {
@@ -628,6 +648,12 @@ export const StorageService = {
 
   async deleteTransaction(id: string): Promise<Transaction[]> {
     const all = await this.getTransactions();
+    const target = all.find(t => t.id === id);
+    // Un movimiento SMS borrado no debe "resucitar" en la próxima sincronización
+    // (tampoco al convertirlo en visacuota): se registra su huella como descartada.
+    if (target && target.source === 'sms') {
+      await this.addDismissedSms(smsTombstoneKeys(target));
+    }
     const updated = all.filter(t => t.id !== id);
     await this.saveTransactions(updated);
     return updated;
@@ -638,6 +664,97 @@ export const StorageService = {
     const updated = all.map(t => t.id === tx.id ? tx : t);
     await this.saveTransactions(updated);
     return updated;
+  },
+
+  // ── SMS: descartados y revisión ───────────────────────────
+  async getDismissedSms(): Promise<string[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_DISMISSED);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Agrega llaves (id/huella) a la lista de descartados. Sin repetidos; tope de 5000 (descarta las más viejas). */
+  async addDismissedSms(keys: string[]): Promise<void> {
+    if (keys.length === 0) return;
+    try {
+      const current = await this.getDismissedSms();
+      const merged = Array.from(new Set([...current, ...keys]));
+      const trimmed = merged.length > MAX_SMS_DISMISSED ? merged.slice(merged.length - MAX_SMS_DISMISSED) : merged;
+      await AsyncStorage.setItem(K.SMS_DISMISSED, JSON.stringify(trimmed));
+    } catch { }
+  },
+
+  async getSmsReviewKept(): Promise<string[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_REVIEW_KEPT);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Ids de movimientos SMS que el usuario decidió conservar en la revisión (no se vuelven a sugerir). */
+  async addSmsReviewKept(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    try {
+      const current = await this.getSmsReviewKept();
+      const merged = Array.from(new Set([...current, ...ids]));
+      const trimmed = merged.length > MAX_SMS_REVIEW_KEPT ? merged.slice(merged.length - MAX_SMS_REVIEW_KEPT) : merged;
+      await AsyncStorage.setItem(K.SMS_REVIEW_KEPT, JSON.stringify(trimmed));
+    } catch { }
+  },
+
+  /**
+   * Importa en lote movimientos y visacuotas detectados por SMS: UNA lectura y
+   * UNA escritura por colección. Ignora los ids ya presentes. Devuelve las
+   * colecciones completas resultantes.
+   */
+  async importSmsBatch(
+    txs: Transaction[],
+    insts: CreditInstallment[],
+  ): Promise<{ transactions: Transaction[]; installments: CreditInstallment[] }> {
+    let allTxs = await this.getTransactions();
+    let allInsts = await this.getCreditInstallments();
+    if (txs.length > 0) {
+      const have = new Set(allTxs.map(t => t.id));
+      const fresh = txs.filter(t => !have.has(t.id));
+      if (fresh.length > 0) {
+        allTxs = [...fresh, ...allTxs];
+        await this.saveTransactions(allTxs);
+      }
+    }
+    if (insts.length > 0) {
+      const have = new Set(allInsts.map(i => i.id));
+      const fresh = insts.filter(i => !have.has(i.id));
+      if (fresh.length > 0) {
+        allInsts = [...allInsts, ...fresh];
+        await this.saveCreditInstallments(allInsts);
+      }
+    }
+    return { transactions: allTxs, installments: allInsts };
+  },
+
+  /**
+   * Aplica la revisión de SMS ya importados con UNA lectura y UNA escritura de
+   * transacciones: elimina removeIds (dejando su huella como descartada),
+   * reemplaza los movimientos de updates y registra keepIds como conservados.
+   */
+  async applySmsReview(removeIds: string[], updates: Transaction[], keepIds: string[]): Promise<Transaction[]> {
+    const all = await this.getTransactions();
+    const removeSet = new Set(removeIds);
+    const tombstones: string[] = [];
+    for (const t of all) {
+      if (removeSet.has(t.id)) tombstones.push(...smsTombstoneKeys(t));
+    }
+    const updateMap = new Map(updates.map(u => [u.id, u]));
+    const next = all
+      .filter(t => !removeSet.has(t.id))
+      .map(t => updateMap.get(t.id) ?? t);
+    await this.saveTransactions(next);
+    await this.addDismissedSms(tombstones);
+    await this.addSmsReviewKept(keepIds);
+    return next;
   },
 
   // ── Settings ──────────────────────────────────────────────
@@ -856,6 +973,10 @@ export const StorageService = {
 
   async deleteCreditInstallment(id: string): Promise<CreditInstallment[]> {
     const all = await this.getCreditInstallments();
+    const target = all.find(x => x.id === id);
+    if (target && (target.smsFingerprint || target.id.startsWith('sms_'))) {
+      await this.addDismissedSms([target.id, target.smsFingerprint ?? ''].filter(Boolean));
+    }
     const updated = all.filter(x => x.id !== id);
     await this.saveCreditInstallments(updated);
     return updated;
