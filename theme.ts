@@ -27,6 +27,7 @@ export const C = {
     separator: "#241A13",    // Separador sutil cobrizo oscuro
     // Material Liquid Glass — usar tal cual, NO concatenar sufijos hex (son rgba)
     glassFill: "rgba(255,255,255,0.055)",
+    glassFillNoBlur: "rgba(255,255,255,0.065)", // compensa la falta de blur real en Android
     glassSheen: "rgba(255,255,255,0.03)",
     glassBorder: "rgba(255,255,255,0.09)",
     glassHighlight: "rgba(252,225,176,0.55)",

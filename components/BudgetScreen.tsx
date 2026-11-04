@@ -1,21 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useRef, useState } from "react";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-    Alert, Animated, Easing, KeyboardAvoidingView, Modal,
+    Alert, Animated, Easing, KeyboardAvoidingView, LayoutChangeEvent, Modal,
     Platform, ScrollView, StyleSheet, Text, TextInput,
     TouchableOpacity, View
 } from "react-native";
 import {
     CategoryBudget, CustomCategory, Currency, FixedExpense, SavingsGoal,
     StorageService, Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
-    parseAmount
+    formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
+    parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { EXPENSE_CATEGORIES, getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
 import { NotificationService } from "../services/NotificationService";
+import { GlassBackground } from "./GlassCard";
+import { useKeyboardHeight } from "./useKeyboardHeight";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -55,7 +58,8 @@ const bar = StyleSheet.create({
 const TAB_LABELS = ["Gastos Fijos", "Categorías", "Metas"];
 
 function InternalTabs({ active, onChange }: { active: number; onChange: (i: number) => void }) {
-    const indicatorX = useRef(new Animated.Value(0)).current;
+    const [width, setWidth] = useState(0);
+    const indicatorX = useRef(new Animated.Value(active)).current;
 
     const fixedRef = useTutorialRef('budget_tab_fixed');
     const categoriesRef = useTutorialRef('budget_tab_categories');
@@ -65,38 +69,51 @@ function InternalTabs({ active, onChange }: { active: number; onChange: (i: numb
     const handlePress = (i: number) => {
         Animated.spring(indicatorX, {
             toValue: i,
-            friction: 6,
+            friction: 7,
             tension: 80,
-            useNativeDriver: false,
+            useNativeDriver: true,
         }).start();
         onChange(i);
     };
 
-    const left = indicatorX.interpolate({
+    const PAD = 4;
+    const segW = width > 0 ? (width - PAD * 2) / 3 : 0;
+    const translateX = indicatorX.interpolate({
         inputRange: [0, 1, 2],
-        outputRange: ["0%", "33.33%", "66.66%"],
+        outputRange: [0, segW, segW * 2],
     });
 
     return (
-        <View style={t.container}>
-            <Animated.View style={[t.indicator, { left }]} />
-            {TAB_LABELS.map((label, i) => (
-                <View key={i} ref={tabRefs[i]} collapsable={false} style={{ flex: 1 }}>
-                    <TouchableOpacity style={t.tab} onPress={() => handlePress(i)}>
-                        <Text style={[t.label, active === i && t.labelActive]}>{label}</Text>
-                    </TouchableOpacity>
-                </View>
-            ))}
+        <View style={t.container} onLayout={(e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width)}>
+            <GlassBackground radius={16} blur={false} />
+            {segW > 0 && <Animated.View pointerEvents="none" style={[t.indicator, { width: segW, transform: [{ translateX }] }]} />}
+            <View style={t.row}>
+                {TAB_LABELS.map((label, i) => (
+                    <View key={label} ref={tabRefs[i]} collapsable={false} style={t.cell}>
+                        <TouchableOpacity
+                            style={t.tab}
+                            onPress={() => handlePress(i)}
+                            activeOpacity={0.7}
+                            accessibilityRole="tab"
+                            accessibilityState={{ selected: active === i }}
+                        >
+                            <Text style={[t.label, active === i && t.labelActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{label}</Text>
+                        </TouchableOpacity>
+                    </View>
+                ))}
+            </View>
         </View>
     );
 }
 
 const t = StyleSheet.create({
-    container: { flexDirection: "row", backgroundColor: C.card, borderRadius: 14, padding: 4, marginBottom: 20, position: "relative", borderWidth: 1, borderColor: C.cardBorder },
-    indicator: { position: "absolute", top: 4, width: "33.33%", bottom: 4, backgroundColor: C.primaryDark + "66", borderRadius: 10, borderWidth: 1, borderColor: C.primary + "55" },
-    tab: { flex: 1, paddingVertical: 10, alignItems: "center", zIndex: 1 },
-    label: { color: C.textSub, fontSize: 12, fontWeight: "700" },
-    labelActive: { color: C.primaryLight, fontWeight: "900" },
+    container: { borderRadius: 16, padding: 4, marginBottom: 20, overflow: "hidden" },
+    indicator: { position: "absolute", top: 4, bottom: 4, left: 4, borderRadius: 12, backgroundColor: C.primaryDark + "66", borderWidth: 1, borderColor: C.primary + "55" },
+    row: { flexDirection: "row" },
+    cell: { flex: 1 },
+    tab: { height: 40, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
+    label: { color: C.textSub, fontSize: 13, fontWeight: "700", textAlign: "center" },
+    labelActive: { color: C.primaryLight, fontWeight: "800" },
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -145,7 +162,7 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories }: {
     return (
         <Modal visible animationType="slide" transparent onRequestClose={onClose}>
             <View style={md.overlay}>
-                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+                <KeyboardAvoidingView behavior="padding" style={md.kav}>
                     <View style={md.sheet}>
                         <View style={md.header}>
                             <Text style={md.title}>{existing ? "Editar" : "Nuevo"} Gasto Fijo</Text>
@@ -154,7 +171,7 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories }: {
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView showsVerticalScrollIndicator={false}>
+                        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                             <Text style={md.lbl}>NOMBRE</Text>
                             <TextInput style={md.input} value={name} onChangeText={setName} placeholder="Ej: Renta, Internet, Gym..." placeholderTextColor={C.textMuted} autoFocus />
 
@@ -237,7 +254,12 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
     const [target, setTarget] = useState(existing?.targetAmount.toString() || "");
     const [current, setCurrent] = useState(existing?.currentAmount.toString() || "0");
     const [currency, setCurrency] = useState<Currency>(existing?.currency || "Q");
-    const [deadline, setDeadline] = useState(existing?.deadline ? existing.deadline.substring(0, 10) : "");
+    const [deadline, setDeadline] = useState(existing?.deadline ? storedDateToDateOnly(existing.deadline) : "");
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const parsedDeadline = parseDateOnly(deadline);
+    const pickerValue = parsedDeadline && parsedDeadline >= today ? parsedDeadline : new Date(Date.now() + 180 * 86400000);
     const [selectedColor, setColor] = useState(existing?.color || CATEGORY_COLORS[0]);
     const [selectedIcon, setIcon] = useState(existing?.icon || "star-outline");
 
@@ -254,7 +276,7 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
             targetAmount: tgt,
             currentAmount: curVal,
             currency,
-            deadline: deadline ? new Date(deadline).toISOString() : new Date(Date.now() + 180 * 86400000).toISOString(),
+            deadline: parsedDeadline ? parsedDeadline.toISOString() : new Date(Date.now() + 180 * 86400000).toISOString(),
             icon: selectedIcon,
             color: selectedColor,
             isCompleted: curVal >= tgt,
@@ -267,7 +289,7 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
     return (
         <Modal visible animationType="slide" transparent onRequestClose={onClose}>
             <View style={md.overlay}>
-                <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ width: "100%" }}>
+                <KeyboardAvoidingView behavior="padding" style={md.kav}>
                     <View style={md.sheet}>
                         <View style={md.header}>
                             <Text style={md.title}>{existing ? "Editar" : "Nueva"} Meta de Ahorro</Text>
@@ -276,7 +298,7 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
                             </TouchableOpacity>
                         </View>
 
-                        <ScrollView showsVerticalScrollIndicator={false}>
+                        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                             {/* Preview */}
                             <View style={[md.preview, { borderColor: selectedColor + "55", backgroundColor: selectedColor + "11" }]}>
                                 <View style={[md.previewIcon, { backgroundColor: selectedColor + "22", borderColor: selectedColor + "44" }]}>
@@ -317,8 +339,48 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
                                 <TextInput style={md.amtInput} value={current} onChangeText={setCurrent} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
                             </View>
 
-                            <Text style={md.lbl}>FECHA LÍMITE (YYYY-MM-DD)</Text>
-                            <TextInput style={md.input} value={deadline} onChangeText={setDeadline} placeholder="2025-12-31" placeholderTextColor={C.textMuted} />
+                            <Text style={md.lbl}>FECHA LÍMITE (OPCIONAL)</Text>
+                            <TouchableOpacity style={md.dateField} onPress={() => setShowDatePicker(true)} activeOpacity={0.75}>
+                                <GlassBackground radius={12} blur={false} />
+                                <Ionicons name="calendar-outline" size={18} color={C.primaryLight} style={{ marginRight: 10 }} />
+                                <Text style={[md.dateTxt, !parsedDeadline && { color: C.textMuted }]} numberOfLines={1}>
+                                    {parsedDeadline ? parsedDeadline.toLocaleDateString("es-GT", { day: "2-digit", month: "long", year: "numeric" }) : "Elegir fecha"}
+                                </Text>
+                                {parsedDeadline && (
+                                    <TouchableOpacity onPress={() => setDeadline("")} hitSlop={10}>
+                                        <Ionicons name="close-circle" size={18} color={C.textMuted} />
+                                    </TouchableOpacity>
+                                )}
+                            </TouchableOpacity>
+                            <Text style={md.hint}>Si no elegís una fecha, se usan 6 meses desde hoy.</Text>
+                            {showDatePicker && Platform.OS === "android" && (
+                                <DateTimePicker
+                                    value={pickerValue}
+                                    mode="date"
+                                    display="default"
+                                    minimumDate={today}
+                                    onChange={(event, selected) => {
+                                        setShowDatePicker(false);
+                                        if (event.type === "set" && selected) setDeadline(formatDateOnly(selected));
+                                    }}
+                                />
+                            )}
+                            {showDatePicker && Platform.OS === "ios" && (
+                                <View style={md.iosPickerWrap}>
+                                    <DateTimePicker
+                                        value={pickerValue}
+                                        mode="date"
+                                        display="inline"
+                                        themeVariant="dark"
+                                        minimumDate={today}
+                                        accentColor={C.primary}
+                                        onChange={(_e, selected) => { if (selected) setDeadline(formatDateOnly(selected)); }}
+                                    />
+                                    <TouchableOpacity style={md.iosPickerDone} onPress={() => setShowDatePicker(false)}>
+                                        <Text style={md.iosPickerDoneTxt}>Listo</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
 
                             <Text style={md.lbl}>COLOR</Text>
                             <View style={md.colorGrid}>
@@ -342,7 +404,7 @@ function SavingsGoalModal({ onSave, onClose, existing }: {
 
                             <TouchableOpacity style={md.saveBtn} onPress={handleSave}>
                                 <Ionicons name="trophy-outline" size={20} color="#1A0E00" />
-                                <Text style={md.saveBtnTxt}>Crear Meta</Text>
+                                <Text style={md.saveBtnTxt}>{existing ? "Guardar Meta" : "Crear Meta"}</Text>
                             </TouchableOpacity>
                             <View style={{ height: 40 }} />
                         </ScrollView>
@@ -555,6 +617,14 @@ function CategoryBudgetTab({
 }) {
     const [editing, setEditing] = useState<string | null>(null);
     const [limitVal, setLimitVal] = useState("");
+    const kb = useKeyboardHeight();
+    const scrollRef = useRef<ScrollView>(null);
+    const limitCardY = useRef(0);
+    useEffect(() => {
+        if (kb > 0 && editing) {
+            scrollRef.current?.scrollTo({ y: Math.max(limitCardY.current - 24, 0), animated: true });
+        }
+    }, [kb, editing]);
 
     const fp = getCurrentFinancialPeriod(settings);
     const periodTx = transactions.filter(t => {
@@ -586,7 +656,7 @@ function CategoryBudgetTab({
     const totalSpent = categoryBudgets.reduce((s, b) => s + getSpent(b.categoryId), 0);
 
     return (
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* RESUMEN TOTAL */}
             <View style={s.summaryCard}>
                 <View style={s.summaryItem}>
@@ -665,7 +735,7 @@ function CategoryBudgetTab({
             </View>
 
             {editing && (
-                <View style={s.limitInputCard}>
+                <View style={s.limitInputCard} onLayout={e => { limitCardY.current = e.nativeEvent.layout.y; }}>
                     <Text style={s.limitInputLabel}>Límite para {getCat(editing, settings.customCategories).label}</Text>
                     <View style={s.limitRow}>
                         <Text style={s.limitCur}>Q</Text>
@@ -688,7 +758,7 @@ function CategoryBudgetTab({
                 </View>
             )}
 
-            <View style={{ height: 100 }} />
+            <View style={{ height: 100 + kb }} />
         </ScrollView>
     );
 }
@@ -707,6 +777,15 @@ function SavingsGoalsTab({
     const [editing, setEditing] = useState<SavingsGoal | undefined>();
     const [abonoId, setAbonoId] = useState<string | null>(null);
     const [abonoVal, setAbonoVal] = useState("");
+    const kb = useKeyboardHeight();
+    const scrollRef = useRef<ScrollView>(null);
+    const goalYs = useRef<Record<string, number>>({});
+    useEffect(() => {
+        if (kb > 0 && abonoId) {
+            const y = goalYs.current[abonoId];
+            if (y !== undefined) scrollRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+        }
+    }, [kb, abonoId]);
 
     const handleSave = async (goal: SavingsGoal) => {
         const isNew = !savingsGoals.find(g => g.id === goal.id);
@@ -748,7 +827,7 @@ function SavingsGoalsTab({
 
     return (
         <View style={{ flex: 1 }}>
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                 {savingsGoals.length === 0 ? (
                     <View style={s.empty}>
                         <Ionicons name="trophy-outline" size={48} color={C.textMuted} />
@@ -765,7 +844,7 @@ function SavingsGoalsTab({
                     const monthly = daysLeft > 0 ? (remaining / Math.max(daysLeft / 30, 0.1)).toFixed(2) : "Meta vencida";
 
                     return (
-                        <View key={goal.id} style={[s.goalCard, { borderTopColor: goal.color }]}>
+                        <View key={goal.id} style={[s.goalCard, { borderTopColor: goal.color }]} onLayout={e => { goalYs.current[goal.id] = e.nativeEvent.layout.y; }}>
                             <View style={s.goalHeader}>
                                 <View style={[s.goalIcon, { backgroundColor: goal.color + "22", borderColor: goal.color + "44" }]}>
                                     <Ionicons name={goal.icon as any} size={22} color={goal.color} />
@@ -857,7 +936,7 @@ function SavingsGoalsTab({
                     </>
                 )}
 
-                <View style={{ height: 100 }} />
+                <View style={{ height: 100 + kb }} />
             </ScrollView>
 
             <TouchableOpacity style={s.fab} onPress={() => { setEditing(undefined); setShowModal(true); }}>
@@ -1036,6 +1115,12 @@ const s = StyleSheet.create({
 // ESTILOS MODALES
 const md = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
+    kav: { flex: 1, width: "100%", justifyContent: "flex-end" },
+    dateField: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, overflow: "hidden" },
+    dateTxt: { flex: 1, color: C.text, fontSize: 15, fontWeight: "700" },
+    iosPickerWrap: { marginTop: 8 },
+    iosPickerDone: { alignSelf: "flex-end", paddingHorizontal: 16, paddingVertical: 8 },
+    iosPickerDoneTxt: { color: C.primaryLight, fontWeight: "800" },
     sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "55", padding: 24, maxHeight: "90%", ...shadow(C.primaryGlow, 20, 0.4) },
     header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },
     title: { color: C.textPrimary, fontSize: 20, fontWeight: "900" },

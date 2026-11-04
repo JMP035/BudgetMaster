@@ -2,7 +2,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import {
-  Alert, KeyboardAvoidingView, Modal, Platform,
+  Alert, KeyboardAvoidingView, Modal,
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import {
@@ -85,7 +85,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={md.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
+        <KeyboardAvoidingView behavior="padding" style={md.kav}>
           <View style={md.sheet}>
             <View style={md.header}>
               <Text style={md.title}>{existing ? 'Editar' : 'Nueva'} Visacuota</Text>
@@ -94,7 +94,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {creditAccounts.length === 0 ? (
                 <View style={{ padding: 20, alignItems: 'center' }}>
                   <Ionicons name="card-outline" size={48} color={C.textMuted} />
@@ -200,6 +200,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
 // ─────────────────────────────────────────────────────────────
 const md = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
+  kav: { flex: 1, width: '100%', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + '55', padding: 24, maxHeight: '90%', ...shadow(C.primaryGlow, 20, 0.4) },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   title: { color: C.textPrimary, fontSize: 20, fontWeight: '900' },

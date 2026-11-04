@@ -62,6 +62,7 @@ function NewCategoryModal({ onSave, onClose }: {
     return (
         <Modal visible animationType="slide" transparent onRequestClose={onClose}>
             <View style={nc.overlay}>
+                <KeyboardAvoidingView behavior="padding" style={nc.kav}>
                 <View style={nc.sheet}>
                     <View style={nc.header}>
                         <Text style={nc.title}>Nueva Categoría</Text>
@@ -69,7 +70,7 @@ function NewCategoryModal({ onSave, onClose }: {
                             <Ionicons name="close" size={22} color={C.textMuted} />
                         </TouchableOpacity>
                     </View>
-                    <ScrollView showsVerticalScrollIndicator={false}>
+                    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
                         <Text style={nc.lbl}>NOMBRE</Text>
                         <TextInput style={nc.input} value={label} onChangeText={setLabel} placeholder="Ej: Mascotas, Gym..." placeholderTextColor={C.textMuted} autoFocus />
 
@@ -117,6 +118,7 @@ function NewCategoryModal({ onSave, onClose }: {
                         <View style={{ height: 40 }} />
                     </ScrollView>
                 </View>
+                </KeyboardAvoidingView>
             </View>
         </Modal>
     );
@@ -511,6 +513,7 @@ const s = StyleSheet.create({
 });
 
 const nc = StyleSheet.create({
+    kav: { flex: 1, width: "100%", justifyContent: "flex-end" },
     overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
     sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "55", padding: 24, maxHeight: "90%" },
     header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 20 },

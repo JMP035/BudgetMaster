@@ -391,15 +391,15 @@ function BriefingCard({ text, loading }: { text: string; loading: boolean }) {
 // ─────────────────────────────────────────────────────────────
 // ORBE AMBIENTAL
 // ─────────────────────────────────────────────────────────────
-function AmbientOrb({ size, color, style }: { size: number; color: string; style?: any }) {
+const AmbientOrb = React.memo(function AmbientOrb({ size, color, style }: { size: number; color: string; style?: any }) {
     return (
-        <View pointerEvents="none" style={[{ position: "absolute" }, style]}>
+        <View pointerEvents="none" renderToHardwareTextureAndroid style={[{ position: "absolute" }, style]}>
             <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: color, opacity: 0.045 }} />
             <View style={{ position: "absolute", width: size * 0.72, height: size * 0.72, borderRadius: (size * 0.72) / 2, backgroundColor: color, opacity: 0.045, top: (size - size * 0.72) / 2, left: (size - size * 0.72) / 2 }} />
             <View style={{ position: "absolute", width: size * 0.45, height: size * 0.45, borderRadius: (size * 0.45) / 2, backgroundColor: color, opacity: 0.045, top: (size - size * 0.45) / 2, left: (size - size * 0.45) / 2 }} />
         </View>
     );
-}
+});
 
 // ─────────────────────────────────────────────────────────────
 // MODAL — INFO DE PATRIMONIO TOTAL (vidrio, no Alert nativo)
@@ -643,9 +643,9 @@ export default function DashboardScreen({
 
     return (
         <View style={s.root}>
-            <AmbientOrb size={280} color={C.primary} style={{ top: -60, right: -90 }} />
-            <AmbientOrb size={300} color={C.primaryLight} style={{ top: 360, left: -120 }} />
-            <AmbientOrb size={240} color={C.primary} style={{ top: 720, right: -80 }} />
+            <AmbientOrb size={280} color={C.primary} style={s.orbA} />
+            <AmbientOrb size={300} color={C.primaryLight} style={s.orbB} />
+            <AmbientOrb size={240} color={C.primary} style={s.orbC} />
             <ScrollView
             style={s.screen}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
@@ -839,6 +839,9 @@ export default function DashboardScreen({
 // ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
     root: { flex: 1 },
+    orbA: { top: -60, right: -90 },
+    orbB: { top: 360, left: -120 },
+    orbC: { top: 720, right: -80 },
     screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
     header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
     logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12, borderWidth: 1, borderTopColor: C.primaryGlow, borderLeftColor: C.primaryLight, borderRightColor: C.primaryDark, borderBottomColor: C.primaryDark },

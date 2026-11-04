@@ -58,6 +58,7 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
     return (
         <Modal visible animationType="slide" transparent onRequestClose={onClose}>
             <View style={m.overlay}>
+                <KeyboardAvoidingView behavior="padding" style={m.kav}>
                 <View style={m.sheet}>
 
                     {/* HEADER */}
@@ -81,7 +82,7 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
                         </TouchableOpacity>
                     </View>
 
-                    <ScrollView showsVerticalScrollIndicator={false}>
+                    <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
                         {/* BANCO / FUENTE */}
                         {tx.bank && (
@@ -182,6 +183,7 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
                         <View style={{ height: 40 }} />
                     </ScrollView>
                 </View>
+                </KeyboardAvoidingView>
             </View>
         </Modal>
     );
@@ -439,6 +441,7 @@ const s = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────
 const m = StyleSheet.create({
     overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
+    kav: { flex: 1, width: "100%", justifyContent: "flex-end" },
     sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + "55", padding: 24, maxHeight: "90%", ...shadow(C.primaryGlow, 20, 0.4) },
     header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
     catIcon: { width: 56, height: 56, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },

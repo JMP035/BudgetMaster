@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
 import {
   Alert, Animated, Easing, KeyboardAvoidingView,
-  Modal, Platform, ScrollView, StyleSheet,
+  Modal, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import {
@@ -136,7 +136,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType }: {
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={md.overlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ width: '100%' }}>
+        <KeyboardAvoidingView behavior="padding" style={md.kav}>
           <View style={md.sheet}>
             <View style={md.header}>
               <Text style={md.title}>{existing ? 'Editar' : 'Nueva'} Cuenta</Text>
@@ -145,7 +145,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType }: {
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
               {/* Tipo de cuenta */}
               <Text style={md.lbl}>TIPO DE CUENTA</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
@@ -282,6 +282,7 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={md.overlay}>
+        <KeyboardAvoidingView behavior="padding" style={md.kav}>
         <View style={md.sheet}>
           <View style={md.header}>
             <Text style={md.title}>Transferencia entre Cuentas</Text>
@@ -337,6 +338,7 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
             <Text style={md.saveBtnTxt}>Transferir</Text>
           </TouchableOpacity>
         </View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -780,6 +782,7 @@ const s = StyleSheet.create({
 
 const md = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: '#000000AA', justifyContent: 'flex-end' },
+  kav: { flex: 1, width: '100%', justifyContent: 'flex-end' },
   sheet: { backgroundColor: C.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28, borderTopWidth: 1, borderColor: C.primary + '55', padding: 24, maxHeight: '90%', ...shadow(C.primaryGlow, 20, 0.4) },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   title: { color: C.textPrimary, fontSize: 20, fontWeight: '900' },

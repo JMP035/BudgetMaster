@@ -3,8 +3,8 @@ import { Platform, StyleSheet, View, StyleProp, ViewStyle } from "react-native";
 import { BlurView } from "expo-blur";
 import { C } from "../theme";
 
-// experimental en Android; si el scroll del Inicio se traba, cambiar a 'none' (queda vidrio translúcido sin desenfoque real)
-export const GLASS_ANDROID_BLUR_METHOD: 'none' | 'dimezisBlurView' = 'dimezisBlurView';
+// 'none' por rendimiento de scroll (Dimezis re-blurea cada frame); usar 'dimezisBlurView' solo si se prueba fluido
+export const GLASS_ANDROID_BLUR_METHOD = 'none' as 'none' | 'dimezisBlurView';
 
 export interface GlassBackgroundProps {
     radius?: number;
@@ -25,9 +25,10 @@ export function GlassBackground({
     topAccentWidth = 3,
     leftAccentColor,
 }: GlassBackgroundProps) {
+    const realBlur = blur && (Platform.OS !== "android" || GLASS_ANDROID_BLUR_METHOD !== "none");
     return (
         <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius, overflow: "hidden" }]}>
-            {blur && (
+            {realBlur && (
                 <BlurView
                     tint="dark"
                     intensity={intensity}
@@ -36,7 +37,7 @@ export function GlassBackground({
                     style={StyleSheet.absoluteFill}
                 />
             )}
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: C.glassFill }]} />
+            <View style={[StyleSheet.absoluteFill, { backgroundColor: blur && !realBlur ? C.glassFillNoBlur : C.glassFill }]} />
             <View style={[styles.sheen, { backgroundColor: C.glassSheen }]} />
             <View style={[StyleSheet.absoluteFill, { borderRadius: radius, borderWidth: 1, borderColor: C.glassBorder }]} />
             {topAccentColor ? (

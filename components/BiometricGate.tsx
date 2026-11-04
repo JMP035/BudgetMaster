@@ -17,6 +17,10 @@ interface Props {
 
 type AuthState = "checking" | "locked" | "unlocked" | "disabled" | "error";
 
+// Algunos Android (p. ej. Honor con sensor bajo pantalla) mandan la app a "background"
+// justo al cerrar el prompt biométrico; sin este margen eso re-bloqueaba en bucle.
+const AUTH_GRACE_MS = 3000;
+
 // ─────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────
@@ -32,6 +36,8 @@ export default function BiometricGate({ children }: Props) {
     const biometricEnabledRef = useRef(false);
     const isAuthenticatingRef = useRef(false);
     const relockedRef = useRef(false);
+    // Marca de tiempo del último inicio/fin de un prompt biométrico (ver AUTH_GRACE_MS)
+    const lastAuthEventRef = useRef(0);
 
     // Animaciones
     const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -66,13 +72,14 @@ export default function BiometricGate({ children }: Props) {
                 next === "background" &&
                 authStateRef.current === "unlocked" &&
                 biometricEnabledRef.current &&
-                !isAuthenticatingRef.current
+                !isAuthenticatingRef.current &&
+                Date.now() - lastAuthEventRef.current > AUTH_GRACE_MS
             ) {
                 relockedRef.current = true;
                 setAttempts(0);
                 setError("");
                 setAuthState("locked");
-            } else if (next === "active" && relockedRef.current) {
+            } else if (next === "active" && relockedRef.current && !isAuthenticatingRef.current) {
                 relockedRef.current = false;
                 initAuth();
             }
@@ -137,6 +144,7 @@ export default function BiometricGate({ children }: Props) {
     const attemptAuth = async () => {
         if (isAuthenticatingRef.current) return;
         isAuthenticatingRef.current = true;
+        lastAuthEventRef.current = Date.now();
         setIsAuthenticating(true);
         try {
             setError("");
@@ -165,6 +173,7 @@ export default function BiometricGate({ children }: Props) {
         } catch {
             setError("Error al acceder al sensor biométrico.");
         } finally {
+            lastAuthEventRef.current = Date.now();
             isAuthenticatingRef.current = false;
             setIsAuthenticating(false);
         }
