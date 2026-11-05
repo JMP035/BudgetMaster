@@ -21,6 +21,9 @@ import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { HelpButton } from "./HelpButton";
 import { GlassCard, GlassBackground } from "./GlassCard";
 import GradientText from "./GradientText";
+import Money from "./Money";
+import { formatMoney } from "../services/format";
+import { isSmsFeatureOn } from "../services/features";
 import { GlassDialog } from "./GlassDialog";
 import type { GlassDialogProps, GlassDialogStat } from "./GlassDialog";
 import SmsReviewModal from "./SmsReviewModal";
@@ -83,8 +86,8 @@ export function BudgetRing({ spent, limit, currency }: { spent: number; limit: n
                     <Text style={{ color: C.textSub, fontSize: 10, marginTop: 2, letterSpacing: 1 }}>USADO</Text>
                 </View>
             </View>
-            <Text style={{ color: C.textPrimary, fontSize: 20, fontWeight: "800", marginTop: 12 }}>{currency} {spent.toFixed(2)}</Text>
-            <Text style={{ color: C.textMuted, fontSize: 12 }}>de {currency} {limit.toFixed(2)}</Text>
+            <Money amount={spent} currency={currency} size="md" containerStyle={{ marginTop: 12, alignSelf: "stretch" }} align="center" />
+            <Text style={{ color: C.textMuted, fontSize: 12 }}>{`de ${formatMoney(limit, currency)}`}</Text>
         </View>
     );
 }
@@ -149,8 +152,6 @@ function ScoreWidget({ score }: { score: number }) {
 // ─────────────────────────────────────────────────────────────
 function CurrencyCard({ currency, income, expense }: { currency: string; income: number; expense: number }) {
     const balance = income - expense;
-    const isPositive = balance >= 0;
-    const fmt = (n: number) => `${currency} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
     const accentColor = currency === "Q" ? C.primary : C.fx;
     return (
         <GlassCard style={s.glassOuter} contentStyle={s.currencyCard} topAccentColor={accentColor} topAccentWidth={3}>
@@ -163,19 +164,17 @@ function CurrencyCard({ currency, income, expense }: { currency: string; income:
             <View style={s.currencyRow}>
                 <View style={s.currencyItem}>
                     <Text style={s.currencyLbl}>INGRESOS</Text>
-                    <Text style={[s.currencyVal, { color: C.income }]}>{fmt(income)}</Text>
+                    <Money amount={income} currency={currency} size="md" tone="income" align="center" containerStyle={s.moneyFill} />
                 </View>
                 <View style={s.currencyDivider} />
                 <View style={s.currencyItem}>
                     <Text style={s.currencyLbl}>GASTOS</Text>
-                    <Text style={[s.currencyVal, { color: C.expense }]}>{fmt(expense)}</Text>
+                    <Money amount={expense} currency={currency} size="md" tone="expense" align="center" containerStyle={s.moneyFill} />
                 </View>
                 <View style={s.currencyDivider} />
                 <View style={s.currencyItem}>
                     <Text style={s.currencyLbl}>NETO</Text>
-                    <Text style={[s.currencyVal, { color: isPositive ? C.income : C.danger }]}>
-                        {isPositive ? "+" : "-"}{fmt(balance)}
-                    </Text>
+                    <Money amount={balance} currency={currency} size="md" tone="auto" sign="always" align="center" containerStyle={s.moneyFill} />
                 </View>
             </View>
         </GlassCard>
@@ -208,18 +207,14 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
             <View style={s.accountsRow}>
                 <View style={s.accountsItem}>
                     <Text style={s.accountsLbl}>NETO Q</Text>
-                    <Text style={[s.accountsVal, { color: totalQ >= 0 ? C.income : C.danger }]}>
-                        {totalQ < 0 ? "-" : ""}Q {Math.abs(totalQ).toFixed(0)}
-                    </Text>
+                    <Money amount={totalQ} currency="Q" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
                 </View>
                 {totalUSD !== 0 && (
                     <>
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
                             <Text style={s.accountsLbl}>NETO USD</Text>
-                            <Text style={[s.accountsVal, { color: totalUSD >= 0 ? C.fx : C.danger }]}>
-                                {totalUSD < 0 ? "-" : ""}USD {Math.abs(totalUSD).toFixed(0)}
-                            </Text>
+                            <Money amount={totalUSD} currency="USD" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
                         </View>
                     </>
                 )}
@@ -228,9 +223,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
                             <Text style={s.accountsLbl}>NETO EUR</Text>
-                            <Text style={[s.accountsVal, { color: totalEUR >= 0 ? C.fx : C.danger }]}>
-                                {totalEUR < 0 ? "-" : ""}EUR {Math.abs(totalEUR).toFixed(0)}
-                            </Text>
+                            <Money amount={totalEUR} currency="EUR" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
                         </View>
                     </>
                 )}
@@ -239,9 +232,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
                             <Text style={s.accountsLbl}>NETO £</Text>
-                            <Text style={[s.accountsVal, { color: totalGBP >= 0 ? C.fx : C.danger }]}>
-                                {totalGBP < 0 ? "-" : ""}£ {Math.abs(totalGBP).toFixed(0)}
-                            </Text>
+                            <Money amount={totalGBP} currency="£" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
                         </View>
                     </>
                 )}
@@ -250,7 +241,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
                             <Text style={s.accountsLbl}>VISACUOTAS PEND.</Text>
-                            <Text style={[s.accountsVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
+                            <Money amount={installmentsPendingQ} currency="Q" size="md" tone="warning" decimals={0} align="center" containerStyle={s.moneyFill} />
                         </View>
                     </>
                 )}
@@ -259,7 +250,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                         <View style={s.accountsDivider} />
                         <View style={s.accountsItem}>
                             <Text style={s.accountsLbl}>CUOTAS/MES</Text>
-                            <Text style={[s.accountsVal, { color: C.warning }]}>Q {monthlyInst.toFixed(0)}</Text>
+                            <Money amount={monthlyInst} currency="Q" size="md" tone="warning" decimals={0} align="center" containerStyle={s.moneyFill} />
                         </View>
                     </>
                 )}
@@ -274,9 +265,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                             <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
                             <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
                             {accMonthlyTotal > 0 ? (
-                                <Text style={[s.accMiniVal, { color: C.warning }]}>
-                                    {acc.currency} {accMonthlyTotal.toFixed(2)}/mes
-                                </Text>
+                                <Money amount={accMonthlyTotal} currency={acc.currency} size="sm" tone="warning" suffix="/mes" align="right" containerStyle={s.moneyRowEnd} />
                             ) : (
                                 <Text style={[s.accMiniVal, { color: C.textMuted }]}>Sin cuotas</Text>
                             )}
@@ -287,9 +276,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                     <View key={acc.id} style={s.accMiniRow}>
                         <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
                         <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
-                        <Text style={[s.accMiniVal, { color: acc.color }]}>
-                            {acc.currency} {acc.balance.toFixed(2)}
-                        </Text>
+                        <Money amount={acc.balance} currency={acc.currency} size="sm" tone="auto" align="right" containerStyle={s.moneyRowEnd} />
                     </View>
                 );
             })}
@@ -302,7 +289,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                 <View style={[s.widgetAlert, { backgroundColor: C.warning + "11", borderColor: C.warning + "33" }]}>
                     <Ionicons name="card-outline" size={13} color={C.warning} />
                     <Text style={[s.widgetAlertTxt, { color: C.warning }]}>
-                        Este mes debés Q{monthlyInst.toFixed(0)} en visacuotas
+                        {`Este mes debés ${formatMoney(monthlyInst, "Q", { decimals: 0 })} en visacuotas`}
                     </Text>
                 </View>
             )}
@@ -346,7 +333,7 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
                 <View key={e.id} style={s.widgetItem}>
                     <Ionicons name="ellipse-outline" size={12} color={C.textMuted} style={{ marginRight: 8 }} />
                     <Text style={s.widgetItemTxt} numberOfLines={1}>{e.name}</Text>
-                    <Text style={s.widgetItemAmt}>{e.currency} {e.amount.toFixed(0)}</Text>
+                    <Money amount={e.amount} currency={e.currency} size="sm" tone="neutral" decimals={0} align="right" containerStyle={[s.moneyRowEnd, { marginRight: 8 }]} />
                     <Text style={s.widgetItemDay}>Día {e.dayOfMonth}</Text>
                 </View>
             ))}
@@ -805,7 +792,7 @@ export default function DashboardScreen({
     );
 
     const recent = [...transactions].sort((a, b) => +new Date(b.date) - +new Date(a.date)).slice(0, 5);
-    const fmt = (n: number, cur = "Q") => `${cur} ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+    const smsOn = isSmsFeatureOn(settings);
 
     return (
         <View style={s.root}>
@@ -840,23 +827,25 @@ export default function DashboardScreen({
                             <Text style={[s.daysBadgeTxt, { color: daysLeft <= 3 ? C.danger : C.textMuted }]}>{daysLeft}d</Text>
                         </View>
                     )}
-                    <View ref={syncRef} collapsable={false}>
-                        <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn} disabled={syncing}>
-                            <View pointerEvents="none" style={s.syncGlass}>
-                                <View style={s.syncOrbOuter} />
-                                <View style={s.syncOrbInner} />
-                                <GlassBackground radius={20} intensity={30} />
-                            </View>
-                            {syncing ? (
-                                <ActivityIndicator size="small" color={C.accent} />
-                            ) : (
-                                <>
-                                    <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
-                                    <View style={s.syncDot} />
-                                </>
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                    {smsOn && (
+                        <View ref={syncRef} collapsable={false}>
+                            <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn} disabled={syncing}>
+                                <View pointerEvents="none" style={s.syncGlass}>
+                                    <View style={s.syncOrbOuter} />
+                                    <View style={s.syncOrbInner} />
+                                    <GlassBackground radius={20} intensity={30} />
+                                </View>
+                                {syncing ? (
+                                    <ActivityIndicator size="small" color={C.accent} />
+                                ) : (
+                                    <>
+                                        <Ionicons name="sync-circle-outline" size={24} color={C.accent} />
+                                        <View style={s.syncDot} />
+                                    </>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    )}
                 </View>
             </View>
 
@@ -883,27 +872,18 @@ export default function DashboardScreen({
                         <Ionicons name="information-circle-outline" size={18} color={C.textMuted} />
                     </TouchableOpacity>
                 </View>
-                {netQ >= 0 ? (
-                    <GradientText text={`Q ${Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`} style={s.netWorthVal} />
-                ) : (
-                    <Text style={[s.netWorthVal, { color: C.danger }]}>
-                        -Q {Math.abs(netQ).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
-                    </Text>
-                )}
+                <Money amount={netQ} size="xl" tone="auto" align="center" containerStyle={s.moneyFill} />
                 {netUSD !== 0 && (
-                    <Text style={[s.netWorthValSub, { color: netUSD >= 0 ? C.fx : C.danger }]}>
-                        {netUSD < 0 ? "-" : "+"}USD {Math.abs(netUSD).toFixed(2)}
-                    </Text>
+                    <Money amount={netUSD} currency="USD" size="sm" sign="always" gradient={false} align="center"
+                        style={{ color: netUSD >= 0 ? C.fx : C.danger }} containerStyle={[s.moneyFill, { marginTop: 4 }]} />
                 )}
                 {netEUR !== 0 && (
-                    <Text style={[s.netWorthValSub, { color: netEUR >= 0 ? C.fx : C.danger }]}>
-                        {netEUR < 0 ? "-" : "+"}EUR {Math.abs(netEUR).toFixed(2)}
-                    </Text>
+                    <Money amount={netEUR} currency="EUR" size="sm" sign="always" gradient={false} align="center"
+                        style={{ color: netEUR >= 0 ? C.fx : C.danger }} containerStyle={[s.moneyFill, { marginTop: 4 }]} />
                 )}
                 {netGBP !== 0 && (
-                    <Text style={[s.netWorthValSub, { color: netGBP >= 0 ? C.fx : C.danger }]}>
-                        {netGBP < 0 ? "-" : "+"}£ {Math.abs(netGBP).toFixed(2)}
-                    </Text>
+                    <Money amount={netGBP} currency="£" size="sm" sign="always" gradient={false} align="center"
+                        style={{ color: netGBP >= 0 ? C.fx : C.danger }} containerStyle={[s.moneyFill, { marginTop: 4 }]} />
                 )}
                 {hasAccounts && (
                     <Text style={s.netWorthSource}>Solo activos (sin tarjetas de crédito) • basado en tus cuentas</Text>
@@ -915,7 +895,7 @@ export default function DashboardScreen({
                     <View style={s.netWorthCommitmentsRow}>
                         <Ionicons name="card-outline" size={13} color={C.warning} />
                         <Text style={s.netWorthCommitments}>
-                            Compromisos de crédito (aparte): Q {totalCreditCommitmentsQ.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}
+                            {`Compromisos de crédito (aparte): ${formatMoney(totalCreditCommitmentsQ, "Q")}`}
                         </Text>
                     </View>
                 )}
@@ -933,7 +913,7 @@ export default function DashboardScreen({
                 <View style={[s.periodBadge, { backgroundColor: periodDiff > 0 ? C.danger + "15" : C.income + "15", borderColor: periodDiff > 0 ? C.danger + "44" : C.income + "44" }]}>
                     <Ionicons name={periodDiff > 0 ? "trending-up" : "trending-down"} size={14} color={periodDiff > 0 ? C.danger : C.income} />
                     <Text style={{ color: periodDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", flex: 1, marginLeft: 8 }}>
-                        {periodDiff > 0 ? "+" : "-"}Q{Math.abs(periodDiff).toFixed(0)} vs período anterior ({periodDiffPct.toFixed(0)}% {periodDiff > 0 ? "más" : "menos"})
+                        {formatMoney(periodDiff, "Q", { decimals: 0, sign: "always" })} vs período anterior ({periodDiffPct.toFixed(0)}% {periodDiff > 0 ? "más" : "menos"})
                     </Text>
                     <Text style={{ color: C.textMuted, fontSize: 10 }}>{period.prevLabel}</Text>
                 </View>
@@ -998,11 +978,17 @@ export default function DashboardScreen({
                                     {isTransfer && <View style={[s.bankBadge, { backgroundColor: C.primary + "22" }]}><Text style={[s.bankBadgeTxt, { color: C.primaryLight }]}>TRANSFER</Text></View>}
                                 </View>
                             </View>
-                            <Text style={[s.txAmount, {
-                                color: isTransfer ? C.textMuted : tx.type === "income" ? C.income : C.expense
-                            }]}>
-                                {isTransfer ? "→" : tx.type === "income" ? "+" : "-"}{fmt(tx.amount, txCurrency)}
-                            </Text>
+                            <Money
+                                amount={tx.amount}
+                                currency={txCurrency}
+                                size="sm"
+                                sign="never"
+                                prefix={isTransfer ? "→ " : tx.type === "income" ? "+" : "-"}
+                                tone={isTransfer ? "muted" : tx.type === "income" ? "income" : "expense"}
+                                gradient={false}
+                                align="right"
+                                containerStyle={s.txMoney}
+                            />
                         </View>
                     );
                 })}
@@ -1011,12 +997,14 @@ export default function DashboardScreen({
             </ScrollView>
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
             {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
-            <SmsReviewModal
-                visible={showReview}
-                items={reviewItems}
-                onClose={() => setShowReview(false)}
-                onApplied={() => { setShowReview(false); onRefresh(); }}
-            />
+            {smsOn && (
+                <SmsReviewModal
+                    visible={showReview}
+                    items={reviewItems}
+                    onClose={() => setShowReview(false)}
+                    onApplied={() => { setShowReview(false); onRefresh(); }}
+                />
+            )}
         </View>
     );
 }
@@ -1118,7 +1106,9 @@ const s = StyleSheet.create({
     txIcon: { width: 44, height: 44, borderRadius: 14, borderWidth: 1.5, alignItems: "center", justifyContent: "center", marginRight: 14, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.6, shadowRadius: 10, elevation: 8 },
     txDesc: { color: C.text, fontSize: 14, fontWeight: "800" },
     txDate: { color: C.textMuted, fontSize: 11 },
-    txAmount: { fontSize: 15, fontWeight: "800" },
+    txMoney: { flexShrink: 1, maxWidth: "45%" },
+    moneyFill: { alignSelf: "stretch" },
+    moneyRowEnd: { flexShrink: 1, maxWidth: "55%" },
     bankBadge: { backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4 },
     bankBadgeTxt: { color: C.primaryLight, fontSize: 9, fontWeight: "800" },
     empty: { color: C.textMuted, fontSize: 13, textAlign: "center", marginVertical: 10 },

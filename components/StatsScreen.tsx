@@ -13,7 +13,9 @@ import { GlassCard } from "./GlassCard";
 import { GlassSegmented } from "./GlassSegmented";
 import { GradientText } from "./GradientText";
 import { HelpButton } from "./HelpButton";
+import Money from "./Money";
 import { ScreenHeader } from "./ScreenHeader";
+import { SignMode, formatMoney } from "../services/format";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
@@ -121,8 +123,9 @@ function PieChart({ slices, selected, onSelect }: {
 // ─────────────────────────────────────────────────────────────
 // STAT CARD
 // ─────────────────────────────────────────────────────────────
-function StatCard({ icon, title, value, subtitle, color, children, tutRef }: {
+function StatCard({ icon, title, value, money, subtitle, color, children, tutRef }: {
     icon: any; title: string; value: string; subtitle?: string; color: string; children?: React.ReactNode;
+    money?: { amount: number; currency?: string; decimals?: 0 | 2; suffix?: string; sign?: SignMode };
     tutRef?: (n: View | null) => void;
 }) {
     // Valores positivos/destacables en bronce; neutros y negativos en color plano
@@ -137,7 +140,18 @@ function StatCard({ icon, title, value, subtitle, color, children, tutRef }: {
                     </View>
                     <Text style={sc.title}>{title}</Text>
                 </View>
-                {value ? (
+                {money ? (
+                    <Money
+                        size="lg"
+                        amount={money.amount}
+                        currency={money.currency}
+                        decimals={money.decimals}
+                        suffix={money.suffix}
+                        sign={money.sign}
+                        tone={color === C.danger ? "expense" : color === C.warning ? "warning" : color === C.textSub ? "muted" : "neutral"}
+                        containerStyle={sc.moneyWrap}
+                    />
+                ) : value ? (
                     highlight ? (
                         <View style={sc.valueWrap}>
                             <GradientText text={value} style={valueStyle} />
@@ -161,6 +175,7 @@ const sc = StyleSheet.create({
     title: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5, flex: 1 },
     value: { marginBottom: 4 },
     valueWrap: { alignSelf: "flex-start", maxWidth: "100%", marginBottom: 4 },
+    moneyWrap: { alignSelf: "stretch", marginBottom: 4 },
     subtitle: { color: C.textSub, fontSize: 12, lineHeight: 17 },
 });
 
@@ -230,7 +245,6 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const totalInc = incomesQ.reduce((s, t) => s + t.amount, 0);
     const savings = totalInc - totalExp;
     const savingsRate = totalInc > 0 ? (savings / totalInc) * 100 : 0;
-    const fmt = (n: number) => `Q ${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
     // ── Datos para pastel ─────────────────────────────────────
     const byCat: PieSlice[] = EXPENSE_CATEGORIES
@@ -337,11 +351,12 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const debtColor = debtRatio > 40 ? C.danger : debtRatio > 20 ? C.warning : C.income;
 
     // ── Subtítulo STAT 1 (Flujo de Caja Proyectado) ──────────
+    const q0 = (n: number) => formatMoney(n, "Q", { decimals: 0, sign: "never" });
     const stat1Subtitle = period === "current"
-        ? `A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este período. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`} Días hasta próximo ingreso: ${daysLeft}.`
+        ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este período. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`} Días hasta próximo ingreso: ${daysLeft}.`
         : period === "year"
-            ? `A este ritmo (Q${avgDaily.toFixed(0)}/día), proyectas gastar Q${projected.toFixed(0)} este año. ${projBalance >= 0 ? `Te sobraría Q${projBalance.toFixed(0)}.` : `Te faltarían Q${Math.abs(projBalance).toFixed(0)}.`}`
-            : `Gastaste Q${projected.toFixed(0)} en ${periodLabel} (Q${avgDaily.toFixed(0)}/día). ${projBalance >= 0 ? `Te sobró Q${projBalance.toFixed(0)}.` : `Te faltaron Q${Math.abs(projBalance).toFixed(0)}.`}`;
+            ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este año. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`}`
+            : `Gastaste ${q0(projected)} en ${periodLabel} (${q0(avgDaily)}/día). ${projBalance >= 0 ? `Te sobró ${q0(projBalance)}.` : `Te faltaron ${q0(projBalance)}.`}`;
 
     const savingsColor = savingsRate >= 20 ? C.income : savingsRate >= 0 ? C.warning : C.danger;
 
@@ -386,17 +401,15 @@ export default function StatsScreen({ transactions, settings }: Props) {
             <View ref={quickRef} collapsable={false} style={s.quickRow}>
                 <GlassCard radius={14} blur={false} topAccentColor={C.income} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>INGRESOS</Text>
-                    <Text style={[s.quickVal, { color: C.income }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Q {totalInc.toFixed(0)}</Text>
+                    <Money size="md" tone="income" sign="always" decimals={0} amount={totalInc} align="center" containerStyle={s.quickMoney} />
                 </GlassCard>
                 <GlassCard radius={14} blur={false} topAccentColor={C.expense} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>GASTOS</Text>
-                    <Text style={[s.quickVal, { color: C.expense }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>Q {totalExp.toFixed(0)}</Text>
+                    <Money size="md" tone="expense" sign="always" decimals={0} amount={-totalExp} align="center" containerStyle={s.quickMoney} />
                 </GlassCard>
                 <GlassCard radius={14} blur={false} topAccentColor={savings >= 0 ? C.accent : C.danger} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
                     <Text style={s.quickLbl}>AHORRO</Text>
-                    <Text style={[s.quickVal, { color: savings >= 0 ? C.accent : C.danger }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
-                        {savings >= 0 ? "+" : ""}Q {savings.toFixed(0)}
-                    </Text>
+                    <Money size="md" tone="auto" sign="always" decimals={0} amount={savings} align="center" containerStyle={s.quickMoney} />
                 </GlassCard>
             </View>
 
@@ -421,7 +434,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                                 <Ionicons name={selectedCatData.icon as any} size={20} color={selectedCatData.color} />
                                 <View style={{ flex: 1, marginLeft: 10 }}>
                                     <Text style={[s.sliceName, { color: selectedCatData.color }]}>{selectedCatData.label}</Text>
-                                    <Text style={s.sliceAmt}>Q {selectedCatData.value.toFixed(2)}</Text>
+                                    <Money size="md" tone="neutral" amount={selectedCatData.value} containerStyle={s.sliceAmt} />
                                 </View>
                                 <Text style={[s.slicePct, { color: selectedCatData.color }]}>{selectedCatData.pct.toFixed(1)}%</Text>
                             </View>
@@ -441,7 +454,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                                     <View style={{ flex: 1, marginHorizontal: 10 }}>
                                         <AnimBar pct={cat.pct} color={cat.color} height={5} />
                                     </View>
-                                    <Text style={s.legendAmt}>Q {cat.value.toFixed(0)}</Text>
+                                    <Money size="sm" gradient={false} tone="muted" decimals={0} amount={cat.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
                                     <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
                                 </TouchableOpacity>
                             ))}
@@ -468,7 +481,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
             )}
 
             {/* STAT 1 — Flujo proyectado */}
-            <StatCard tutRef={projRef} icon="trending-up-outline" title="Flujo de Caja Proyectado" value={fmt(projected)} color={projBalance >= 0 ? C.income : C.danger}
+            <StatCard tutRef={projRef} icon="trending-up-outline" title="Flujo de Caja Proyectado" value="" money={{ amount: projected }} color={projBalance >= 0 ? C.income : C.danger}
                 subtitle={stat1Subtitle}
             />
 
@@ -483,14 +496,14 @@ export default function StatsScreen({ transactions, settings }: Props) {
                     <View style={[s.trendBadge, { backgroundColor: velocityDiff > 0 ? C.danger + "22" : C.income + "22", marginTop: 12 }]}>
                         <Ionicons name={velocityDiff > 0 ? "trending-up" : "trending-down"} size={14} color={velocityDiff > 0 ? C.danger : C.income} />
                         <Text style={{ flexShrink: 1, color: velocityDiff > 0 ? C.danger : C.income, fontSize: 12, fontWeight: "700", marginLeft: 6 }}>
-                            {velocityDiff > 0 ? "+" : "-"}Q{Math.abs(velocityDiff).toFixed(0)} vs período anterior ({velocityPct.toFixed(0)}%)
+                            {formatMoney(velocityDiff, "Q", { decimals: 0, sign: "always" })} vs período anterior ({velocityPct.toFixed(0)}%)
                         </Text>
                     </View>
                 )}
             </StatCard>
 
             {/* STAT 3 — Ahorro acumulado (flujo de transacciones, no saldo de cuentas) */}
-            <StatCard tutRef={accumulatedRef} icon="diamond-outline" title="Ahorro Acumulado" value={`Q ${(netWorthByMonth[netWorthByMonth.length - 1] || 0).toFixed(0)}`} color={C.primaryLight}
+            <StatCard tutRef={accumulatedRef} icon="diamond-outline" title="Ahorro Acumulado" value="" money={{ amount: netWorthByMonth[netWorthByMonth.length - 1] || 0, decimals: 0 }} color={C.primaryLight}
                 subtitle="Ingresos menos gastos registrados en Q, acumulado en los últimos 6 meses. No es el saldo de tus cuentas (eso lo ves en Cuentas y en el Dashboard) — es tu tendencia de ahorro según lo que fuiste registrando."
             >
                 <View style={{ marginTop: 12 }}>
@@ -499,8 +512,8 @@ export default function StatsScreen({ transactions, settings }: Props) {
             </StatCard>
 
             {/* STAT 4 — Gasto promedio diario */}
-            <StatCard tutRef={dailyRef} icon="today-outline" title="Gasto Promedio Diario" value={`Q ${avgDaily.toFixed(2)}/día`} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent}
-                subtitle={`Tu presupuesto diario ideal es Q${avgDailyBudget.toFixed(2)}/día. Vas al ${Math.round(dailyPct)}% de ese límite.`}
+            <StatCard tutRef={dailyRef} icon="today-outline" title="Gasto Promedio Diario" value="" money={{ amount: avgDaily, suffix: "/día" }} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent}
+                subtitle={`Tu presupuesto diario ideal es ${formatMoney(avgDailyBudget, "Q", { decimals: 2, sign: "never" })}/día. Vas al ${Math.round(dailyPct)}% de ese límite.`}
             >
                 <AnimBar pct={dailyPct} color={dailyPct > 100 ? C.danger : dailyPct > 80 ? C.warning : C.accent} />
             </StatCard>
@@ -522,7 +535,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
                             <View style={{ flex: 1, marginHorizontal: 12 }}>
                                 <AnimBar pct={(b.amount / bankMax) * 100} color={C.fx} height={6} />
                             </View>
-                            <Text style={s.bankAmount}>Q {b.amount.toFixed(0)}</Text>
+                            <Money size="sm" gradient={false} tone="neutral" decimals={0} amount={b.amount} align="right" minScale={0.7} style={s.bankAmount} containerStyle={s.bankAmountWrap} />
                         </View>
                     ))}
                 </StatCard>
@@ -539,15 +552,16 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
             {/* STAT 8 — Velocidad de gasto */}
             {period === "current" && (
-                <StatCard tutRef={velocityRef} icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : `${velocityDiff > 0 ? "+" : ""}Q ${velocityDiff.toFixed(0)}`}
+                <StatCard tutRef={velocityRef} icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : ""}
+                    money={velocityDiff !== 0 ? { amount: velocityDiff, sign: "always", decimals: 0 } : undefined}
                     color={velocityDiff > 0 ? C.danger : velocityDiff < 0 ? C.income : C.textSub}
-                    subtitle={velocityDiff > 0 ? `Gastás Q${velocityDiff.toFixed(0)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás Q${Math.abs(velocityDiff).toFixed(0)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
+                    subtitle={velocityDiff > 0 ? `Gastás ${q0(velocityDiff)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás ${q0(velocityDiff)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
                 />
             )}
 
             {/* STAT 9 — Proyección de ahorro (misma métrica de flujo que la tarjeta de arriba) */}
-            <StatCard tutRef={savingsProjRef} icon="rocket-outline" title="Proyección de Ahorro" value={`Q ${Math.max(proj6, 0).toFixed(0)} en 6 meses`} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
-                subtitle={`A tu ritmo actual de ahorro (Q${avgMonthlySav.toFixed(0)}/mes), tu ahorro acumulado en 12 meses sería Q${Math.max(proj12, 0).toFixed(0)}.${avgMonthlySav < 0 ? " Atención: estás en negativo." : ""} (Basado en transacciones registradas, no en el saldo de tus cuentas.)`}
+            <StatCard tutRef={savingsProjRef} icon="rocket-outline" title="Proyección de Ahorro" value="" money={{ amount: Math.max(proj6, 0), decimals: 0, suffix: " en 6 meses" }} color={avgMonthlySav >= 0 ? C.primaryLight : C.danger}
+                subtitle={`A tu ritmo actual de ahorro (${formatMoney(avgMonthlySav, "Q", { decimals: 0 })}/mes), tu ahorro acumulado en 12 meses sería ${q0(Math.max(proj12, 0))}.${avgMonthlySav < 0 ? " Atención: estás en negativo." : ""} (Basado en transacciones registradas, no en el saldo de tus cuentas.)`}
             />
 
             <View style={{ height: 120 }} />
@@ -566,7 +580,7 @@ const s = StyleSheet.create({
     quickCard: { flex: 1 },
     quickContent: { padding: 12, alignItems: "center" },
     quickLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
-    quickVal: { fontSize: 15, fontWeight: "900" },
+    quickMoney: { alignSelf: "stretch" },
     cardWrap: { marginBottom: 14 },
     cardContent: { padding: 16 },
     cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 14 },
@@ -574,12 +588,13 @@ const s = StyleSheet.create({
     cardTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800", letterSpacing: 0.5, flex: 1 },
     sliceDetail: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 12, borderWidth: 1, marginTop: 12 },
     sliceName: { fontSize: 14, fontWeight: "800" },
-    sliceAmt: { color: C.textSub, fontSize: 12, marginTop: 2 },
+    sliceAmt: { marginTop: 2 },
     slicePct: { fontSize: 22, fontWeight: "900" },
     legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6 },
     legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
     legendLabel: { color: C.text, fontSize: 12, fontWeight: "600", flex: 1, minWidth: 0 },
-    legendAmt: { color: C.textSub, fontSize: 11, fontWeight: "700", textAlign: "right" },
+    legendAmt: { color: C.textSub, fontSize: 11, fontWeight: "700" },
+    legendAmtWrap: { minWidth: 62 },
     legendPct: { fontSize: 11, fontWeight: "900", minWidth: 35, textAlign: "right" },
     savingsRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
     savingsLbl: { color: C.textSub, fontSize: 12, fontWeight: "600" },
@@ -591,5 +606,6 @@ const s = StyleSheet.create({
     bankInfo: { flexShrink: 1, maxWidth: "35%" },
     bankName: { color: C.text, fontSize: 12, fontWeight: "700" },
     bankCount: { color: C.textSub, fontSize: 10 },
-    bankAmount: { color: C.textPrimary, fontSize: 13, fontWeight: "800", minWidth: 60, textAlign: "right" },
+    bankAmount: { color: C.textPrimary, fontSize: 13, fontWeight: "800" },
+    bankAmountWrap: { minWidth: 64 },
 });

@@ -146,7 +146,7 @@ export function GlassDialog({
 
                             {highlight && (
                                 <View style={s.highlightWrap}>
-                                    <GradientText text={highlight.value} style={s.highlightValue} />
+                                    <GradientText fit align="center" text={highlight.value} style={s.highlightValue} />
                                     {!!highlight.caption && <Text style={s.highlightCaption}>{highlight.caption}</Text>}
                                 </View>
                             )}

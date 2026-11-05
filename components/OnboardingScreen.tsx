@@ -11,6 +11,8 @@ import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
 import { InlineNotice } from "./InlineNotice";
+import Money from "./Money";
+import { formatMoney } from "../services/format";
 import { useKeyboardHeight } from "./useKeyboardHeight";
 
 // ─────────────────────────────────────────────────────────────
@@ -434,7 +436,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                             </View>
                         </View>
                         <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
-                            <Text style={s.debtAmount}>{data.currency} {amt(debt.monthlyPayment).toFixed(2)}/mes</Text>
+                            <Text style={s.debtAmount}>{formatMoney(amt(debt.monthlyPayment), data.currency)}/mes</Text>
                             <TouchableOpacity
                                 onPress={() => removeDebt(debt.id)}
                                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -451,7 +453,15 @@ export default function OnboardingScreen({ onComplete }: Props) {
                 {data.activeDebtsList.length > 0 && (
                     <View style={s.debtTotal}>
                         <Text style={s.debtTotalLbl}>TOTAL MENSUAL EN DEUDAS</Text>
-                        <Text style={s.debtTotalVal}>{data.currency} {amt(data.activeDebts).toFixed(2)}</Text>
+                        <Money
+                            amount={amt(data.activeDebts)}
+                            currency={data.currency}
+                            size="md"
+                            tone="expense"
+                            sign="never"
+                            align="center"
+                            containerStyle={s.debtTotalValWrap}
+                        />
                         {amt(data.activeDebts) > amt(data.monthlyIncome) * 0.3 && (
                             <InlineNotice
                                 variant="warning"
@@ -662,7 +672,7 @@ const s = StyleSheet.create({
     debtAmount: { color: C.danger, fontSize: 13, fontWeight: '800' },
     debtTotal: { marginTop: 14, padding: 14, backgroundColor: C.danger + '11', borderRadius: 12, borderWidth: 1, borderColor: C.danger + '33', alignItems: 'center' },
     debtTotalLbl: { color: C.textSub, fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-    debtTotalVal: { color: C.danger, fontSize: 22, fontWeight: '900', marginTop: 4 },
+    debtTotalValWrap: { alignSelf: 'stretch', marginTop: 4 },
     debtForm: { marginTop: 14 },
     debtFormContent: { padding: 16 },
     debtFormTitle: { color: C.textPrimary, fontSize: 15, fontWeight: '900', marginBottom: 12 },

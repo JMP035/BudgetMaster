@@ -25,6 +25,8 @@ import { HelpButton } from "./HelpButton";
 import { InlineNotice } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
 import { useKeyboardHeight } from "./useKeyboardHeight";
+import Money from "./Money";
+import { formatMoney } from "../services/format";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -308,7 +310,7 @@ function SavingsGoalModal({ onSave, onClose, existing, defaultCurrency }: {
                 </View>
                 <View style={{ flex: 1 }}>
                     <Text style={[md.previewName, { color: selectedColor }]} numberOfLines={1}>{name || "Mi Meta"}</Text>
-                    <Text style={md.previewAmt}>{currency} {target || "0.00"}</Text>
+                    <Money amount={parseAmount(target) || 0} currency={currency} size="lg" />
                 </View>
             </View>
 
@@ -513,12 +515,12 @@ function FixedExpensesTab({
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
-                            <Text style={[s.summaryVal, { color: C.income }]}>Q {paidQ.toFixed(0)}</Text>
+                            <Money amount={paidQ} currency="Q" size="md" tone="income" decimals={0} align="center" containerStyle={s.summaryMoney} />
                             <Text style={s.summaryLbl}>CUBIERTO</Text>
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
-                            <Text style={[s.summaryVal, { color: C.warning }]}>Q {(totalQ - paidQ).toFixed(0)}</Text>
+                            <Money amount={totalQ - paidQ} currency="Q" size="md" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
                             <Text style={s.summaryLbl}>PENDIENTE</Text>
                         </View>
                         <View style={s.summaryDivider} />
@@ -584,9 +586,7 @@ function FixedExpensesTab({
                                             </View>
 
                                             <View style={{ alignItems: "flex-end" }}>
-                                                <Text style={[s.fixedAmount, { color: expense.isPaid ? C.income : C.expense }]}>
-                                                    {expense.currency} {expense.amount.toFixed(2)}
-                                                </Text>
+                                                <Money amount={expense.amount} currency={expense.currency} size="sm" tone={expense.isPaid ? "income" : "expense"} align="right" />
                                                 <TouchableOpacity
                                                     onPress={() => handleDelete(expense)}
                                                     style={s.deleteBtn}
@@ -692,19 +692,17 @@ function CategoryBudgetTab({
             <View ref={summaryRef} collapsable={false}>
                 <GlassCard radius={16} blur={false} style={s.summaryCard} contentStyle={s.summaryContent}>
                     <View style={s.summaryItem}>
-                        <Text style={s.summaryVal}>Q {totalBudgeted.toFixed(0)}</Text>
+                        <Money amount={totalBudgeted} currency="Q" size="md" tone="neutral" decimals={0} align="center" containerStyle={s.summaryMoney} />
                         <Text style={s.summaryLbl}>PLANIFICADO</Text>
                     </View>
                     <View style={s.summaryDivider} />
                     <View style={s.summaryItem}>
-                        <Text style={[s.summaryVal, { color: C.expense }]}>Q {totalSpent.toFixed(0)}</Text>
+                        <Money amount={totalSpent} currency="Q" size="md" tone="expense" decimals={0} align="center" containerStyle={s.summaryMoney} />
                         <Text style={s.summaryLbl}>GASTADO</Text>
                     </View>
                     <View style={s.summaryDivider} />
                     <View style={s.summaryItem}>
-                        <Text style={[s.summaryVal, { color: totalBudgeted - totalSpent >= 0 ? C.income : C.danger }]}>
-                            Q {Math.abs(totalBudgeted - totalSpent).toFixed(0)}
-                        </Text>
+                        <Money amount={totalBudgeted - totalSpent} currency="Q" size="md" tone="auto" decimals={0} align="center" containerStyle={s.summaryMoney} />
                         <Text style={s.summaryLbl}>{totalBudgeted - totalSpent >= 0 ? "DISPONIBLE" : "EXCESO"}</Text>
                     </View>
                 </GlassCard>
@@ -731,12 +729,12 @@ function CategoryBudgetTab({
                             <View style={{ flex: 1 }}>
                                 <Text style={s.catName}>{cat.label}</Text>
                                 <Text style={[s.catStatus, { color: barColor }]}>
-                                    {over ? `Excedido Q${(spent - cb.limit).toFixed(2)}` : `Q${(cb.limit - spent).toFixed(2)} disponibles`}
+                                    {over ? `Excedido ${formatMoney(spent - cb.limit, "Q")}` : `${formatMoney(cb.limit - spent, "Q")} disponibles`}
                                 </Text>
                             </View>
                             <View style={{ alignItems: "flex-end" }}>
-                                <Text style={s.catSpent}>Q {spent.toFixed(2)}</Text>
-                                <Text style={s.catLimit}>de Q {cb.limit.toFixed(2)}</Text>
+                                <Money amount={spent} currency="Q" size="sm" align="right" />
+                                <Text style={s.catLimit}>de {formatMoney(cb.limit, "Q")}</Text>
                             </View>
                             <TouchableOpacity
                                 onPress={() => handleDelete(cb.categoryId)}
@@ -894,7 +892,7 @@ function SavingsGoalsTab({
                         const remaining = goal.targetAmount - goal.currentAmount;
                         const deadline = parseDateOnly(storedDateToDateOnly(goal.deadline)) ?? new Date(goal.deadline);
                         const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
-                        const monthly = daysLeft > 0 ? (remaining / Math.max(daysLeft / 30, 0.1)).toFixed(2) : "Meta vencida";
+                        const monthly = daysLeft > 0 ? remaining / Math.max(daysLeft / 30, 0.1) : null;
 
                         return (
                             <View key={goal.id} style={s.goalWrap} onLayout={e => { goalYs.current[goal.id] = e.nativeEvent.layout.y; }}>
@@ -907,9 +905,9 @@ function SavingsGoalsTab({
                                             <Text style={s.goalName}>{goal.name}</Text>
                                             <Text style={[s.goalPct, { color: goal.color }]}>{Math.round(pct)}% completado</Text>
                                         </View>
-                                        <View style={{ alignItems: "flex-end" }}>
-                                            <Text style={s.goalCurrent}>{goal.currency} {goal.currentAmount.toFixed(2)}</Text>
-                                            <Text style={s.goalTarget}>de {goal.currency} {goal.targetAmount.toFixed(2)}</Text>
+                                        <View style={s.goalAmounts}>
+                                            <Money amount={goal.currentAmount} currency={goal.currency} size="md" align="right" containerStyle={s.goalMoney} />
+                                            <Text style={s.goalTarget}>de {formatMoney(goal.targetAmount, goal.currency)}</Text>
                                         </View>
                                     </View>
 
@@ -917,7 +915,7 @@ function SavingsGoalsTab({
 
                                     <View style={s.goalStats}>
                                         <View style={s.goalStat}>
-                                            <Text style={s.goalStatVal}>{goal.currency} {remaining.toFixed(2)}</Text>
+                                            <Money amount={remaining} currency={goal.currency} size="sm" align="center" containerStyle={s.goalMoney} />
                                             <Text style={s.goalStatLbl}>RESTANTE</Text>
                                         </View>
                                         <View style={s.goalStat}>
@@ -925,7 +923,11 @@ function SavingsGoalsTab({
                                             <Text style={s.goalStatLbl}>PLAZO</Text>
                                         </View>
                                         <View style={s.goalStat}>
-                                            <Text style={s.goalStatVal}>{goal.currency} {monthly}/mes</Text>
+                                            {monthly === null ? (
+                                                <Text style={s.goalStatVal}>Meta vencida</Text>
+                                            ) : (
+                                                <Money amount={monthly} currency={goal.currency} size="sm" suffix="/mes" align="center" containerStyle={s.goalMoney} />
+                                            )}
                                             <Text style={s.goalStatLbl}>NECESARIO</Text>
                                         </View>
                                     </View>
@@ -997,7 +999,9 @@ function SavingsGoalsTab({
                                                 <Text style={s.goalName}>{goal.name}</Text>
                                                 <Text style={[s.goalPct, { color: C.income }]}>¡Meta alcanzada!</Text>
                                             </View>
-                                            <Text style={[s.goalCurrent, { color: C.income }]}>{goal.currency} {goal.targetAmount.toFixed(2)}</Text>
+                                            <View style={s.goalAmounts}>
+                                                <Money amount={goal.targetAmount} currency={goal.currency} size="md" tone="income" align="right" containerStyle={s.goalMoney} />
+                                            </View>
                                         </View>
                                     </GlassCard>
                                 </View>
@@ -1128,7 +1132,8 @@ const s = StyleSheet.create({
     // Resumen
     summaryCard: { marginBottom: 14 },
     summaryContent: { flexDirection: "row", padding: 16 },
-    summaryItem: { flex: 1, alignItems: "center" },
+    summaryItem: { flex: 1, alignItems: "center", paddingHorizontal: 2 },
+    summaryMoney: { alignSelf: "stretch", marginBottom: 4 },
     summaryVal: { color: C.textPrimary, fontSize: 16, fontWeight: "900", marginBottom: 4 },
     summaryLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
     summaryDivider: { width: 1, backgroundColor: C.glassBorder, marginHorizontal: 8 },
@@ -1143,7 +1148,6 @@ const s = StyleSheet.create({
     fixedIcon: { width: 40, height: 40, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 12 },
     fixedName: { color: C.text, fontSize: 15, fontWeight: "700" },
     fixedDay: { color: C.textSub, fontSize: 11 },
-    fixedAmount: { fontSize: 15, fontWeight: "800" },
     overdueBadge: { backgroundColor: C.danger + "22", paddingHorizontal: 6, borderRadius: 4 },
     overdueTxt: { color: C.danger, fontSize: 9, fontWeight: "900" },
     autoBadge: { backgroundColor: C.accent + "22", paddingHorizontal: 6, borderRadius: 4 },
@@ -1157,7 +1161,6 @@ const s = StyleSheet.create({
     catIcon: { width: 36, height: 36, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 10 },
     catName: { color: C.text, fontSize: 14, fontWeight: "700" },
     catStatus: { fontSize: 11, marginTop: 2 },
-    catSpent: { color: C.textPrimary, fontSize: 14, fontWeight: "800" },
     catLimit: { color: C.textSub, fontSize: 11 },
     pctLabel: { color: C.textSub, fontSize: 10, marginTop: 4, textAlign: "right" },
     catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
@@ -1179,8 +1182,9 @@ const s = StyleSheet.create({
     goalIcon: { width: 44, height: 44, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 12 },
     goalName: { color: C.textPrimary, fontSize: 16, fontWeight: "800" },
     goalPct: { fontSize: 12, fontWeight: "700", marginTop: 2 },
-    goalCurrent: { color: C.textPrimary, fontSize: 15, fontWeight: "800" },
-    goalTarget: { color: C.textSub, fontSize: 11, marginTop: 2 },
+    goalAmounts: { width: "42%", alignItems: "stretch" },
+    goalMoney: { alignSelf: "stretch" },
+    goalTarget: { color: C.textSub, fontSize: 11, marginTop: 2, textAlign: "right" },
     goalStats: { flexDirection: "row", marginTop: 10, marginBottom: 12 },
     goalStat: { flex: 1, alignItems: "center" },
     goalStatVal: { color: C.textPrimary, fontSize: 13, fontWeight: "800", textAlign: "center" },
@@ -1233,7 +1237,6 @@ const md = StyleSheet.create({
     preview: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 14, borderWidth: 1, marginBottom: 8, gap: 14 },
     previewIcon: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center" },
     previewName: { fontSize: 18, fontWeight: "800" },
-    previewAmt: { color: C.textSub, fontSize: 14, marginTop: 2 },
     colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 8 },
     colorDot: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
     colorDotActive: { borderWidth: 3, borderColor: C.textPrimary },

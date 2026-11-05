@@ -3,7 +3,7 @@
     "name": "BudgetMaster",
     "slug": "BudgetMaster",
     "version": "1.0.0",
-    "orientation": "default",
+    "orientation": "portrait",
     "icon": "./assets/app_icon.png",
     "scheme": "budgetmaster",
     "userInterfaceStyle": "dark",

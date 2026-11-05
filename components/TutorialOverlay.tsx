@@ -7,7 +7,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTutorial } from "../context/TutorialContext";
-import { Tutorial, TutorialScreen, TutorialService, TutorialStep, TUTORIALS } from "../services/TutorialService";
+import { Tutorial, TutorialScreen, TutorialService, TutorialStep } from "../services/TutorialService";
 import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
@@ -25,14 +25,47 @@ const ACTION_RETRIES = 4;
 const ACTION_RETRY_MS = 200;
 const ACTION_SETTLE_MS = 420;
 
-const DEFAULT_EMPTY_HINT = "Esta sección aparece cuando tengas datos registrados en este módulo.";
+const KEYBOARD_HIDE_TIMEOUT_MS = 700;
+const STABLE_MEASURE_EXTRA = 4;
+const STABLE_MEASURE_MS = 120;
+const STABLE_TOLERANCE_PX = 2;
+
+/** Espera a que el teclado termine de ocultarse (o vence el timeout). */
+function waitKeyboardHidden(ms: number): Promise<void> {
+    return new Promise<void>(resolve => {
+        let done = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const sub = Keyboard.addListener('keyboardDidHide', () => finish());
+        function finish() {
+            if (done) return;
+            done = true;
+            if (timer) clearTimeout(timer);
+            sub.remove();
+            resolve();
+        }
+        timer = setTimeout(finish, ms);
+    });
+}
+
+/** Si el teclado está visible lo cierra y espera a que el layout se reacomode. */
+async function ensureKeyboardHidden() {
+    if (Keyboard.isVisible()) {
+        const hidden = waitKeyboardHidden(KEYBOARD_HIDE_TIMEOUT_MS);
+        Keyboard.dismiss();
+        await hidden;
+    } else {
+        Keyboard.dismiss();
+    }
+}
+
+const DEFAULT_EMPTY_HINT ="Esta sección aparece cuando tengas datos registrados en este módulo.";
 
 interface Rect { x: number; y: number; width: number; height: number; }
 
 // ─────────────────────────────────────────────────────────────
 // SPOTLIGHT MASK — 4 rectángulos oscuros alrededor del elemento
 // ─────────────────────────────────────────────────────────────
-function SpotlightMask({ rect, padding = PADDING, soft = false }: { rect: Rect | null; padding?: number; soft?: boolean }) {
+function SpotlightMask({ rect, padding = PADDING, soft = false, width, height }: { rect: Rect | null; padding?: number; soft?: boolean; width: number; height: number }) {
     if (!rect) {
         return <View style={[StyleSheet.absoluteFill, { backgroundColor: soft ? C.scrimSoft : C.scrimTutorial }]} />;
     }
@@ -40,8 +73,17 @@ function SpotlightMask({ rect, padding = PADDING, soft = false }: { rect: Rect |
     const sp = Math.max(0, padding);
     const sx = Math.max(0, rect.x - sp);
     const sy = Math.max(0, rect.y - sp);
-    const sw = rect.width + sp * 2;
-    const sh = rect.height + sp * 2;
+    const sw = Math.min(rect.width + sp * 2, width - sx);
+    const sh = Math.min(rect.height + sp * 2, height - sy);
+
+    // Anillo acotado a la pantalla: nunca se sale por los bordes.
+    const ring = (k: number) => {
+        const left = Math.max(1, sx - k);
+        const right = Math.min(width - 1, sx + sw + k);
+        const top = Math.max(1, sy - k);
+        const bottom = Math.min(height - 1, sy + sh + k);
+        return { top, left, width: right - left, height: bottom - top };
+    };
 
     return (
         <>
@@ -52,16 +94,14 @@ function SpotlightMask({ rect, padding = PADDING, soft = false }: { rect: Rect |
             {/* Anillo exterior (resplandor) */}
             <View style={{
                 position: "absolute",
-                top: sy - 6, left: sx - 6,
-                width: sw + 12, height: sh + 12,
+                ...ring(6),
                 borderRadius: 18, borderWidth: 6,
                 borderColor: C.spotlightGlow,
             }} />
             {/* Anillo interior (bronce) */}
             <View style={{
                 position: "absolute",
-                top: sy - 2, left: sx - 2,
-                width: sw + 4, height: sh + 4,
+                ...ring(2),
                 borderRadius: 14, borderWidth: 2,
                 borderColor: C.spotlightRing,
             }} />
@@ -83,26 +123,50 @@ interface StepCardProps {
     onSkip: () => void;
 }
 
-// Alto aproximado de los elementos fijos de la tarjeta (paddings, barra de
-// progreso, ícono, contador y botones) — usado para calcular cuánto espacio
-// le queda al título + descripción cuando hay que limitarlos con ScrollView.
-const FIXED_CHROME_HEIGHT = 250;
 const CARD_MAX_WIDTH = 440;
-const MIN_SIDE_SPACE = 160;
+const GAP = 12;               // separación entre la tarjeta y el anillo del spotlight
+const EDGE = 8;               // margen mínimo contra los bordes seguros de la pantalla
+const RING = 6;               // grosor del resplandor del spotlight
+const MIN_BODY = 96;          // alto mínimo legible de título + descripción
+const MIN_BODY_COMPACT = 44;  // piso absoluto del cuerpo cuando hay que comprimir
 
+interface CardMeasure { key: string; naturalH: number; bodyH: number; iconBlockH: number; }
+
+/**
+ * Tarjeta del tutorial en dos fases:
+ *  1. MEDICIÓN: se renderiza invisible, sin límites, para conocer su alto natural
+ *     (tarjeta completa, cuerpo y bloque del ícono). Solo se mide una vez por clave.
+ *  2. UBICACIÓN: con esas medidas fijas se decide dónde va (junto al elemento,
+ *     con scroll interno o superpuesta) sin retroalimentarse del alto ya ubicado.
+ * Cabecera y pie (contador + botones) son fijos; solo el cuerpo hace scroll.
+ */
 function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, onNext, onSkip }: StepCardProps) {
     const insets = useSafeAreaInsets();
-    const { width: winW } = useWindowDimensions();
+    const { width: winW, fontScale } = useWindowDimensions();
     const slideAnim = useRef(new Animated.Value(40)).current;
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const pulseAnim = useRef(new Animated.Value(1)).current;
     const isLast = stepIndex === tutorial.steps.length - 1;
-    // Estimación inicial del alto de la tarjeta; se corrige con la medición real (onLayout).
-    const [cardHeight, setCardHeight] = useState(300);
 
     const sideMargin = Math.max(20, (winW - CARD_MAX_WIDTH) / 2);
 
+    const measureKey = `${winW}:${fontScale}:${fallback}`;
+    const [measured, setMeasured] = useState<CardMeasure | null>(null);
+    const partsRef = useRef<{ key?: string; naturalH?: number; bodyH?: number; iconBlockH?: number }>({});
+    const prevKeyRef = useRef(measureKey);
+    const m = measured && measured.key === measureKey ? measured : null;
+    const ready = m != null;
+
+    // Si cambia el ancho, la escala de fuente o la nota de fallback, hay que re-medir.
     useEffect(() => {
+        if (prevKeyRef.current === measureKey) return;
+        prevKeyRef.current = measureKey;
+        setMeasured(null);
+    }, [measureKey]);
+
+    // La animación arranca recién cuando la tarjeta ya fue medida y ubicada.
+    useEffect(() => {
+        if (!ready) return;
         slideAnim.setValue(40);
         fadeAnim.setValue(0);
         Animated.parallel([
@@ -117,111 +181,44 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, 
         );
         pulse.start();
         return () => pulse.stop();
-    }, [stepIndex]);
+    }, [ready]);
 
-    const handleCardLayout = (e: any) => {
-        const measured = e.nativeEvent.layout.height;
-        if (Math.abs(measured - cardHeight) > 4) {
-            setCardHeight(measured);
+    const report = (part: 'naturalH' | 'bodyH' | 'iconBlockH', value: number) => {
+        let p = partsRef.current;
+        if (p.key !== measureKey) {
+            p = { key: measureKey };
+            partsRef.current = p;
+        }
+        p[part] = value;
+        if (p.naturalH != null && p.bodyH != null && p.iconBlockH != null) {
+            setMeasured({ key: measureKey, naturalH: p.naturalH, bodyH: p.bodyH, iconBlockH: p.iconBlockH });
         }
     };
 
-    // Posicionar la card según espacio disponible
-    const cardPosition = (): { top: number; maxContentHeight?: number } => {
-        if (!rect) {
-            return { top: Math.max(insets.top + 20, (containerHeight - cardHeight) / 2) };
-        }
+    const progress = (
+        <View style={card.progressRow}>
+            {tutorial.steps.map((_, i) => (
+                <View key={i} style={[
+                    card.progressDot,
+                    { backgroundColor: i <= stepIndex ? C.primaryLight : C.glassBorder, width: i === stepIndex ? 24 : 8 }
+                ]} />
+            ))}
+        </View>
+    );
 
-        const spaceBelow = containerHeight - (rect.y + rect.height + PADDING);
-        const spaceAbove = rect.y - PADDING;
-        const fitsAbove = spaceAbove >= cardHeight + 20;
-        const fitsBelow = spaceBelow >= cardHeight + 20;
-
-        // La preferencia del step ('top'/'bottom') solo se respeta si el espacio alcanza.
-        if (step.position === 'top' && fitsAbove) {
-            return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
-        }
-        if (step.position === 'bottom' && fitsBelow) {
-            return { top: rect.y + rect.height + PADDING + 16 };
-        }
-        // Sin preferencia respetable: usar el lado que alcance el alto ideal.
-        if (fitsAbove) {
-            return { top: Math.max(60, rect.y - PADDING - cardHeight - 16) };
-        }
-        if (fitsBelow) {
-            return { top: rect.y + rect.height + PADDING + 16 };
-        }
-
-        // El elemento ocupa casi toda el área visible: la tarjeta se apoya sobre
-        // el borde inferior (sobre el elemento resaltado) en vez de quedar aplastada.
-        if (Math.max(spaceAbove, spaceBelow) < MIN_SIDE_SPACE) {
-            return { top: Math.max(insets.top + 20, containerHeight - cardHeight - Math.max(16, insets.bottom + 8)) };
-        }
-
-        // Fallback: ni arriba ni abajo alcanza el alto ideal — se usa el lado
-        // con más espacio disponible, pegado al rect, y se limita la altura
-        // visible del contenido para nunca superponerse al spotlight.
-        if (spaceAbove >= spaceBelow) {
-            const availableHeight = Math.max(0, spaceAbove);
-            return {
-                top: Math.max(20, rect.y - PADDING - availableHeight),
-                maxContentHeight: Math.max(40, availableHeight - FIXED_CHROME_HEIGHT),
-            };
-        }
-        const availableHeight = Math.max(0, spaceBelow);
-        return {
-            top: rect.y + rect.height + PADDING,
-            maxContentHeight: Math.max(40, availableHeight - FIXED_CHROME_HEIGHT),
-        };
-    };
-
-    const pos = cardPosition();
-
-    return (
-        <Animated.View
-            onLayout={handleCardLayout}
-            style={[
-                card.container,
-                { left: sideMargin, right: sideMargin },
-                { opacity: fadeAnim, transform: [{ translateY: slideAnim }], top: pos.top },
-            ]}
-        >
-            <GlassBackground radius={22} blur={false} />
-
-            {/* Progreso */}
-            <View style={card.progressRow}>
-                {tutorial.steps.map((_, i) => (
-                    <View key={i} style={[
-                        card.progressDot,
-                        { backgroundColor: i <= stepIndex ? C.primaryLight : C.glassBorder, width: i === stepIndex ? 24 : 8 }
-                    ]} />
-                ))}
-            </View>
-
-            {/* Ícono */}
-            <Animated.View style={[card.iconWrap, { transform: [{ scale: pulseAnim }] }]}>
-                <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
-            </Animated.View>
-
-            {pos.maxContentHeight != null ? (
-                <ScrollView style={{ maxHeight: pos.maxContentHeight }} showsVerticalScrollIndicator={false}>
-                    <Text style={card.title}>{step.title}</Text>
-                    <Text style={card.desc}>{step.description}</Text>
-                    {fallback && (
-                        <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
-                    )}
-                </ScrollView>
-            ) : (
-                <>
-                    <Text style={card.title}>{step.title}</Text>
-                    <Text style={card.desc}>{step.description}</Text>
-                    {fallback && (
-                        <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
-                    )}
-                </>
+    const bodyContent = (
+        <>
+            <Text style={card.title}>{step.title}</Text>
+            <Text style={card.desc}>{step.description}</Text>
+            {fallback && (
+                <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
             )}
-            <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
+        </>
+    );
 
+    const footer = (
+        <>
+            <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
             <View style={card.btnRow}>
                 <GlassButton kind="ghost" label="Omitir tutorial" onPress={onSkip} style={card.skipBtn} />
                 <GlassButton
@@ -232,6 +229,127 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, 
                     style={card.nextBtn}
                 />
             </View>
+        </>
+    );
+
+    // ── FASE DE MEDICIÓN ────────────────────────────────────────
+    if (!m) {
+        return (
+            <View
+                pointerEvents="none"
+                onLayout={(e: LayoutChangeEvent) => report('naturalH', e.nativeEvent.layout.height)}
+                style={[card.container, { left: sideMargin, right: sideMargin, top: 0, opacity: 0 }]}
+            >
+                {progress}
+                <View onLayout={(e: LayoutChangeEvent) => report('iconBlockH', e.nativeEvent.layout.height)}>
+                    <View style={card.iconWrap}>
+                        <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
+                    </View>
+                </View>
+                <View onLayout={(e: LayoutChangeEvent) => report('bodyH', e.nativeEvent.layout.height)}>
+                    {bodyContent}
+                </View>
+                {footer}
+            </View>
+        );
+    }
+
+    // ── FASE DE UBICACIÓN ───────────────────────────────────────
+    const H = containerHeight;
+    const safeTop = insets.top + EDGE;
+    const safeBottom = H - Math.max(insets.bottom, EDGE) - EDGE;
+    const avail = Math.max(0, safeBottom - safeTop);
+
+    const { naturalH, bodyH, iconBlockH } = m;
+    const chromeFull = naturalH - bodyH;
+    // Pantalla muy baja (landscape / chica): se oculta el ícono y se achica el padding.
+    const compact = (avail - chromeFull) < MIN_BODY;
+    const chrome = compact ? chromeFull - iconBlockH : chromeFull;
+    const naturalEff = compact ? naturalH - iconBlockH : naturalH;
+    const cardCap = Math.min(naturalEff, avail);
+    const minScrollBody = Math.min(bodyH, 120);
+
+    let top: number;
+    let cardH: number;
+    let bodyMax: number | undefined;
+    let overlap = false;
+
+    if (!rect) {
+        cardH = cardCap;
+        top = safeTop + (avail - cardH) / 2;
+        bodyMax = naturalEff > avail ? avail - chrome : undefined;
+    } else {
+        const pad = step.padding ?? PADDING;
+        const holeTop = rect.y - pad - RING;
+        const holeBottom = rect.y + rect.height + pad + RING;
+        const spaceAbove = holeTop - GAP - safeTop;
+        const spaceBelow = safeBottom - (holeBottom + GAP);
+        const space = (side: 'above' | 'below') => side === 'above' ? spaceAbove : spaceBelow;
+        const order: ('above' | 'below')[] = step.position === 'top' ? ['above', 'below'] : ['below', 'above'];
+        const placeOn = (side: 'above' | 'below', h: number) =>
+            side === 'above' ? holeTop - GAP - h : holeBottom + GAP;
+
+        const fit = order.find(s => space(s) >= naturalEff);
+        if (fit) {
+            // (a) cabe completa junto al elemento
+            cardH = naturalEff;
+            top = placeOn(fit, cardH);
+            bodyMax = undefined;
+        } else {
+            const best = space(order[1]) > space(order[0]) ? order[1] : order[0];
+            if (space(best) >= chrome + minScrollBody) {
+                // (b) cabe con scroll interno en el cuerpo
+                cardH = space(best);
+                bodyMax = cardH - chrome;
+                top = placeOn(best, cardH);
+            } else {
+                // (c) el elemento ocupa casi todo: la tarjeta se superpone
+                overlap = true;
+                cardH = cardCap;
+                bodyMax = naturalEff > avail ? avail - chrome : undefined;
+                const anchorBottom = (rect.y + rect.height / 2) <= (safeTop + safeBottom) / 2;
+                top = anchorBottom ? safeBottom - cardH : safeTop;
+            }
+        }
+    }
+
+    top = Math.max(safeTop, Math.min(top, safeBottom - cardH));
+    if (bodyMax != null) bodyMax = Math.max(MIN_BODY_COMPACT, bodyMax);
+
+    return (
+        <Animated.View
+            style={[
+                card.container,
+                compact && card.containerCompact,
+                { left: sideMargin, right: sideMargin, top, maxHeight: avail },
+                { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
+            ]}
+        >
+            <GlassBackground radius={22} blur={false} />
+            {overlap && <View pointerEvents="none" style={card.overlapBorder} />}
+
+            {/* Cabecera fija: progreso e ícono */}
+            {progress}
+            {!compact && (
+                <Animated.View style={[card.iconWrap, { transform: [{ scale: pulseAnim }] }]}>
+                    <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
+                </Animated.View>
+            )}
+
+            {/* Cuerpo: único tramo con scroll cuando falta espacio */}
+            {bodyMax != null ? (
+                <ScrollView
+                    style={{ maxHeight: bodyMax, flexGrow: 0 }}
+                    showsVerticalScrollIndicator
+                >
+                    {bodyContent}
+                </ScrollView>
+            ) : (
+                <View>{bodyContent}</View>
+            )}
+
+            {/* Pie fijo: contador + botones siempre visibles */}
+            {footer}
         </Animated.View>
     );
 }
@@ -243,9 +361,10 @@ interface MenuProps {
     onSelect: (t: Tutorial) => void;
     onClose: () => void;
     completed: string[];
+    tutorials: Tutorial[];
 }
 
-function TutorialMenu({ onSelect, onClose, completed }: MenuProps) {
+function TutorialMenu({ onSelect, onClose, completed, tutorials }: MenuProps) {
     const { height: winH } = useWindowDimensions();
     const insets = useSafeAreaInsets();
     const slideAnim = useRef(new Animated.Value(winH)).current;
@@ -282,7 +401,7 @@ function TutorialMenu({ onSelect, onClose, completed }: MenuProps) {
                     </View>
                     <Text style={mn.subtitle}>Elegí un tutorial. También podés abrir el de cada módulo con el botón ? de su encabezado.</Text>
                     <ScrollView showsVerticalScrollIndicator={false}>
-                        {TUTORIALS.map(tut => {
+                        {tutorials.map(tut => {
                             const done = completed.includes(tut.id);
                             return (
                                 <TouchableOpacity
@@ -331,9 +450,10 @@ interface Props {
     onCloseMenu?: () => void;
     currentScreen?: TutorialScreen;
     onNavigateToScreen?: (screen: TutorialScreen) => void;
+    smsEnabled?: boolean;
 }
 
-export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu, currentScreen, onNavigateToScreen }: Props) {
+export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu, currentScreen, onNavigateToScreen, smsEnabled = true }: Props) {
     const { measureElement, ensureVisible, runAction } = useTutorial();
 
     const [activeTutorial, setActiveTutorial] = useState<Tutorial | null>(null);
@@ -351,6 +471,8 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     currentScreenRef.current = currentScreen ?? 'dashboard';
     const onNavigateRef = useRef(onNavigateToScreen);
     onNavigateRef.current = onNavigateToScreen;
+    const smsEnabledRef = useRef(smsEnabled);
+    smsEnabledRef.current = smsEnabled;
     const overlayRootRef = useRef<View>(null);
 
     const win = useWindowDimensions();
@@ -370,7 +492,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     useEffect(() => {
         _start = (id: string) => {
             if (_activeFlag || activeTutorialRef.current) return;
-            const t = TutorialService.getTutorial(id);
+            const t = TutorialService.getTutorial(id, { smsEnabled: smsEnabledRef.current });
             if (t) startTutorial(t);
         };
         return () => { _start = null; };
@@ -384,7 +506,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     useEffect(() => {
         if (!activeTutorialId) return;
         if (activeTutorialRef.current) return;
-        const t = TutorialService.getTutorial(activeTutorialId);
+        const t = TutorialService.getTutorial(activeTutorialId, { smsEnabled: smsEnabledRef.current });
         if (t) startTutorial(t);
     }, [activeTutorialId]);
 
@@ -405,7 +527,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     // coordenadas relativas al overlay, y recorta lo que no es visible —
     // limitándolo al contenedor indicado por clipId (p. ej. 'app_content' para
     // excluir la barra inferior, o 'accounts_root' para el módulo de Cuentas).
-    const toOverlayRect = useCallback(async (raw: Rect, clipId: string | null): Promise<Rect | null> => {
+    const toOverlayRect = useCallback(async (raw: Rect, clipId: string | null, debugId?: string): Promise<Rect | null> => {
         const origin = await new Promise<{ x: number; y: number }>(resolve => {
             const node = overlayRootRef.current;
             if (!node) { resolve({ x: 0, y: 0 }); return; }
@@ -433,22 +555,26 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         const visBottom = Math.min(y + raw.height, bottom);
         const visH = visBottom - visTop;
 
-        if (visH <= 0 || visH < Math.min(48, raw.height * 0.4)) {
-            return null;
+        let out: Rect | null = null;
+        if (!(visH <= 0 || visH < Math.min(48, raw.height * 0.4))) {
+            const cx = Math.max(0, x);
+            const cw = Math.min(raw.width - (cx - x), overlaySizeRef.current.width - cx);
+            out = { x: cx, y: visTop, width: cw, height: visH };
         }
 
-        const cx = Math.max(0, x);
-        const cw = Math.min(raw.width - (cx - x), overlaySizeRef.current.width - cx);
-
-        return { x: cx, y: visTop, width: cw, height: visH };
+        if (__DEV__) {
+            console.log('[Tutorial]', debugId, JSON.stringify({ raw, origin, clip: { top, bottom }, out }));
+        }
+        return out;
     }, [measureElement]);
 
     const measureStep = useCallback(async (step: TutorialStep, key: string) => {
         const seq = ++measureSeqRef.current;
         const stale = () => !isMountedRef.current || seq !== measureSeqRef.current;
         try {
-            // 1. Teclado fuera
-            Keyboard.dismiss();
+            // 1. Teclado fuera (esperando a que el layout se reacomode)
+            await ensureKeyboardHidden();
+            if (stale()) return;
 
             // 2. Navegar si el paso pertenece a otra pantalla
             let navigated = false;
@@ -488,7 +614,8 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                     await sleep(NAV_MOUNT_MS);
                     if (stale()) return;
                 }
-                Keyboard.dismiss();
+                await ensureKeyboardHidden();
+                if (stale()) return;
                 await sleep(NAV_SETTLE_MS);
             } else {
                 await sleep(STEP_SETTLE_MS);
@@ -502,18 +629,39 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                 if (stale()) return;
             }
 
-            // 7. Medición con reintentos
-            let raw: Rect | null = null;
-            for (let i = 0; i < MEASURE_ATTEMPTS; i++) {
-                if (stale()) return;
-                raw = await measureElement(step.elementId).catch(() => null);
-                if (raw) break;
-                await sleep(MEASURE_RETRY_MS);
-            }
+            // 7. Medición con reintentos, esperando a que la posición se estabilice
+            const elementId = step.elementId;
+            const measureStable = async (): Promise<Rect | null> => {
+                let last: Rect | null = null;
+                for (let i = 0; i < MEASURE_ATTEMPTS; i++) {
+                    if (stale()) return null;
+                    last = await measureElement(elementId).catch(() => null);
+                    if (last) break;
+                    await sleep(MEASURE_RETRY_MS);
+                }
+                if (!last) return null;
+                for (let i = 0; i < STABLE_MEASURE_EXTRA; i++) {
+                    await sleep(STABLE_MEASURE_MS);
+                    if (stale()) return null;
+                    const next = await measureElement(elementId).catch(() => null);
+                    if (stale()) return null;
+                    if (!next) continue;
+                    const stable =
+                        Math.abs(next.x - last.x) <= STABLE_TOLERANCE_PX &&
+                        Math.abs(next.y - last.y) <= STABLE_TOLERANCE_PX &&
+                        Math.abs(next.width - last.width) <= STABLE_TOLERANCE_PX &&
+                        Math.abs(next.height - last.height) <= STABLE_TOLERANCE_PX;
+                    last = next;
+                    if (stable) break;
+                }
+                return last;
+            };
+            const raw = await measureStable();
+            if (stale()) return;
 
             // 8. Recorte al contenedor de la pantalla
             const clipId = step.screen === 'accounts' ? 'accounts_root' : step.screen ? 'app_content' : null;
-            const rect = raw ? await toOverlayRect(raw, clipId) : null;
+            const rect = raw ? await toOverlayRect(raw, clipId, `${key}:${step.elementId}`) : null;
             if (stale()) return;
 
             // 9. Sin rect visible: tarjeta centrada con nota de fallback
@@ -607,7 +755,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                         setOverlaySize({ width, height });
                     }}
                 >
-                    <SpotlightMask rect={spotlightRect} padding={currentStep.padding ?? PADDING} soft={fallback} />
+                    <SpotlightMask rect={spotlightRect} padding={currentStep.padding ?? PADDING} soft={fallback} width={overlaySize.width} height={overlaySize.height} />
                     {/* Bloquea todos los toques */}
                     <TouchableWithoutFeedback onPress={() => { }}>
                         <View style={StyleSheet.absoluteFill} />
@@ -615,6 +763,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                     {/* Card encima del bloqueador */}
                     {cardReady && (
                         <StepCard
+                            key={currentKey ?? undefined}
                             tutorial={activeTutorial}
                             step={currentStep}
                             stepIndex={stepIndex}
@@ -632,6 +781,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
             {showMenu && !activeTutorial && (
                 <TutorialMenu
                     completed={completed}
+                    tutorials={TutorialService.getTutorials({ smsEnabled })}
                     onSelect={t => {
                         onCloseMenu?.();
                         if (activeTutorialRef.current) return;
@@ -699,6 +849,8 @@ const ov = StyleSheet.create({
 
 const card = StyleSheet.create({
     container: { position: "absolute", borderRadius: 22, overflow: "hidden", backgroundColor: C.cardHigh, padding: 22, zIndex: 9999 },
+    containerCompact: { padding: 16 },
+    overlapBorder: { ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: C.glassActiveBorder },
     progressRow: { flexDirection: "row", gap: 6, marginBottom: 18, alignItems: "center" },
     progressDot: { height: 6, borderRadius: 3 },
     iconWrap: { width: 58, height: 58, borderRadius: 18, borderWidth: 1.5, backgroundColor: C.glassActive, borderColor: C.glassActiveBorder, alignItems: "center", justifyContent: "center", marginBottom: 14 },

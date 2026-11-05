@@ -16,7 +16,7 @@ import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
 import { GlassSegmented } from "./GlassSegmented";
 import { GlassSheet } from "./GlassSheet";
-import { GradientText } from "./GradientText";
+import { Money } from "./Money";
 import { HelpButton } from "./HelpButton";
 import { InlineNotice } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
@@ -300,6 +300,20 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
         setLoadingRate(false);
     };
 
+    /** El interruptor de SMS se guarda al instante (sin esperar a "Guardar cambios") sobre los ajustes más recientes. */
+    const toggleSms = async (v: boolean) => {
+        setSmsOpt(v);
+        try {
+            const fresh = await StorageService.getSettings();
+            const upd: UserSettings = { ...fresh, smsEnabled: v };
+            await StorageService.saveSettings(upd);
+            onSave(upd);
+        } catch (e) {
+            console.warn("[Settings] sms:", e);
+            setSmsOpt(!v);
+        }
+    };
+
     // ── Guardar ───────────────────────────────────────────────
     const handleSave = async () => {
         const bQ = parseAmount(budgetQ);
@@ -453,7 +467,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                                 {isNaN(autoUSD) ? (
                                     <Text style={s.autoValuePlain}>—</Text>
                                 ) : (
-                                    <GradientText text={`$ ${autoUSD.toFixed(2)}`} style={s.autoValue} />
+                                    <Money amount={autoUSD} currency="USD" size="md" tone="neutral" containerStyle={{ flex: 1 }} />
                                 )}
                             </View>
                             <Text style={s.hint}>
@@ -602,7 +616,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                 )}
 
                 {/* SMS */}
-                <Section tutId="settings_sms" icon="chatbubble-outline" title="Sincronización SMS Automática" description="Lee tus SMS de BAC, BANRURAL, GTC, BANTRAB y PROMERICA para registrar gastos automáticamente. Solo lee mensajes bancarios, nunca personales.">
+                <Section tutId="settings_sms" icon="chatbubble-outline" title="Sincronización de SMS" description="Lee tus SMS de BAC, BANRURAL, GTC, BANTRAB y PROMERICA para registrar gastos automáticamente. Solo lee mensajes bancarios, nunca personales.">
                     <View style={s.switchRow}>
                         <View style={{ flex: 1 }}>
                             <View style={s.switchLabelRow}>
@@ -610,10 +624,12 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                                 <Text style={s.switchLabel}>{smsOpt ? "Activado" : "Desactivado"}</Text>
                             </View>
                             <Text style={s.hint}>
-                                {smsOpt ? "Detecta y registra movimientos bancarios automáticamente." : "Podés registrar gastos manualmente o pegando el SMS."}
+                                {smsOpt
+                                    ? "Botón de sincronizar en Inicio, «Leer SMS» en Agregar y tutoriales de SMS visibles."
+                                    : "Todo lo relacionado con SMS queda oculto. Tus movimientos ya importados se conservan y Android no te pedirá el permiso."}
                             </Text>
                         </View>
-                        <Switch value={smsOpt} onValueChange={setSmsOpt} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
+                        <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
                     </View>
                 </Section>
 
@@ -718,7 +734,6 @@ const s = StyleSheet.create({
     input: { flex: 1, color: C.text, fontSize: 15 },
     currSymbol: { color: C.textSub, fontSize: 16, fontWeight: "700", marginRight: 8 },
     autoRow: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 50, overflow: "hidden" },
-    autoValue: { fontSize: 18, fontWeight: "900" },
     autoValuePlain: { color: C.textSub, fontSize: 18, fontWeight: "900" },
     ghostBtn: { marginTop: 10, minHeight: 44 },
     rateRow: { flexDirection: "row", alignItems: "center", gap: 8 },

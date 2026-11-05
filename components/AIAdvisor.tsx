@@ -573,14 +573,14 @@ export default function AIAdvisor({
                 </View>
 
                 {/* SUGERENCIAS RÁPIDAS */}
-                {!loading && input.trim() === "" && visibleReplies.length > 0 && (
-                    <View ref={suggestionsRef} collapsable={false}>
+                <View ref={suggestionsRef} collapsable={false} style={s.suggestionsWrap}>
+                    {!loading && input.trim() === "" && visibleReplies.length > 0 && (
                         <ScrollView
                             horizontal
                             showsHorizontalScrollIndicator={false}
                             keyboardShouldPersistTaps="handled"
                             style={s.suggestionsRow}
-                            contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+                            contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
                         >
                             {visibleReplies.map(q => (
                                 <TouchableOpacity
@@ -593,8 +593,8 @@ export default function AIAdvisor({
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
-                    </View>
-                )}
+                    )}
+                </View>
 
                 {/* INPUT */}
                 <View ref={inputBoxRef} collapsable={false} style={s.inputContainer}>
@@ -638,9 +638,10 @@ const s = StyleSheet.create({
     iconBg: { width: 44, height: 44, borderRadius: 14, overflow: "hidden", alignItems: "center", justifyContent: "center" },
     clearBtn: { width: 36, height: 36, borderRadius: 18, overflow: "hidden", alignItems: "center", justifyContent: "center" },
     banner: { marginHorizontal: 16, marginBottom: 8 },
-    chatWrap: { flex: 1 },
+    chatWrap: { flex: 1, minHeight: 0 },
     chatList: { flex: 1, paddingHorizontal: 16 },
-    suggestionsRow: { maxHeight: 48, marginBottom: 8 },
+    suggestionsWrap: { flexShrink: 0 },
+    suggestionsRow: { flexGrow: 0, height: 48, marginBottom: 8 },
     suggestionChip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.primaryDark + "33", borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
     suggestionTxt: { color: C.primaryLight, fontSize: 13, fontWeight: "600" },
     // INPUT — el contenedor siempre visible, el input se contrae si el nombre es largo

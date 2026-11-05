@@ -6,6 +6,8 @@ import {
 import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
 import { C } from "../theme";
+import { isSmsFeatureOn } from "../services/features";
+import Money from "./Money";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { useGlassDialog } from "./GlassDialogProvider";
@@ -28,13 +30,14 @@ const DELETE_CONFIRM = {
 interface DetailModalProps {
     tx: Transaction;
     settings: UserSettings;
+    smsOn: boolean;
     onClose: () => void;
     onSave: (updated: Transaction) => void;
     onDelete: (id: string) => void;
     onConvertToInstallment: () => void;
 }
 
-function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInstallment }: DetailModalProps) {
+function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvertToInstallment }: DetailModalProps) {
     const dialog = useGlassDialog();
     const [category, setCategory] = useState(tx.category);
     const [currency, setCurrency] = useState<Currency>(tx.currency || 'Q');
@@ -92,12 +95,14 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
                     <Ionicons name={selectedCat.icon} size={28} color={selectedCat.color} />
                 </View>
                 <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={m.amount}>
-                        <Text style={{ color: tx.type === 'income' ? C.income : C.expense }}>
-                            {tx.type === 'income' ? '+' : '-'}
-                        </Text>
-                        {' '}{tx.currency || 'Q'} {tx.amount.toFixed(2)}
-                    </Text>
+                    <Money
+                        amount={tx.amount}
+                        currency={tx.currency || 'Q'}
+                        size="lg"
+                        sign="never"
+                        prefix={tx.type === 'income' ? '+' : '-'}
+                        tone={tx.type === 'income' ? 'income' : 'expense'}
+                    />
                     <Text style={m.date}>
                         {new Date(tx.date).toLocaleDateString("es-GT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
                     </Text>
@@ -115,9 +120,16 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
 
             {/* FUENTE */}
             <View style={m.infoRow}>
-                <Ionicons name={tx.source === 'sms' ? "chatbubble-outline" : "pencil-outline"} size={16} color={C.textSub} style={m.infoIcon} />
+                <Ionicons
+                    name={tx.source === 'sms' ? (smsOn ? "chatbubble-outline" : "business-outline") : "pencil-outline"}
+                    size={16}
+                    color={C.textSub}
+                    style={m.infoIcon}
+                />
                 <Text style={m.infoLabel}>Fuente</Text>
-                <Text style={m.infoValue}>{tx.source === 'sms' ? 'Detectado por SMS' : 'Ingreso manual'}</Text>
+                <Text style={m.infoValue}>
+                    {tx.source === 'sms' ? (smsOn ? 'Detectado por SMS' : 'Importado del banco') : 'Ingreso manual'}
+                </Text>
             </View>
 
             {/* DESCRIPCIÓN EDITABLE */}
@@ -162,7 +174,7 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
             </View>
 
             {/* SMS ORIGINAL */}
-            {tx.originalSMS && (
+            {smsOn && tx.originalSMS && (
                 <View style={m.section}>
                     <TouchableOpacity style={m.smsToggle} onPress={() => setShowSMS(!showSMS)}>
                         <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.accent} />
@@ -188,11 +200,12 @@ function DetailModal({ tx, settings, onClose, onSave, onDelete, onConvertToInsta
 interface TxCardProps {
     tx: Transaction;
     settings: UserSettings;
+    smsOn: boolean;
     onDelete: (id: string) => void;
     onPress: (tx: Transaction) => void;
 }
 
-export function TxCard({ tx, settings, onDelete, onPress }: TxCardProps) {
+export function TxCard({ tx, settings, smsOn, onDelete, onPress }: TxCardProps) {
     const dialog = useGlassDialog();
     const cat = getCat(tx.category, settings.customCategories, tx.type);
     const isIncome = tx.type === "income";
@@ -220,7 +233,7 @@ export function TxCard({ tx, settings, onDelete, onPress }: TxCardProps) {
                                 <Text style={s.bankTxt}>{tx.bank.toUpperCase()}</Text>
                             </View>
                         )}
-                        {tx.source === "sms" && (
+                        {smsOn && tx.source === "sms" && (
                             <View style={s.smsBadge}>
                                 <Text style={s.smsBadgeTxt}>SMS</Text>
                             </View>
@@ -235,9 +248,17 @@ export function TxCard({ tx, settings, onDelete, onPress }: TxCardProps) {
                 </View>
 
                 <View style={{ alignItems: "flex-end" }}>
-                    <Text style={[s.txAmount, { color: isIncome ? C.income : C.expense }]}>
-                        {isIncome ? "+" : "-"}{txCurrency} {tx.amount.toFixed(2)}
-                    </Text>
+                    <Money
+                        amount={tx.amount}
+                        currency={txCurrency}
+                        size="sm"
+                        gradient={false}
+                        sign="never"
+                        align="right"
+                        prefix={isIncome ? "+" : "-"}
+                        tone={isIncome ? "income" : "expense"}
+                        containerStyle={s.txAmount}
+                    />
                     <TouchableOpacity
                         style={s.delBtn}
                         onPress={handleDelete}
@@ -274,6 +295,7 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 ];
 
 export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, accounts, onConvertToInstallment }: Props) {
+    const smsOn = isSmsFeatureOn(settings);
     const [filter, setFilter] = useState<TypeFilter>("all");
     const [currency, setCurrency] = useState<CurrencyFilter>("all");
     const [search, setSearch] = useState("");
@@ -319,6 +341,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
             <TxCard
                 tx={item}
                 settings={settings}
+                smsOn={smsOn}
                 onDelete={onDelete}
                 onPress={setSelected}
             />
@@ -326,7 +349,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
         return index === 0
             ? <View ref={firstRef} collapsable={false}>{card}</View>
             : card;
-    }, [settings, onDelete, firstRef]);
+    }, [settings, smsOn, onDelete, firstRef]);
 
     const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
@@ -414,6 +437,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                 <DetailModal
                     tx={selected}
                     settings={settings}
+                    smsOn={smsOn}
                     onClose={() => setSelected(null)}
                     onSave={(updated) => { onUpdate(updated); setSelected(null); }}
                     onDelete={(id) => { onDelete(id); setSelected(null); }}
@@ -450,7 +474,7 @@ const s = StyleSheet.create({
     txMeta: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" },
     txDate: { color: C.textSub, fontSize: 11 },
     txCat: { color: C.textSub, fontSize: 11 },
-    txAmount: { fontSize: 16, fontWeight: "800", marginBottom: 6 },
+    txAmount: { marginBottom: 6 },
     delBtn: { backgroundColor: C.danger + "22", padding: 6, borderRadius: 8, borderWidth: 1, borderColor: C.danger + "44" },
     bankBadge: { backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.primary + "55" },
     bankTxt: { color: C.primaryLight, fontSize: 8, fontWeight: "900" },
@@ -466,7 +490,6 @@ const s = StyleSheet.create({
 const m = StyleSheet.create({
     header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
     catIcon: { width: 56, height: 56, borderRadius: 16, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
-    amount: { color: C.text, fontSize: 22, fontWeight: "900" },
     date: { color: C.textSub, fontSize: 12, marginTop: 2, textTransform: "capitalize" },
     infoRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.separator },
     infoIcon: { marginRight: 10 },

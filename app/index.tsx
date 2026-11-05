@@ -13,6 +13,7 @@ import {
 } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
+import { isSmsFeatureOn } from "../services/features";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
@@ -471,6 +472,7 @@ function AppContent() {
           onCloseMenu={() => setShowTutorialMenu(false)}
           currentScreen={showAccounts ? 'accounts' : showAI ? 'advisor' : tab}
           onNavigateToScreen={navigateForTutorial}
+          smsEnabled={isSmsFeatureOn(settings)}
         />
       </View>
     </TutorialMenuProvider>

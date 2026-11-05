@@ -8,6 +8,7 @@ import { StorageService, Transaction } from "../services/storage";
 import type { SmsReviewItem } from "../services/SmsService";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassDialog } from "./GlassDialog";
+import Money from "./Money";
 
 interface Props {
     visible: boolean;
@@ -21,9 +22,6 @@ const TYPE_LABEL: Record<Transaction["type"], string> = {
     expense: "Gasto",
     transfer: "Neutro (pago o transferencia)",
 };
-
-const fmtMoney = (n: number, currency: string) =>
-    `${currency} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
 const fmtDay = (iso: string) => {
     const d = new Date(iso);
@@ -142,6 +140,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
         const tone = isRemove ? C.warning : C.primaryLight;
         const fixLine = isRemove ? "" : describeFix(item);
         const sign = o.type === "income" ? "+" : o.type === "expense" ? "-" : "";
+        const amountTone = o.type === "income" ? "income" : o.type === "expense" ? "expense" : "neutral";
 
         return (
             <View style={s.itemWrap}>
@@ -172,7 +171,16 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                                 </View>
                                 <Text style={s.itemDesc} numberOfLines={2}>{o.description || "Sin descripción"}</Text>
                                 <View style={s.itemMeta}>
-                                    <Text style={s.itemAmount}>{sign}{fmtMoney(o.amount, o.currency)}</Text>
+                                    <Money
+                                        amount={Math.abs(o.amount)}
+                                        currency={o.currency}
+                                        size="sm"
+                                        gradient={false}
+                                        sign="never"
+                                        prefix={sign}
+                                        tone={amountTone}
+                                        containerStyle={s.itemAmountWrap}
+                                    />
                                     <Text style={s.itemDate}>{fmtDay(o.date)}</Text>
                                 </View>
                             </View>
@@ -355,7 +363,7 @@ const s = StyleSheet.create({
     chipTxt: { fontSize: 11, fontWeight: "800", flexShrink: 1 },
     itemDesc: { color: C.text, fontSize: 14, fontWeight: "700", lineHeight: 19 },
     itemMeta: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 10, marginTop: 4 },
-    itemAmount: { color: C.text, fontSize: 15, fontWeight: "900" },
+    itemAmountWrap: { flexShrink: 1, maxWidth: "100%" },
     itemDate: { color: C.textSub, fontSize: 12 },
     fixLine: { color: C.primaryLight, fontSize: 12, lineHeight: 18, marginTop: 8 },
     sms: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 },

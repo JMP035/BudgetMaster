@@ -53,6 +53,13 @@ este sistema** — no estilos planos ni `Alert.alert` nativo ni grises genérico
 - `ScreenHeader` + `HelpButton` — encabezado de cada módulo con el "?" que abre su tutorial.
 - Tokens extra de `theme.ts`: `C.onPrimary` (texto sobre bronce), `C.fx` (moneda extranjera),
   `C.glassInput`/`C.glassInputBorder`, `C.glassActive`/`C.glassActiveBorder`.
+- `Money` (`components/Money.tsx`) + `formatMoney` (`services/format.ts`) — TODO importe destacado
+  usa `Money` (cifra en negrita con degradado bronce, gasto en rojo plano, ingreso en pátina; USD se
+  muestra "$"). En filas `flexDirection:'row'` pasarle `containerStyle={{flex:1}}` o ancho explícito;
+  en listas largas usar `gradient={false}`. Frases con importes: `formatMoney`, nunca `toFixed` a mano.
+- Interruptor de SMS: `isSmsFeatureOn(settings)` (`services/features.ts`). Toda UI nueva que mencione
+  o use SMS debe ocultarse cuando está apagado; los pasos de tutorial de SMS llevan `requiresSms`.
+- La app está bloqueada en vertical (`orientation: "portrait"` en `app.json`): no diseñar para horizontal.
 - Pantalla o módulo nuevo: registrar sus elementos con `useTutorialRef`, su ScrollView con
   `useTutorialScroll(key)` y agregar su tutorial en `services/Tutorial.ts`.
 - Montos con `parseAmount` (nunca `parseFloat`); fechas con `formatDateOnly`/`parseDateOnly`

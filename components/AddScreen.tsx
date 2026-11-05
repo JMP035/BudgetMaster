@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
     KeyboardAvoidingView, Platform, ScrollView,
@@ -17,6 +17,8 @@ import { GlassButton } from "./GlassButton";
 import { ScreenHeader } from "./ScreenHeader";
 import { HelpButton } from "./HelpButton";
 import { useKeyboardHeight } from "./useKeyboardHeight";
+import { formatMoney } from "../services/format";
+import { isSmsFeatureOn } from "../services/features";
 
 interface Props {
     onAdd: (tx: Transaction) => void;
@@ -38,6 +40,15 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const kb = useKeyboardHeight();
     const tutScroll = useTutorialScroll('add');
+    const smsOn = isSmsFeatureOn(settings);
+
+    // Si se apaga el interruptor de SMS, cerrar y limpiar el panel de pegar SMS.
+    useEffect(() => {
+        if (!smsOn) {
+            setShowSmsInput(false);
+            setSmsText("");
+        }
+    }, [smsOn]);
 
     const typeSelectorRef = useTutorialRef('add_type_selector');
     const currencyRef = useTutorialRef('add_currency');
@@ -82,9 +93,9 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 title: "Compra a cuotas detectada",
                 message: inst.name,
                 stats: [
-                    { icon: "cash-outline", label: "Total", value: `${inst.currency} ${inst.totalAmount.toFixed(2)}` },
+                    { icon: "cash-outline", label: "Total", value: formatMoney(inst.totalAmount, inst.currency) },
                     { icon: "repeat-outline", label: "Cuotas", value: inst.totalInstallments },
-                    { icon: "calendar-outline", label: "Pago mensual", value: `${inst.currency} ${inst.monthlyPayment.toFixed(2)}` },
+                    { icon: "calendar-outline", label: "Pago mensual", value: formatMoney(inst.monthlyPayment, inst.currency) },
                 ],
                 footnote: "Registrala desde Cuentas → Visacuotas.",
             });
@@ -102,7 +113,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 variant: "info",
                 icon: "swap-horizontal-outline",
                 title: isLoan ? "Desembolso detectado" : "Pago de tarjeta detectado",
-                message: `${tx.description || "Movimiento"} por ${tx.currency} ${tx.amount.toFixed(2)}.`,
+                message: `${tx.description || "Movimiento"} por ${formatMoney(tx.amount, tx.currency)}.`,
                 footnote: "Es un movimiento neutro: no cuenta como gasto ni como ingreso, por eso no se carga en el formulario. La sincronización de SMS en Inicio lo registra como neutro.",
             });
             setShowSmsInput(false);
@@ -169,25 +180,27 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                     headerRef={headerRef}
                     right={
                         <>
-                            <View ref={smsBtnRef} collapsable={false}>
-                                <TouchableOpacity
-                                    style={s.smsBtn}
-                                    onPress={() => setShowSmsInput(!showSmsInput)}
-                                    accessibilityRole="button"
-                                    accessibilityLabel="Leer SMS del banco"
-                                >
-                                    <GlassBackground radius={20} blur={false} />
-                                    <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
-                                    <Text style={s.smsBtnTxt}>Leer SMS</Text>
-                                </TouchableOpacity>
-                            </View>
+                            {smsOn && (
+                                <View ref={smsBtnRef} collapsable={false}>
+                                    <TouchableOpacity
+                                        style={s.smsBtn}
+                                        onPress={() => setShowSmsInput(!showSmsInput)}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Leer SMS del banco"
+                                    >
+                                        <GlassBackground radius={20} blur={false} />
+                                        <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
+                                        <Text style={s.smsBtnTxt}>Leer SMS</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
                             <HelpButton tutorialId="tutorial_agregar" />
                         </>
                     }
                 />
 
                 {/* LEER SMS */}
-                {showSmsInput && (
+                {smsOn && showSmsInput && (
                     <GlassCard blur={false} style={s.card} contentStyle={s.cardContent} leftAccentColor={C.accent}>
                         <Text style={[s.lbl, { color: C.accentLight }]}>PEGA AQUÍ EL TEXTO DEL BANCO</Text>
                         <Text style={s.hint}>

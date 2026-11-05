@@ -24,6 +24,12 @@ export interface TutorialStep {
     scrollKey?: string;
     // nota que se muestra si el elemento no existe o no queda visible (p. ej. aún sin datos)
     emptyHint?: string;
+    // el paso se omite cuando la sincronización SMS está desactivada en Ajustes
+    requiresSms?: boolean;
+    // descripción alternativa (sin mención a SMS) cuando la sincronización SMS está desactivada
+    noSmsDescription?: string;
+    // emptyHint alternativo (sin mención a SMS) cuando la sincronización SMS está desactivada
+    noSmsEmptyHint?: string;
 }
 
 export interface Tutorial {
@@ -33,6 +39,8 @@ export interface Tutorial {
     icon: string;
     color: string;
     steps: TutorialStep[];
+    // el tutorial completo se omite cuando la sincronización SMS está desactivada
+    requiresSms?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -43,7 +51,7 @@ export const TUTORIALS: Tutorial[] = [
     // ── Tour inicial ──────────────────────────────────────────
     {
         id: 'tour_inicial', title: 'Tour Inicial',
-        description: 'Conocé BudgetMaster en 7 pasos.',
+        description: 'Conocé BudgetMaster paso a paso.',
         icon: 'rocket-outline', color: C.primary,
         steps: [
             {
@@ -57,7 +65,7 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Tu puntuación del 0 al 100, calculada con los movimientos que registrás en el mes actual: cuánto ahorrás, si te mantenés dentro del presupuesto y si pagaste tus gastos fijos. Si todavía no registraste movimientos, el número aún no refleja tu situación real.',
             },
             {
-                id: 'tour_3', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16,
+                id: 'tour_3', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
                 title: 'Sync SMS',
                 description: 'Este botón lee tus SMS bancarios (BAC, BANRURAL, GTC, BANTRAB, PROMERICA) y registra tus gastos automáticamente. La primera vez Android te pedirá permiso para leer SMS: sin ese permiso no se puede sincronizar. Solo funciona en Android.',
             },
@@ -65,6 +73,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'tour_4', elementId: 'tab_add', position: 'top', icon: 'add-circle-outline', padding: 12,
                 title: 'Agregar Transacción',
                 description: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano. Ahí también podés pegar el texto de un SMS bancario para que la app complete los datos sola.',
+                noSmsDescription: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano.',
             },
             {
                 id: 'tour_5', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
@@ -137,7 +146,7 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Tus últimos registros. Para buscar, filtrar o editar cualquier movimiento usá la pestaña Movimientos.',
             },
             {
-                id: 'ini_10', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16,
+                id: 'ini_10', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
                 title: 'Sincronizar SMS',
                 description: 'Lee tus SMS bancarios y registra los movimientos detectados, sin duplicar los que ya importaste. Solo funciona en Android y necesita el permiso de SMS. Deslizá hacia abajo en el Inicio para recargar los datos.',
             },
@@ -175,12 +184,14 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'mov_5', elementId: 'tx_first', screen: 'transactions', position: 'bottom', icon: 'receipt-outline', padding: 8,
                 title: 'Cada movimiento',
                 description: 'Cada tarjeta muestra la descripción, la fecha, el banco, si vino de un SMS, la moneda y la categoría. El monto va en verde pátina si es ingreso y en rojo si es gasto. La papelera lo elimina, siempre con confirmación.',
+                noSmsDescription: 'Cada tarjeta muestra la descripción, la fecha, el banco, la moneda y la categoría. El monto va en verde pátina si es ingreso y en rojo si es gasto. La papelera lo elimina, siempre con confirmación.',
                 emptyHint: 'Todavía no tenés movimientos: registrá uno con el botón + de la barra inferior.',
             },
             {
                 id: 'mov_6', screen: 'transactions', position: 'center', icon: 'create-outline',
                 title: 'Editar un movimiento',
                 description: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, ver el SMS original si vino del banco, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
+                noSmsDescription: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
             },
         ],
     },
@@ -222,7 +233,7 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero. Podés crear categorías propias en Ajustes → Mis Categorías.',
             },
             {
-                id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'scan-outline', padding: 8,
+                id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'scan-outline', padding: 8, requiresSms: true,
                 title: 'Atajo: pegar un SMS',
                 description: 'Si tenés un SMS del banco, tocá "Leer SMS", pegá el texto y presioná "Analizar SMS": la app completa monto, moneda y tipo por vos. Al final revisá los datos y tocá "Guardar".',
             },
@@ -239,6 +250,7 @@ export const TUTORIALS: Tutorial[] = [
         id: 'tutorial_sms', title: 'Sincronización SMS',
         description: 'Registra gastos automáticamente desde tus SMS bancarios.',
         icon: 'chatbubble-outline', color: C.accentLight,
+        requiresSms: true,
         steps: [
             {
                 id: 'sms_1', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-outline', padding: 16,
@@ -366,6 +378,7 @@ export const TUTORIALS: Tutorial[] = [
                 title: 'Gasto por banco o tarjeta',
                 description: 'Cuánto gastaste con cada banco y en cuántas transacciones, para que sepás qué tarjeta usás más.',
                 emptyHint: 'Aparece cuando tus gastos tienen banco asignado, por ejemplo los importados por SMS.',
+                noSmsEmptyHint: 'Aparece cuando tus gastos tienen banco asignado.',
             },
             {
                 id: 'stats_10', elementId: 'stats_velocity', screen: 'stats', position: 'top', icon: 'speedometer-outline', padding: 8,
@@ -508,6 +521,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'set_7', elementId: 'settings_sms', screen: 'settings', position: 'top', icon: 'chatbubble-outline', padding: 8,
                 title: 'Sincronización SMS',
                 description: 'Activá o desactivá la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Solo se leen mensajes bancarios y todo queda en tu teléfono. Disponible solo en Android.',
+                noSmsDescription: 'Activá este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan.',
             },
             {
                 id: 'set_8', elementId: 'settings_gemini', screen: 'settings', position: 'top', icon: 'sparkles-outline', padding: 8,
@@ -528,6 +542,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'set_11', elementId: 'settings_save', screen: 'settings', position: 'top', icon: 'save-outline', padding: 8,
                 title: 'Guardar cambios',
                 description: 'Los cambios de perfil, presupuesto, moneda, tipo de cambio, ahorros, SMS, biometría y Gemini se aplican al tocar Guardar Cambios.',
+                noSmsDescription: 'Los cambios de perfil, presupuesto, moneda, tipo de cambio, ahorros, biometría y Gemini se aplican al tocar Guardar Cambios.',
             },
             {
                 id: 'set_12', elementId: 'settings_danger', screen: 'settings', position: 'top', icon: 'warning-outline', padding: 8,
@@ -569,7 +584,25 @@ export const TutorialService = {
         try { await AsyncStorage.removeItem(KEY); } catch { }
     },
 
-    getTutorial(id: string): Tutorial | undefined {
-        return TUTORIALS.find(t => t.id === id);
+    // Con smsEnabled === false quita lo relacionado con SMS (tutoriales y pasos marcados con
+    // requiresSms) y usa los textos alternativos; por defecto devuelve TUTORIALS sin cambios.
+    getTutorials(opts?: { smsEnabled?: boolean }): Tutorial[] {
+        if (opts?.smsEnabled !== false) return TUTORIALS;
+        return TUTORIALS
+            .filter(t => !t.requiresSms)
+            .map(t => ({
+                ...t,
+                steps: t.steps
+                    .filter(s => !s.requiresSms)
+                    .map(s => ({
+                        ...s,
+                        description: s.noSmsDescription ?? s.description,
+                        emptyHint: s.noSmsEmptyHint ?? s.emptyHint,
+                    })),
+            }));
+    },
+
+    getTutorial(id: string, opts?: { smsEnabled?: boolean }): Tutorial | undefined {
+        return this.getTutorials(opts).find(t => t.id === id);
     },
 };

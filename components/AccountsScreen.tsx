@@ -13,6 +13,7 @@ import {
   getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal, hasReliableConversion,
   parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
+import { formatMoney } from "../services/format";
 import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { useGlassDialog } from "./GlassDialogProvider";
@@ -23,6 +24,7 @@ import { HelpButton } from "./HelpButton";
 import InstallmentModal from "./InstallmentModal";
 import { InlineNotice, InlineNoticeVariant } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
+import Money from "./Money";
 import { isTutorialActive } from "./TutorialOverlay";
 
 // ─────────────────────────────────────────────────────────────
@@ -290,7 +292,7 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
       >
         <View style={[md.accDot, { backgroundColor: acc.color }]} />
         <Text style={md.accSelectName} numberOfLines={1}>{acc.name}</Text>
-        <Text style={md.accSelectBal}>{acc.currency} {acc.balance.toFixed(2)}</Text>
+        <Money amount={acc.balance} currency={acc.currency} size="sm" gradient={false} align="right" />
         {selected && <Ionicons name="checkmark-circle" size={18} color={acc.color} />}
       </GlassCard>
     </TouchableOpacity>
@@ -328,7 +330,7 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
       </View>
       {showPreview && (
         <Text style={[md.hint, { marginTop: 8 }]}>
-          Se acreditarán {toAcc!.currency} {convertedPreview.toFixed(2)} en {toAcc!.name} (tipo de cambio Q {settings.exchangeRate}/USD)
+          Se acreditarán {formatMoney(convertedPreview, toAcc!.currency)} en {toAcc!.name} (tipo de cambio Q {settings.exchangeRate}/USD)
         </Text>
       )}
       <View style={{ height: 16 }} />
@@ -355,7 +357,9 @@ export default function AccountsScreen({
   transactions, setTransactions, settings, onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
-  const { height: winH } = useWindowDimensions();
+  const { height: winH, width: winW } = useWindowDimensions();
+  // Columna derecha de saldos: ancho explícito para que el importe pueda medirse/encogerse
+  const balColW = Math.min(160, Math.max(104, Math.round(winW * 0.34)));
   const dialog = useGlassDialog();
 
   const [activeTab, setActiveTab] = useState<'accounts' | 'installments'>('accounts');
@@ -394,9 +398,6 @@ export default function AccountsScreen({
     });
     return () => sub.remove();
   }, []);
-
-  const fmt = (n: number, cur: Currency = 'Q') =>
-    `${cur} ${Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}`;
 
   // ── Patrimonio neto ──────────────────────────────────────
   const { totalQ, totalUSD, totalEUR, totalGBP } = calcNetWorthFromAccounts(accounts, settings.exchangeRate);
@@ -476,7 +477,7 @@ export default function AccountsScreen({
 
     // Registrar como transacción de transferencia
     const description = fromAcc.currency !== toAcc.currency
-      ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${fromAcc.currency} ${amount.toFixed(2)} → ${toAcc.currency} ${amountToCredit.toFixed(2)})`
+      ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${formatMoney(amount, fromAcc.currency)} → ${formatMoney(amountToCredit, toAcc.currency)})`
       : `Transferencia: ${fromAcc.name} → ${toAcc.name}`;
     const tx: Transaction = {
       id: `transfer_${Date.now()}`,
@@ -538,38 +539,34 @@ export default function AccountsScreen({
           <View style={s.summaryRow}>
             <View style={s.summaryItem}>
               <Text style={s.summaryLbl}>ACTIVOS</Text>
-              <Text style={[s.summaryVal, { color: C.income }]}>Q {totalAssets.toFixed(0)}</Text>
+              <Money amount={totalAssets} size="md" tone="neutral" decimals={0} align="center" containerStyle={s.summaryMoney} />
               {(totalEUR !== 0 || totalGBP !== 0) && (
                 <Text style={s.summarySub}>
-                  + {[totalEUR !== 0 ? `EUR ${totalEUR.toFixed(0)}` : null, totalGBP !== 0 ? `£ ${totalGBP.toFixed(0)}` : null].filter(Boolean).join(" · ")}
+                  + {[totalEUR !== 0 ? formatMoney(totalEUR, 'EUR', { decimals: 0 }) : null, totalGBP !== 0 ? formatMoney(totalGBP, '£', { decimals: 0 }) : null].filter(Boolean).join(" · ")}
                 </Text>
               )}
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
               <Text style={s.summaryLbl}>VISACUOTAS PEND.</Text>
-              <Text style={[s.summaryVal, { color: C.warning }]}>Q {installmentsPendingQ.toFixed(0)}</Text>
+              <Money amount={installmentsPendingQ} size="sm" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
               <Text style={s.summaryLbl}>NETO Q</Text>
-              <Text style={[s.summaryVal, { color: totalQ >= 0 ? C.textPrimary : C.danger }]}>
-                {totalQ < 0 ? '-' : ''}Q {Math.abs(totalQ).toFixed(0)}
-              </Text>
+              <Money amount={totalQ} size="sm" tone="auto" decimals={0} align="center" containerStyle={s.summaryMoney} />
             </View>
           </View>
           {totalUSD !== 0 && (
             <View style={[s.summaryRow, s.summaryRowSep]}>
               <View style={s.summaryItem}>
                 <Text style={s.summaryLbl}>NETO USD</Text>
-                <Text style={[s.summaryVal, { color: totalUSD >= 0 ? C.fx : C.danger }]}>
-                  {totalUSD < 0 ? '-' : ''}USD {Math.abs(totalUSD).toFixed(2)}
-                </Text>
+                <Money amount={totalUSD} currency="USD" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
               </View>
               <View style={s.summaryDivider} />
               <View style={s.summaryItem}>
                 <Text style={s.summaryLbl}>CUOTAS/MES</Text>
-                <Text style={[s.summaryVal, { color: C.warning }]}>Q {monthlyInstTotal.toFixed(0)}</Text>
+                <Money amount={monthlyInstTotal} size="sm" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
               </View>
               <View style={s.summaryDivider} />
               <View style={s.summaryItem}>
@@ -583,18 +580,14 @@ export default function AccountsScreen({
               {totalEUR !== 0 && (
                 <View style={s.summaryItem}>
                   <Text style={s.summaryLbl}>NETO EUR</Text>
-                  <Text style={[s.summaryVal, { color: totalEUR >= 0 ? C.fx : C.danger }]}>
-                    {totalEUR < 0 ? '-' : ''}EUR {Math.abs(totalEUR).toFixed(2)}
-                  </Text>
+                  <Money amount={totalEUR} currency="EUR" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
                 </View>
               )}
               {totalEUR !== 0 && totalGBP !== 0 && <View style={s.summaryDivider} />}
               {totalGBP !== 0 && (
                 <View style={s.summaryItem}>
                   <Text style={s.summaryLbl}>NETO £</Text>
-                  <Text style={[s.summaryVal, { color: totalGBP >= 0 ? C.fx : C.danger }]}>
-                    {totalGBP < 0 ? '-' : ''}£ {Math.abs(totalGBP).toFixed(2)}
-                  </Text>
+                  <Money amount={totalGBP} currency="£" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
                 </View>
               )}
             </View>
@@ -668,21 +661,19 @@ export default function AccountsScreen({
                         )}
                         {isCredit && monthlyTotal > 0 && (
                           <Text style={[s.accExtra, { color: C.warning }]}>
-                            Cuota mensual: {acc.currency} {monthlyTotal.toFixed(2)}
+                            Cuota mensual: {formatMoney(monthlyTotal, acc.currency)}
                           </Text>
                         )}
                       </View>
-                      <View style={{ alignItems: 'flex-end' }}>
+                      <View style={{ alignItems: 'flex-end', width: balColW }}>
                         {isCredit ? (
                           monthlyTotal > 0 ? (
-                            <Text style={[s.accBalance, { color: C.warning }]}>{acc.currency} {monthlyTotal.toFixed(2)}</Text>
+                            <Money amount={monthlyTotal} currency={acc.currency} size="sm" tone="warning" align="right" containerStyle={s.accMoney} />
                           ) : (
                             <Text style={s.noInst}>Sin cuotas activas</Text>
                           )
                         ) : (
-                          <Text style={[s.accBalance, { color: acc.color }]}>
-                            {fmt(acc.balance, acc.currency)}
-                          </Text>
+                          <Money amount={acc.balance} currency={acc.currency} size="md" tone="auto" align="right" containerStyle={s.accMoney} />
                         )}
                         <TouchableOpacity
                           onPress={() => handleDeleteAccount(acc.id)}
@@ -720,9 +711,8 @@ export default function AccountsScreen({
                     <GlassCard radius={16} blur={false} leftAccentColor={acc?.color || C.primary} contentStyle={s.instContent}>
                       <View style={s.instHeader}>
                         <Text style={s.instName}>{item.name}</Text>
-                        <Text style={[s.instBalance, { color: C.expense }]}>
-                          {item.currency} {item.totalAmount.toFixed(2)}
-                        </Text>
+                        <Money amount={item.totalAmount} currency={item.currency} size="sm" align="right" />
+
                       </View>
                       {acc && (
                         <View style={s.instAccRow}>
@@ -733,7 +723,7 @@ export default function AccountsScreen({
                       <AnimBar pct={pct} color={acc?.color || C.primary} />
                       <View style={s.instStats}>
                         <View style={s.instStat}>
-                          <Text style={s.instStatVal}>{item.currency} {item.monthlyPayment.toFixed(2)}</Text>
+                          <Money amount={item.monthlyPayment} currency={item.currency} size="sm" tone="warning" align="center" minScale={0.5} containerStyle={s.summaryMoney} />
                           <Text style={s.instStatLbl}>CUOTA/MES</Text>
                         </View>
                         <View style={s.instStat}>
@@ -828,6 +818,7 @@ const s = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryLbl: { color: C.textSub, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4, textAlign: 'center' },
   summaryVal: { fontSize: 15, fontWeight: '900', color: C.textPrimary },
+  summaryMoney: { alignSelf: 'stretch' },
   summarySub: { color: C.textSub, fontSize: 10, marginTop: 2 },
   summaryDivider: { width: 1, height: 32, backgroundColor: C.glassBorder, marginHorizontal: 8 },
 
@@ -841,7 +832,7 @@ const s = StyleSheet.create({
   accType: { color: C.textSub, fontSize: 11, marginTop: 2 },
   accExtra: { color: C.textSub, fontSize: 10, marginTop: 3 },
   noInst: { color: C.textSub, fontSize: 12, marginBottom: 4 },
-  accBalance: { fontSize: 16, fontWeight: '900', marginBottom: 4 },
+  accMoney: { alignSelf: 'stretch', marginBottom: 4 },
   bankBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   bankBadgeTxt: { fontSize: 9, fontWeight: '800' },
   deleteBtn: { padding: 6, borderRadius: 8, backgroundColor: C.danger + '11' },
@@ -849,7 +840,6 @@ const s = StyleSheet.create({
   instContent: { padding: 14, paddingLeft: 17 },
   instHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 },
   instName: { color: C.textPrimary, fontSize: 15, fontWeight: '800', flex: 1 },
-  instBalance: { fontSize: 14, fontWeight: '800' },
   instAccRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
   instAccTxt: { fontSize: 11, fontWeight: '700' },
   instStats: { flexDirection: 'row', marginTop: 10 },
@@ -885,6 +875,5 @@ const md = StyleSheet.create({
   accSelectContent: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },
   accDot: { width: 12, height: 12, borderRadius: 6 },
   accSelectName: { flex: 1, color: C.text, fontSize: 14, fontWeight: '700' },
-  accSelectBal: { color: C.textSub, fontSize: 12 },
   transferArrow: { alignItems: 'center', paddingVertical: 8 },
 });
