@@ -450,6 +450,24 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                     </View>
                 </Section>
 
+                {/* SMS (arriba, para que el interruptor sea fácil de encontrar) */}
+                <Section tutId="settings_sms" icon="chatbubble-outline" title="Sincronización de SMS" description="Lee la bandeja de tu teléfono y solo procesa los mensajes de bancos (BAC, BANRURAL, GTC, BANTRAB y PROMERICA) para registrar gastos automáticamente. Nada sale de tu dispositivo.">
+                    <View style={s.switchRow}>
+                        <View style={{ flex: 1 }}>
+                            <View style={s.switchLabelRow}>
+                                <Ionicons name={smsOpt ? "checkmark-circle" : "ellipse-outline"} size={16} color={smsOpt ? C.accent : C.textSub} />
+                                <Text style={s.switchLabel}>{smsOpt ? "Activado" : "Desactivado"}</Text>
+                            </View>
+                            <Text style={s.hint}>
+                                {smsOpt
+                                    ? "Botón de sincronizar en Inicio, «Leer SMS» en Agregar y tutoriales de SMS visibles."
+                                    : "Todo lo relacionado con SMS queda oculto. Tus movimientos ya importados se conservan y Android no te pedirá el permiso."}
+                            </Text>
+                        </View>
+                        <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
+                    </View>
+                </Section>
+
                 {/* PRESUPUESTO */}
                 <Section tutId="settings_budget" onLayoutY={trackY("budget")} icon="wallet-outline" title="Presupuesto Mensual" description="Cuánto planeás gastar cada mes. La app te avisará cuando te acerques al límite.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
@@ -614,24 +632,6 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                         </View>
                     </Section>
                 )}
-
-                {/* SMS */}
-                <Section tutId="settings_sms" icon="chatbubble-outline" title="Sincronización de SMS" description="Lee tus SMS de BAC, BANRURAL, GTC, BANTRAB y PROMERICA para registrar gastos automáticamente. Solo lee mensajes bancarios, nunca personales.">
-                    <View style={s.switchRow}>
-                        <View style={{ flex: 1 }}>
-                            <View style={s.switchLabelRow}>
-                                <Ionicons name={smsOpt ? "checkmark-circle" : "ellipse-outline"} size={16} color={smsOpt ? C.accent : C.textSub} />
-                                <Text style={s.switchLabel}>{smsOpt ? "Activado" : "Desactivado"}</Text>
-                            </View>
-                            <Text style={s.hint}>
-                                {smsOpt
-                                    ? "Botón de sincronizar en Inicio, «Leer SMS» en Agregar y tutoriales de SMS visibles."
-                                    : "Todo lo relacionado con SMS queda oculto. Tus movimientos ya importados se conservan y Android no te pedirá el permiso."}
-                            </Text>
-                        </View>
-                        <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
-                    </View>
-                </Section>
 
                 {/* GEMINI IA */}
                 <Section tutId="settings_gemini" onLayoutY={trackY("gemini")} icon="sparkles-outline" title="Inteligencia Artificial (Gemini)" description="Ingresá tu API Key de Google Gemini para activar el Asesor IA avanzado con respuestas en lenguaje natural. Obtené tu clave gratuita en: aistudio.google.com">

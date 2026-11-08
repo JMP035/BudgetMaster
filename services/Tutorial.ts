@@ -492,6 +492,12 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'El nombre con el que la app y el asesor te saludan.',
             },
             {
+                id: 'set_7', elementId: 'settings_sms', screen: 'settings', position: 'bottom', icon: 'chatbubble-outline', padding: 8,
+                title: 'Sincronización SMS',
+                description: 'Este interruptor activa o desactiva la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan. Disponible solo en Android.',
+                noSmsDescription: 'Activá este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan.',
+            },
+            {
                 id: 'set_2', elementId: 'settings_budget', screen: 'settings', position: 'bottom', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto mensual',
                 description: 'Lo máximo que planeás gastar por período, en quetzales. Con este número se calculan las alertas, el presupuesto diario ideal y parte de tu score. El equivalente en dólares se calcula solo con el tipo de cambio; si preferís, podés fijarlo a mano.',
@@ -516,12 +522,6 @@ export const TUTORIALS: Tutorial[] = [
                 title: 'Seguridad biométrica',
                 description: 'Pedí huella o reconocimiento facial cada vez que se abre la app.',
                 emptyHint: 'Esta opción aparece si tu teléfono tiene huella o reconocimiento facial configurado.',
-            },
-            {
-                id: 'set_7', elementId: 'settings_sms', screen: 'settings', position: 'top', icon: 'chatbubble-outline', padding: 8,
-                title: 'Sincronización SMS',
-                description: 'Activá o desactivá la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Solo se leen mensajes bancarios y todo queda en tu teléfono. Disponible solo en Android.',
-                noSmsDescription: 'Activá este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan.',
             },
             {
                 id: 'set_8', elementId: 'settings_gemini', screen: 'settings', position: 'top', icon: 'sparkles-outline', padding: 8,
