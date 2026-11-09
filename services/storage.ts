@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buildSmsFingerprint } from './BankSmsParser';
+import { merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS BASE
@@ -27,6 +28,8 @@ export interface Transaction {
   toAccountId?: string;   // Para transferencias
   bankRef?: string;        // Número de referencia bancaria (si el SMS lo trae)
   smsFingerprint?: string; // Huella del SMS de origen (deduplicación y descartes)
+  merchant?: string;       // Comercio normalizado para mostrar (SMS)
+  categoryEditedAt?: string; // ISO: el usuario eligió la categoría a mano
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -79,6 +82,17 @@ export interface CustomCategory {
   icon: string;
   color: string;
   type: 'expense' | 'income' | 'both';
+}
+
+// ─────────────────────────────────────────────────────────────
+// APRENDIZAJE POR COMERCIO Y BUZÓN DE SMS SIN CLASIFICAR
+// ─────────────────────────────────────────────────────────────
+export interface MerchantRule { key: string; label: string; category: string; createdAt: string; updatedAt: string; hits: number; }
+
+export interface SmsInboxItem {
+  fingerprint: string; body: string; address?: string; receivedAt?: number;
+  reason: string; bank: string; amount: number | null; currency: Currency;
+  merchant: string | null; occurredAt: string; suggestedType: 'expense' | 'income' | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -203,6 +217,9 @@ const K = {
   NOTIFICATION_STATE: '@bm_notification_state',
   SMS_DISMISSED: '@bm_sms_dismissed',
   SMS_REVIEW_KEPT: '@bm_sms_review_kept',
+  MERCHANT_RULES: '@bm_merchant_rules',
+  SMS_INBOX: '@bm_sms_inbox',
+  SMS_INBOX_IGNORED: '@bm_sms_inbox_ignored',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -630,6 +647,8 @@ export function getAccountMonthlyInstallmentTotal(installments: CreditInstallmen
 // ─────────────────────────────────────────────────────────────
 const MAX_SMS_DISMISSED = 5000;
 const MAX_SMS_REVIEW_KEPT = 5000;
+const MAX_SMS_INBOX = 200;
+const MAX_SMS_INBOX_IGNORED = 2000;
 
 /** Llaves (id y huella) que impiden que un movimiento SMS borrado vuelva a importarse. */
 function smsTombstoneKeys(tx: Transaction): string[] {
@@ -774,6 +793,107 @@ export const StorageService = {
     await this.addDismissedSms(tombstones);
     await this.addSmsReviewKept(keepIds);
     return next;
+  },
+
+  // ── Aprendizaje por comercio ──────────────────────────────
+  async getMerchantRules(): Promise<MerchantRule[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.MERCHANT_RULES);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  async saveMerchantRules(rules: MerchantRule[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.MERCHANT_RULES, JSON.stringify(rules)); } catch { }
+  },
+
+  async deleteMerchantRule(key: string): Promise<MerchantRule[]> {
+    const all = await this.getMerchantRules();
+    const updated = all.filter(r => r.key !== key);
+    await this.saveMerchantRules(updated);
+    return updated;
+  },
+
+  /**
+   * Guarda un movimiento editado (tx ya trae categoryEditedAt). Con `applyToPast`
+   * copia la categoría a los otros movimientos SMS del mismo comercio (sin marcarlos
+   * como editados a mano); con `remember` aprende la regla del comercio.
+   * Una lectura y una escritura de transacciones. `affected` = otros movimientos cambiados.
+   */
+  async saveTransactionWithLearning(
+    tx: Transaction,
+    opts: { remember: boolean; applyToPast: boolean },
+  ): Promise<{ transactions: Transaction[]; affected: number }> {
+    const all = await this.getTransactions();
+    const pastIds = opts.applyToPast ? new Set(sameMerchantTxIds(all, tx)) : new Set<string>();
+    let affected = 0;
+    const next = all.map(t => {
+      if (t.id === tx.id) return tx;
+      if (pastIds.has(t.id) && t.category !== tx.category) {
+        affected++;
+        return { ...t, category: tx.category };
+      }
+      return t;
+    });
+    await this.saveTransactions(next);
+
+    if (opts.remember) {
+      const merchant = merchantOfTransaction(tx);
+      if (merchant) {
+        const rules = await this.getMerchantRules();
+        const updated = upsertMerchantRule(rules, merchant, tx.category, new Date().toISOString());
+        await this.saveMerchantRules(updated);
+      }
+    }
+    return { transactions: next, affected };
+  },
+
+  // ── Buzón de SMS sin clasificar ───────────────────────────
+  async getSmsInbox(): Promise<SmsInboxItem[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_INBOX);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Reemplaza el buzón con lo que el motor no entendió (sin ignorados; tope de 200). */
+  async replaceSmsInbox(items: SmsInboxItem[]): Promise<SmsInboxItem[]> {
+    const ignored = new Set(await this.getSmsInboxIgnored());
+    const next = items.filter(i => !ignored.has(i.fingerprint)).slice(0, MAX_SMS_INBOX);
+    try { await AsyncStorage.setItem(K.SMS_INBOX, JSON.stringify(next)); } catch { }
+    return next;
+  },
+
+  async getSmsInboxIgnored(): Promise<string[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_INBOX_IGNORED);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Marca un SMS del buzón como ignorado (tope de 2000) y lo saca del buzón. */
+  async ignoreSmsInboxItem(fp: string): Promise<void> {
+    try {
+      const current = await this.getSmsInboxIgnored();
+      const merged = Array.from(new Set([...current, fp]));
+      const trimmed = merged.length > MAX_SMS_INBOX_IGNORED ? merged.slice(merged.length - MAX_SMS_INBOX_IGNORED) : merged;
+      await AsyncStorage.setItem(K.SMS_INBOX_IGNORED, JSON.stringify(trimmed));
+      const inbox = await this.getSmsInbox();
+      await AsyncStorage.setItem(K.SMS_INBOX, JSON.stringify(inbox.filter(i => i.fingerprint !== fp)));
+    } catch { }
+  },
+
+  /** Registra como movimiento un SMS del buzón y lo saca del buzón. */
+  async registerSmsInboxItem(fp: string, tx: Transaction): Promise<Transaction[]> {
+    const updated = await this.addTransaction(tx);
+    try {
+      const inbox = await this.getSmsInbox();
+      await AsyncStorage.setItem(K.SMS_INBOX, JSON.stringify(inbox.filter(i => i.fingerprint !== fp)));
+    } catch { }
+    return updated;
   },
 
   // ── Settings ──────────────────────────────────────────────

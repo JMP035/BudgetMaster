@@ -79,7 +79,7 @@ export function GlassDialog({
     actions,
     dismissOnBackdrop = true,
 }: GlassDialogProps) {
-    const { width, height } = useWindowDimensions();
+    const { width, height, fontScale } = useWindowDimensions();
     const insets = useSafeAreaInsets();
 
     const color = VARIANT_COLOR[variant];
@@ -89,8 +89,17 @@ export function GlassDialog({
         ? actions.slice(0, 3)
         : [{ label: "Entendido", kind: "primary" as const, onPress: onClose }]);
 
-    const stacked = width < 360 || list.length >= 3;
-    const hasPrimary = list.some((a) => (a.kind ?? "secondary") === "primary");
+    // Ancho estimado de cada botón: si no caben dos en fila con su label, se apilan.
+    const cardInnerW = Math.min(width - 40, 400) - 44; // overlay padding 20*2, content padding 22*2
+    const perBtnW = (cardInnerW - BTN_GAP) / 2;
+    const scale = Math.max(1, fontScale);
+    const charW = 8.2 * scale; // 14px peso 900
+    const needW = (a: GlassDialogAction) => a.label.length * charW + 32 + (a.icon ? 22 : 0);
+    const stacked =
+        list.length >= 3 ||
+        width < 360 ||
+        fontScale > 1.3 ||
+        (list.length === 2 && list.some((a) => needW(a) > perBtnW));
     // apilado: primaria arriba; en fila: primaria a la derecha
     const ordered = [...list].sort((a, b) => {
         const pa = (a.kind ?? "secondary") === "primary" ? 1 : 0;
@@ -99,7 +108,8 @@ export function GlassDialog({
     });
 
     const availableH = height - insets.top - insets.bottom - 48;
-    const actionsH = stacked ? list.length * BTN_MIN_HEIGHT + (list.length - 1) * BTN_GAP : BTN_MIN_HEIGHT;
+    const btnH = BTN_MIN_HEIGHT * scale;
+    const actionsH = stacked ? list.length * btnH + (list.length - 1) * BTN_GAP : btnH;
     const scrollMaxH = Math.max(120, Math.min(height * 0.82, availableH) - actionsH - 22 * 2 - 16);
 
     const visibleStats = stats ?? [];
@@ -195,11 +205,7 @@ export function GlassDialog({
                                 const kind = a.kind ?? "secondary";
                                 const isPrimary = kind === "primary";
                                 const textColor = isPrimary ? C.onPrimary : kind === "destructive" ? C.danger : C.text;
-                                const flexStyle = stacked
-                                    ? s.btnStacked
-                                    : hasPrimary && !isPrimary
-                                        ? s.btnRowSide
-                                        : s.btnRowGrow;
+                                const flexStyle = stacked ? s.btnStacked : s.btnRowGrow;
                                 return (
                                     <Pressable
                                         key={`${a.label}-${i}`}
@@ -290,8 +296,7 @@ const s = StyleSheet.create({
         overflow: "hidden",
     },
     btnStacked: { alignSelf: "stretch" },
-    btnRowGrow: { flex: 1 },
-    btnRowSide: { flexShrink: 1 },
+    btnRowGrow: { flex: 1, flexBasis: 0 },
     btnPrimary: { backgroundColor: C.primary },
     btnDestructive: { borderWidth: 1, borderColor: C.danger + "66" },
     btnPressed: { opacity: 0.8 },

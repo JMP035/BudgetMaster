@@ -9,7 +9,7 @@ export interface Category {
 }
 
 // ─────────────────────────────────────────────────────────────
-// CATEGORÍAS DE GASTOS (20)
+// CATEGORÍAS DE GASTOS (22)
 // ─────────────────────────────────────────────────────────────
 export const EXPENSE_CATEGORIES: Category[] = [
     { id: "food", label: "Comida", icon: "fast-food-outline", color: "#E8943A" },
@@ -31,6 +31,8 @@ export const EXPENSE_CATEGORIES: Category[] = [
     { id: "atm", label: "Retiro ATM", icon: "cash-outline", color: "#84CC16" },
     { id: "transfer", label: "Transferencia", icon: "swap-horizontal-outline", color: "#8B5CF6" },
     { id: "subscriptions", label: "Suscripciones", icon: "repeat-outline", color: "#06B6D4" },
+    { id: "tech", label: "Tecnología", icon: "hardware-chip-outline", color: "#64748B" },
+    { id: "bank_fees", label: "Comisiones", icon: "receipt-outline", color: "#A1887F" },
     { id: "other", label: "Otro", icon: "ellipsis-horizontal-circle-outline", color: "#95A5A6" },
 ];
 

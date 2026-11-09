@@ -36,13 +36,14 @@
 // Contraejemplos de pago único: "... Q 15.00 en PARQUEO PERI ..." y
 //   "... USD 1.99 en GOOGLE *Google One ..." son purchase (no cuotas).
 
-import type { Account, CreditInstallment, Currency, Transaction } from './storage';
+import type { Account, CreditInstallment, Currency, MerchantRule, SmsInboxItem, Transaction } from './storage';
 import {
   categorizeExpense,
   categorizeIncome,
   extractMerchantAndLocation,
   normalizeText,
 } from './Categorizer';
+import { findMerchantRule } from './MerchantRules';
 
 // ─────────────────────────────────────────────────────────────
 // 1a. NORMALIZACIÓN
@@ -381,7 +382,8 @@ export type SmsKind =
   | 'transfer_out' | 'transfer_in' | 'deposit' | 'payroll' | 'refund'
   | 'card_payment' | 'loan_disbursement'
   | 'own_transfer' | 'promo' | 'otp' | 'declined' | 'balance_info'
-  | 'statement' | 'security' | 'phishing' | 'not_bank' | 'unparsed';
+  | 'statement' | 'security' | 'phishing' | 'not_bank' | 'unparsed'
+  | 'notice' | 'bank_fee';
 
 export interface SmsClassification {
   accepted: boolean;            // true => genera Transaction o CreditInstallment
@@ -441,6 +443,29 @@ const BALANCE_INFO_RE = /\b(?:tu|su) saldo (?:es|disponible|actual)|saldo al\b/;
 const TRANSACTIONAL_VERB_RE = /\b(?:compra|consumo|cargo|retiro|transaccion|debit\w*|acredit\w*|deposito|abono|transferencia|pago|cobro)\b/;
 const BANK_TEMPLATE_RE = /prf protege tu|bac (?:visa|mastercard|amex)|credomatic/;
 
+// Avisos informativos SIN monto (tarjeta en Apple/Google/Garmin Pay, cuenta asociada a la app,
+// límite alcanzado, agradecimiento de pago). Solo se evalúan sin monto: un aviso nunca se traga
+// un movimiento real.
+const NOTICE_RE = new RegExp(
+  '(?:activad|reanudad|suspendid|desactivad|eliminad|agregad|registrad|vinculad|habilitad)[ao]s? en (?:el )?servicio|' +
+  '\\b(?:apple|google|garmin|samsung) pay\\b|' +
+  'asociad[ao]s? (?:en|a) (?:android|ios|iphone|la app|tu app|su app|app)|desde app \\w+ en|' +
+  'alcanzaste el \\d+ ?% del limite|(?:has|ha) alcanzado (?:el )?(?:\\d+ ?% (?:de|del) )?(?:tu |su )?limite|' +
+  'gracias por (?:tu|su) pago|te agradece (?:el|tu) pago'
+);
+
+// Comisiones bancarias descritas en el texto del SMS.
+const FEE_RE = /\b(?:comision\w*|cargo por (?:servicio|transferencia|transaccion|manejo)|cobro (?:de|por) (?:servicio|comision\w*|transferencia)|costo (?:de|por) (?:la )?(?:transaccion|transferencia))\b/;
+
+/**
+ * Montos (Q) de los débitos BANRURAL sin comercio reconocido que son la comisión por
+ * transferencia. Ajustar cuando el usuario comparta el texto real.
+ */
+export const BANRURAL_FEE_AMOUNTS: number[] = [5];
+
+/** Monto máximo (Q) de un movimiento que puede ser la comisión de una transferencia vecina. */
+export const FEE_PAIR_MAX = 10;
+
 const REFUND_RE = /\b(?:reverso|reversion|reversad\w*|devolucion|devuelt\w*|anulacion|anulad[ao]s?|reembolso|contracargo|reintegro)\b/;
 const CARD_PAYMENT_RE = /(?:pago|abono) (?:a|de|recibido a|aplicado a) (?:tu |su )?tarjeta|hemos recibido (?:tu|su) pago|pago (?:aplicado|recibido|acreditado) a (?:tu|su) tarjeta|abono a tarjeta/;
 const OWN_TRANSFER_RE = /entre (?:tus|sus) cuentas|cuentas propias|a (?:tu|su) (?:otra )?cuenta propia/;
@@ -498,6 +523,7 @@ function describe(kind: SmsKind, bank: string, merchant: string | null, location
       const place = merchant ?? location;
       return place ? `${b} · Retiro en cajero ${place}` : `${b} · Retiro en cajero`;
     }
+    case 'bank_fee': return `${b} · Comisión bancaria`;
     case 'transfer_out': return `${b} · Transferencia enviada`;
     case 'transfer_in': return `${b} · Transferencia recibida`;
     case 'payroll': return `${b} · Pago de planilla`;
@@ -571,6 +597,14 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   const declined = flat.match(DECLINED_RE);
   if (declined) return reject('declined', `declined:${declined[0]}`);
 
+  // Etapa 3b: not_bank (antes de promo: Tigo/ViX no son mensajes bancarios) ─────
+  if (bank === 'Banco' && !BANK_TEMPLATE_RE.test(flat) && !extractHosts(flat).some(hostIsBank)) {
+    return reject('not_bank', 'no_bank_template');
+  }
+
+  // Etapa 3c: aviso informativo — solo sin monto: un aviso nunca se traga un movimiento ──
+  if (amount === null && NOTICE_RE.test(flat)) return reject('notice', 'notice');
+
   // Etapa 4: acreditación pasada (solo flag) ──────────────
   const creditedPast = CREDITED_PAST_RE.test(flat);
 
@@ -593,8 +627,7 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   if (STATEMENT_RE.test(flat)) return reject('statement', 'statement');
   if (BALANCE_INFO_RE.test(flat) && !TRANSACTIONAL_VERB_RE.test(flat)) return reject('balance_info', 'balance_info');
 
-  // Etapa 7: not_bank ─────────────────────────────────────
-  if (bank === 'Banco' && !BANK_TEMPLATE_RE.test(flat)) return reject('not_bank', 'no_bank_template');
+  // Etapa 7: (not_bank se evalúa antes, en la etapa 3b)
 
   // Etapa 8: sin monto ────────────────────────────────────
   if (amount === null) return reject('unparsed', 'no_amount');
@@ -611,6 +644,11 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   // Etapa 12: atm_withdrawal ──────────────────────────────
   if ((ATM_A_RE.test(flat) && ATM_B_RE.test(flat)) || ATM_C_RE.test(flat)) {
     return accept('atm_withdrawal', 'atm_withdrawal', 'expense', 'atm');
+  }
+
+  // Etapa 12b: comisión bancaria descrita en el texto ─────
+  if (FEE_RE.test(flat) && !/\bsin comision/.test(flat)) {
+    return accept('bank_fee', 'bank_fee:texto', 'expense', 'bank_fees');
   }
 
   // Etapa 13: transfer_in ─────────────────────────────────
@@ -630,6 +668,10 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
 
   // Etapa 16: deposit ─────────────────────────────────────
   if (creditedPast) {
+    // Un depósito sin "efectivo"/"ventanilla" es una transferencia recibida.
+    if (!/\b(?:efectivo|ventanilla)\b/.test(flat)) {
+      return accept('transfer_in', 'deposit_as_transfer', 'income', categorizeIncome(flat, 'transfer_in'));
+    }
     return accept('deposit', 'deposit', 'income', categorizeIncome(flat, 'deposit'));
   }
 
@@ -640,6 +682,14 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   if (approvedTemplate || isDebit || merchantTemplate) {
     const isPurchase = approvedTemplate || merchantTemplate;
     const category = categorizeExpense(info.merchant, info.location, stripBoilerplate(flat));
+    // BANRURAL: "en: X" es la agencia o el canal, no un comercio. Sin comercio es una
+    // transferencia enviada; con monto de comisión conocido y sin comercio reconocible es la comisión.
+    if (!isPurchase && bank === 'BANRURAL') {
+      if (info.merchant === null) return accept('transfer_out', 'banrural_debit_sin_comercio', 'expense', 'transfer');
+      if (category === 'other' && currency === 'Q' && amount !== null && BANRURAL_FEE_AMOUNTS.includes(amount)) {
+        return accept('bank_fee', 'bank_fee:monto_banrural', 'expense', 'bank_fees');
+      }
+    }
     let installments: number | null = null;
     if (isPurchase) installments = detectInstallmentCount(info.segment, flat, approvedTemplate);
     if (installments !== null) {
@@ -756,8 +806,67 @@ export function buildRecordFromClassification(
     smsFingerprint: c.fingerprint,
   };
   if (c.location) transaction.location = c.location;
+  if (c.merchant) transaction.merchant = c.merchant;
   if (c.bankRef) transaction.bankRef = c.bankRef;
   return { kind: 'transaction', transaction };
+}
+
+// ─────────────────────────────────────────────────────────────
+// APRENDIZAJE POR COMERCIO Y EMPAREJAMIENTO DE COMISIONES (puros)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Aplica la regla aprendida del comercio (si hay) a un gasto de compra/débito
+ * con comercio. No toca transferencias ni comisiones: en BANRURAL "en: X" es la
+ * agencia, no un comercio.
+ */
+export function applyLearnedRule(c: SmsClassification, rules?: MerchantRule[]): SmsClassification {
+  if (!rules || rules.length === 0) return c;
+  if (!c.accepted || c.txType !== 'expense' || !c.merchant) return c;
+  if (c.kind !== 'purchase' && c.kind !== 'installment_purchase' && c.kind !== 'debit') return c;
+  const rule = findMerchantRule(rules, c.merchant);
+  if (!rule) return c;
+  return { ...c, category: rule.category, reason: c.reason + '|learned' };
+}
+
+const FEE_PAIR_WINDOW_MS = 5 * 60000;
+
+/**
+ * Ids de movimientos SMS que parecen la comisión de una transferencia enviada:
+ * gasto en Q de monto <= FEE_PAIR_MAX, mismo banco, a ±5 minutos de una
+ * transferencia (categoría 'transfer', gasto) de monto mayor. Ordena por fecha
+ * y solo compara vecinos dentro de la ventana (O(n log n)).
+ */
+export function findPairedBankFeeIds(txs: Transaction[]): Set<string> {
+  const ids = new Set<string>();
+  const sorted: Array<{ t: Transaction; ts: number }> = [];
+  for (const t of txs) {
+    if (t.source !== 'sms') continue;
+    const ts = Date.parse(t.date);
+    if (isNaN(ts)) continue;
+    sorted.push({ t, ts });
+  }
+  sorted.sort((a, b) => a.ts - b.ts);
+
+  const isCandidate = (t: Transaction) =>
+    t.type === 'expense' && (t.currency ?? 'Q') === 'Q' && t.amount <= FEE_PAIR_MAX &&
+    t.category !== 'bank_fees' && t.category !== 'transfer';
+  const isTransferFor = (u: Transaction, t: Transaction) =>
+    u.id !== t.id && u.type === 'expense' && u.bank === t.bank && u.category === 'transfer' && u.amount > t.amount;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const { t, ts } = sorted[i];
+    if (!isCandidate(t)) continue;
+    let found = false;
+    for (let j = i - 1; j >= 0 && ts - sorted[j].ts <= FEE_PAIR_WINDOW_MS && !found; j--) {
+      found = isTransferFor(sorted[j].t, t);
+    }
+    for (let j = i + 1; j < sorted.length && sorted[j].ts - ts <= FEE_PAIR_WINDOW_MS && !found; j++) {
+      found = isTransferFor(sorted[j].t, t);
+    }
+    if (found) ids.add(t.id);
+  }
+  return ids;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -819,6 +928,7 @@ export interface SmsImportStats {
   otp: number;               // otp + security
   declined: number;
   info: number;              // statement + balance_info
+  notices: number;           // avisos informativos sin monto (no son movimientos)
   ownTransfers: number;
   untrusted: number;         // phishing + remitente no confiable
   unparsed: number;
@@ -830,21 +940,31 @@ export interface SmsImportPlan {
   installments: CreditInstallment[];
   stats: SmsImportStats;
   diagnostics: Array<{ kind: SmsKind; reason: string; body: string }>;
+  /** SMS bancarios que el motor no entendió (alimentan el buzón de sin clasificar). */
+  unrecognized: SmsInboxItem[];
+}
+
+/** Opciones de planSmsImport: aprendizaje por comercio y movimientos ya guardados. */
+export interface PlanOptions {
+  merchantRules?: MerchantRule[];
+  existingTxs?: Transaction[];
 }
 
 export function emptySmsStats(): SmsImportStats {
   return {
     totalRead: 0, bankCandidates: 0, imported: 0, installments: 0, duplicates: 0, dismissedByUser: 0,
-    promos: 0, otp: 0, declined: 0, info: 0, ownTransfers: 0, untrusted: 0, unparsed: 0, neutral: 0,
+    promos: 0, otp: 0, declined: 0, info: 0, notices: 0, ownTransfers: 0, untrusted: 0, unparsed: 0, neutral: 0,
   };
 }
 
 const MAX_DIAGNOSTICS = 300;
+/** Tope de ítems que el plan devuelve para el buzón de "sin clasificar". */
+const MAX_INBOX = 200;
 
 /**
  * Clasifica y deduplica una lista de SMS. Invariante (probado en el test):
  *   bankCandidates === imported + installments + duplicates + dismissedByUser
- *                      + promos + otp + declined + info + ownTransfers
+ *                      + promos + otp + declined + info + notices + ownTransfers
  *                      + untrusted + unparsed
  * (`neutral` es un subconjunto informativo de `imported`.)
  * Un candidato bancario es todo lo que no sea `not_bank`, salvo el remitente
@@ -855,19 +975,38 @@ export function planSmsImport(
   messages: SmsInput[],
   index: ExistingSmsIndex,
   accounts: Account[],
+  opts: PlanOptions = {},
 ): SmsImportPlan {
   const stats = emptySmsStats();
   stats.totalRead = messages.length;
   const transactions: Transaction[] = [];
   const installments: CreditInstallment[] = [];
   const diagnostics: SmsImportPlan['diagnostics'] = [];
+  const unrecognized: SmsInboxItem[] = [];
+
+  const addUnrecognized = (c: SmsClassification, msg: SmsInput) => {
+    if (unrecognized.length >= MAX_INBOX) return;
+    unrecognized.push({
+      fingerprint: c.fingerprint,
+      body: msg.body,
+      address: msg.address,
+      receivedAt: msg.receivedAt,
+      reason: c.reason,
+      bank: c.bank,
+      amount: c.amount,
+      currency: c.currency,
+      merchant: c.merchant,
+      occurredAt: c.occurredAt.toISOString(),
+      suggestedType: c.amount === null ? null : (CREDITED_PAST_RE.test(prepareSms(msg.body).flat) ? 'income' : 'expense'),
+    });
+  };
 
   const addDiag = (c: SmsClassification, body: string) => {
     if (diagnostics.length < MAX_DIAGNOSTICS) diagnostics.push({ kind: c.kind, reason: c.reason, body });
   };
 
   for (const msg of messages) {
-    const c = classifyBankSms(msg);
+    const c = applyLearnedRule(classifyBankSms(msg), opts.merchantRules);
     const untrustedBank = c.kind === 'not_bank' && c.reason.startsWith('untrusted');
     if (c.kind === 'not_bank' && !untrustedBank) continue;
     stats.bankCandidates++;
@@ -878,9 +1017,10 @@ export function planSmsImport(
         case 'otp': case 'security': stats.otp++; break;
         case 'declined': stats.declined++; break;
         case 'statement': case 'balance_info': stats.info++; break;
+        case 'notice': stats.notices++; break;
         case 'own_transfer': stats.ownTransfers++; break;
         case 'phishing': case 'not_bank': stats.untrusted++; break;
-        default: stats.unparsed++; break;
+        default: stats.unparsed++; addUnrecognized(c, msg); break;
       }
       addDiag(c, msg.body);
       continue;
@@ -906,7 +1046,7 @@ export function planSmsImport(
     }
 
     const record = buildRecordFromClassification(c, msg.body, accounts);
-    if (!record) { stats.unparsed++; addDiag(c, msg.body); continue; }
+    if (!record) { stats.unparsed++; addDiag(c, msg.body); addUnrecognized(c, msg); continue; }
 
     index.fingerprints.add(c.fingerprint);
     index.ids.add(id);
@@ -922,7 +1062,19 @@ export function planSmsImport(
     }
   }
 
-  return { transactions, installments, stats, diagnostics };
+  // Comisiones: gasto pequeño pegado (±5 min) a una transferencia enviada del mismo banco.
+  const fees = findPairedBankFeeIds([
+    ...transactions,
+    ...(opts.existingTxs ?? []).filter(t => t.source === 'sms'),
+  ]);
+  for (const t of transactions) {
+    if (fees.has(t.id)) {
+      t.category = 'bank_fees';
+      t.description = describe('bank_fee', t.bank ?? 'Banco', null, null);
+    }
+  }
+
+  return { transactions, installments, stats, diagnostics, unrecognized };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -945,18 +1097,47 @@ export function reasonLabelFor(kind: SmsKind): string {
     case 'declined': return 'Transacción rechazada';
     case 'statement': case 'balance_info': return 'Aviso de saldo o estado de cuenta';
     case 'own_transfer': return 'Transferencia entre tus cuentas';
+    case 'notice': return 'Aviso informativo del banco (sin movimiento)';
     case 'not_bank': case 'phishing': return 'No es un SMS bancario confiable';
     default: return 'No es un movimiento reconocible';
   }
 }
 
-/** Reclasifica los movimientos SMS ya guardados y propone eliminar o corregir. */
-export function reviewImportedSms(txs: Transaction[], keptIds: Set<string>): SmsReviewItem[] {
+/**
+ * Reclasifica los movimientos SMS ya guardados y propone eliminar o corregir.
+ * Las categorías solo se proponen si hoy son 'other', vienen de una regla
+ * aprendida, cambian de familia (transferencia/comisión) o son una comisión
+ * emparejada; y nunca sobre movimientos con `categoryEditedAt`.
+ */
+export function reviewImportedSms(
+  txs: Transaction[],
+  keptIds: Set<string>,
+  opts: { merchantRules?: MerchantRule[] } = {},
+): SmsReviewItem[] {
   const items: SmsReviewItem[] = [];
+
+  // Pasada 1: clasificar cada movimiento SMS (con reglas aprendidas).
+  const classified = new Map<string, SmsClassification>();
   for (const t of txs) {
     if (t.source !== 'sms' || !t.originalSMS || keptIds.has(t.id)) continue;
     const ts = Date.parse(t.date);
-    const c = classifyBankSms({ body: t.originalSMS, receivedAt: isNaN(ts) ? undefined : ts });
+    classified.set(t.id, applyLearnedRule(
+      classifyBankSms({ body: t.originalSMS, receivedAt: isNaN(ts) ? undefined : ts }),
+      opts.merchantRules,
+    ));
+  }
+
+  // Pasada 2: emparejar comisiones sobre la vista "ya reclasificada".
+  const virtual = txs.map(t => {
+    const c = classified.get(t.id);
+    return c && c.accepted && c.category && c.txType ? { ...t, category: c.category, type: c.txType } : t;
+  });
+  const feeIds = findPairedBankFeeIds(virtual);
+
+  for (const t of txs) {
+    let c = classified.get(t.id);
+    if (!c) continue;
+    const ts = Date.parse(t.date);
 
     if (!c.accepted) {
       items.push({ txId: t.id, action: 'remove', reasonLabel: reasonLabelFor(c.kind), original: t });
@@ -964,21 +1145,45 @@ export function reviewImportedSms(txs: Transaction[], keptIds: Set<string>): Sms
     }
     if (c.txType === null) continue;
 
+    if (feeIds.has(t.id)) {
+      c = { ...c, category: 'bank_fees', description: describe('bank_fee', c.bank, null, null) };
+    }
+
     const proposed: NonNullable<SmsReviewItem['proposed']> = {};
     const typeChanged = c.txType !== t.type;
     const dayChanged = !isNaN(ts) && !sameLocalDay(c.occurredAt, new Date(ts));
     const salaryChanged = t.type === 'income' && t.category === 'salary' && c.category !== 'salary';
+    const learned = c.reason.includes('|learned');
+    const categoryFix = !t.categoryEditedAt && !!c.category && c.category !== t.category && (
+      t.category === 'other' ||
+      learned ||
+      ['transfer', 'transfer_in', 'bank_fees'].includes(c.category) ||
+      feeIds.has(t.id)
+    );
 
-    if (!(typeChanged || dayChanged || salaryChanged)) continue;
+    if (!(typeChanged || dayChanged || salaryChanged || categoryFix)) continue;
 
-    if (typeChanged) proposed.type = c.txType;
-    if (c.category && c.category !== t.category && (typeChanged || salaryChanged)) proposed.category = c.category;
+    if (typeChanged && c.txType) proposed.type = c.txType;
+    if (c.category && c.category !== t.category && (typeChanged || salaryChanged || categoryFix)) {
+      proposed.category = c.category;
+    }
     if (dayChanged) proposed.date = c.occurredAt.toISOString();
-    if (c.description && c.description !== t.description) proposed.description = c.description;
+    // La descripción solo se propone si hay otro cambio sustantivo (evita una avalancha de
+    // cambios cosméticos de mayúsculas) o si la actual termina en puntuación suelta.
+    if (c.description && c.description !== t.description &&
+        (categoryFix || typeChanged || /[,;:.\-]\s*$/.test(t.description))) {
+      proposed.description = c.description;
+    }
 
     const labels: string[] = [];
     if (typeChanged) labels.push('Tipo de movimiento incorrecto');
-    if (salaryChanged && !typeChanged) labels.push('Categoría incorrecta');
+    if (salaryChanged && !typeChanged && !categoryFix) labels.push('Categoría incorrecta');
+    if (categoryFix) {
+      if (c.category === 'transfer' || c.category === 'transfer_in') labels.push('Es una transferencia');
+      else if (c.category === 'bank_fees') labels.push('Comisión bancaria');
+      else if (learned) labels.push('Según lo que le enseñaste a la app');
+      else labels.push('Categoría sugerida');
+    }
     if (dayChanged) labels.push('Fecha incorrecta');
     items.push({ txId: t.id, action: 'fix', reasonLabel: labels.join(' y '), proposed, original: t });
   }
@@ -989,10 +1194,12 @@ export function reviewImportedSms(txs: Transaction[], keptIds: Set<string>): Sms
 // DIAGNÓSTICO COMPARTIBLE (enmascarado)
 // ─────────────────────────────────────────────────────────────
 
-/** Oculta números largos, nombre propio inicial y enlaces con token antes de compartir un SMS. */
+/** Oculta números largos, últimos dígitos de tarjeta/cuenta, nombre propio inicial y enlaces con token antes de compartir un SMS. */
 export function maskSmsForDiagnostics(body: string): string {
   return body
     .replace(/\d{6,}/g, '######')
     .replace(/^\s*[A-ZÁÉÍÓÚÑ]{2,},/, 'NOMBRE,')
-    .replace(/https?:\/\/\S*\/t\/\S*/g, 'https://g.bac.gt/…');
+    .replace(/https?:\/\/\S*\/t\/\S*/g, 'https://g.bac.gt/…')
+    // Últimos dígitos de tarjeta o cuenta: ****1234, **5031, xx1234.
+    .replace(/(?:\*{2,}|[xX]{2,})\d{2,}/g, '****');
 }

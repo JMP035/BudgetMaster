@@ -386,6 +386,7 @@ function AppContent() {
               settings={settings}
               onDelete={hDelete}
               onUpdate={hUpdate}
+              onReplaceAll={setTxs}
               accounts={accounts}
               onConvertToInstallment={hConvertToInstallment}
             />

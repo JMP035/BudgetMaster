@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    KeyboardAvoidingView, ScrollView, StyleSheet, Switch, Text,
+    KeyboardAvoidingView, ScrollView, Share, StyleSheet, Switch, Text,
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import { Currency, CustomCategory, StorageService, UserSettings, parseAmount } from "../services/storage";
 import { ExchangeRateService, RateResult } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
+import { buildSmsSampleReport } from "../services/SmsDiagnostics";
 import { openTutorialMenu } from "./TutorialOverlay";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
@@ -16,6 +17,8 @@ import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
 import { GlassSegmented } from "./GlassSegmented";
 import { GlassSheet } from "./GlassSheet";
+import { MerchantRulesSheet } from "./MerchantRulesSheet";
+import { SmsInboxModal } from "./SmsInboxModal";
 import { Money } from "./Money";
 import { HelpButton } from "./HelpButton";
 import { InlineNotice } from "./InlineNotice";
@@ -195,6 +198,19 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     const [loadingRate, setLoadingRate] = useState(false);
     const [rateNotice, setRateNotice] = useState<{ variant: "success" | "error"; text: string } | null>(null);
     const [smsOpt, setSmsOpt] = useState(settings.smsEnabled ?? true);
+    const [ruleCount, setRuleCount] = useState(0);
+    const [inboxCount, setInboxCount] = useState(0);
+    const [showRules, setShowRules] = useState(false);
+    const [showInbox, setShowInbox] = useState(false);
+    const [sharingSms, setSharingSms] = useState(false);
+    const reloadSmsCounts = React.useCallback(async () => {
+        const [rules, inbox] = await Promise.all([StorageService.getMerchantRules(), StorageService.getSmsInbox()]);
+        setRuleCount(rules.length);
+        setInboxCount(inbox.length);
+    }, []);
+    useEffect(() => {
+        if (smsOpt) void reloadSmsCounts();
+    }, [smsOpt, reloadSmsCounts]);
     const [biometricOpt, setBiometricOpt] = useState(settings.biometricEnabled ?? false);
     const [biometricAvailable, setBiometricAvailable] = useState(false);
     const [apiKey, setApiKey] = useState(settings.geminiApiKey || "");
@@ -384,6 +400,34 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
         onSave(newSettings);
     };
 
+    const handleShareSmsSample = async () => {
+        if (sharingSms) return;
+        const ok = await dialog.confirm({
+            title: "Compartir muestra de tus SMS",
+            message: "Vamos a armar un texto con hasta 4 ejemplos por tipo de tus SMS bancarios importados (y los sin clasificar). Ocultamos números de cuenta y tarjeta, tu nombre al inicio y los enlaces personales. Los montos y nombres de comercios sí van, porque son lo que hace falta para mejorar la lectura (por ejemplo, la comisión de BANRURAL). Nada se envía solo: elegís la app y la persona, y podés revisarlo antes.",
+            confirmLabel: "Armar y compartir",
+            icon: "paper-plane-outline",
+        });
+        if (!ok) return;
+        setSharingSms(true);
+        try {
+            const [txs, inbox] = await Promise.all([StorageService.getTransactions(), StorageService.getSmsInbox()]);
+            const { text, count } = buildSmsSampleReport(txs, inbox);
+            if (count === 0) {
+                await dialog.alert({
+                    title: "No hay SMS para compartir",
+                    message: "Todavía no hay mensajes importados ni sin clasificar.",
+                });
+                return;
+            }
+            await Share.share({ message: text });
+        } catch (e) {
+            console.warn("share sms sample error:", e);
+        } finally {
+            setSharingSms(false);
+        }
+    };
+
     const handleResetTutorials = async () => {
         await TutorialService.resetAll();
         await dialog.alert({
@@ -466,6 +510,29 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                         </View>
                         <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
                     </View>
+                    {smsOpt && (
+                        <View style={s.smsTools}>
+                            <GlassButton
+                                kind="secondary"
+                                icon="school-outline"
+                                label={`Comercios aprendidos (${ruleCount})`}
+                                onPress={() => setShowRules(true)}
+                            />
+                            <GlassButton
+                                kind="secondary"
+                                icon="mail-unread-outline"
+                                label={`Mensajes sin clasificar (${inboxCount})`}
+                                onPress={() => setShowInbox(true)}
+                            />
+                            <GlassButton
+                                kind="secondary"
+                                icon="paper-plane-outline"
+                                label="Compartir muestra de mis SMS"
+                                loading={sharingSms}
+                                onPress={() => { void handleShareSmsSample(); }}
+                            />
+                        </View>
+                    )}
                 </Section>
 
                 {/* PRESUPUESTO */}
@@ -713,6 +780,19 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             {showNewCat && (
                 <NewCategoryModal onSave={handleAddCustomCat} onClose={() => setShowNewCat(false)} />
             )}
+            {showRules && (
+                <MerchantRulesSheet
+                    customCategories={customCats}
+                    onChanged={setRuleCount}
+                    onClose={() => setShowRules(false)}
+                />
+            )}
+            <SmsInboxModal
+                visible={showInbox}
+                settings={settings}
+                onClose={() => setShowInbox(false)}
+                onChanged={() => { void reloadSmsCounts(); }}
+            />
         </KeyboardAvoidingView>
     );
 }
@@ -740,6 +820,7 @@ const s = StyleSheet.create({
     refreshRateBtn: { width: 48, height: 48, borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden" },
     rateSource: { color: C.textSub, fontSize: 12, marginTop: 8, fontWeight: "600", lineHeight: 17 },
     switchRow: { flexDirection: "row", alignItems: "center" },
+    smsTools: { gap: 10, marginTop: 16 },
     switchLabelRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
     switchLabel: { color: C.text, fontSize: 14, fontWeight: "700" },
     geminiOk: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },

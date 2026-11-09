@@ -1,9 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useMemo, useState } from "react";
 import {
-    FlatList, KeyboardAvoidingView, StyleSheet, Text, TextInput, TouchableOpacity, View
+    FlatList, KeyboardAvoidingView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
+import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
+import { merchantKey, merchantOfTransaction, sameMerchantTxIds } from "../services/MerchantRules";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
 import { C } from "../theme";
 import { isSmsFeatureOn } from "../services/features";
@@ -31,19 +33,33 @@ interface DetailModalProps {
     tx: Transaction;
     settings: UserSettings;
     smsOn: boolean;
+    transactions: Transaction[];
     onClose: () => void;
     onSave: (updated: Transaction) => void;
     onDelete: (id: string) => void;
+    onReplaceAll: (txs: Transaction[]) => void;
     onConvertToInstallment: () => void;
 }
 
-function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvertToInstallment }: DetailModalProps) {
+function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDelete, onReplaceAll, onConvertToInstallment }: DetailModalProps) {
     const dialog = useGlassDialog();
+    const { width } = useWindowDimensions();
+    const cols = width >= 360 ? 4 : 3;
     const [category, setCategory] = useState(tx.category);
     const [currency, setCurrency] = useState<Currency>(tx.currency || 'Q');
     const [description, setDescription] = useState(tx.description);
     const [showSMS, setShowSMS] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [remember, setRemember] = useState(true);
+    const [applyPast, setApplyPast] = useState(true);
+
+    const merchant = merchantOfTransaction(tx);
+    const learnable = tx.source === 'sms' && tx.type === 'expense' && merchantKey(merchant) !== null;
+    const catChanged = category !== tx.category;
+    const pastCount = useMemo(
+        () => (learnable ? sameMerchantTxIds(transactions, { ...tx, category }).length : 0),
+        [learnable, transactions, tx, category],
+    );
 
     const cats = tx.type === 'expense'
         ? getAllExpenseCategories(settings.customCategories)
@@ -59,11 +75,41 @@ function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvert
 
     const handleSave = async () => {
         setSaving(true);
-        const updated: Transaction = { ...tx, category, currency, description };
-        await StorageService.updateTransaction(updated);
-        onSave(updated);
-        setSaving(false);
-        onClose();
+        try {
+            const updated: Transaction = {
+                ...tx, category, currency, description,
+                ...(catChanged ? { categoryEditedAt: new Date().toISOString() } : {}),
+            };
+            if (catChanged && learnable && (remember || applyPast)) {
+                const r = await StorageService.saveTransactionWithLearning(updated, {
+                    remember,
+                    applyToPast: applyPast && pastCount > 0,
+                });
+                onReplaceAll(r.transactions);
+                onClose();
+            } else {
+                await StorageService.updateTransaction(updated);
+                onSave(updated);
+                onClose();
+            }
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleShareSms = () => {
+        if (!tx.originalSMS) return;
+        Share.share({ message: tx.originalSMS }).catch(() => { });
+    };
+
+    const handleReportSms = () => {
+        if (!tx.originalSMS) return;
+        const c = classifyBankSms({ body: tx.originalSMS, receivedAt: Date.parse(tx.date) });
+        const saved = getCat(tx.category, settings.customCategories, tx.type).label;
+        const correct = getCat(category, settings.customCategories, tx.type).label;
+        Share.share({
+            message: `BudgetMaster - SMS mal clasificado\nBanco: ${tx.bank ?? '-'} | tipo: ${c.kind} | motivo: ${c.reason}\nCategoría guardada: ${saved} | correcta: ${correct}\n\n${maskSmsForDiagnostics(tx.originalSMS)}`,
+        }).catch(() => { });
     };
 
     const handleDelete = async () => {
@@ -74,18 +120,26 @@ function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvert
     };
 
     return (
-        <GlassSheet title="Detalle del movimiento" onClose={onClose}
+        <GlassSheet title="Detalle del movimiento" onClose={onClose} maxHeightRatio={0.94}
             footer={
-                <View style={m.footer}>
+                <View style={m.footerRow}>
                     <GlassButton
                         kind="primary"
                         icon="save-outline"
                         label={saving ? "Guardando..." : "Guardar cambios"}
                         onPress={handleSave}
                         loading={saving}
+                        style={{ flex: 1 }}
                     />
-                    <GlassButton kind="secondary" icon="card-outline" label="Convertir a Visacuota" onPress={onConvertToInstallment} />
-                    <GlassButton kind="destructive" icon="trash-outline" label="Eliminar transacción" onPress={handleDelete} />
+                    <TouchableOpacity
+                        style={m.delBtn}
+                        onPress={handleDelete}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Eliminar movimiento"
+                    >
+                        <Ionicons name="trash-outline" size={20} color={C.danger} />
+                    </TouchableOpacity>
                 </View>
             }
         >
@@ -132,6 +186,59 @@ function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvert
                 </Text>
             </View>
 
+            {/* CATEGORÍA EDITABLE */}
+            <View style={m.section}>
+                <Text style={m.sectionLabel}>CATEGORÍA</Text>
+                <View style={m.catGrid}>
+                    {cats.map(cat => (
+                        <TouchableOpacity
+                            key={cat.id}
+                            style={[m.catItem, { width: cols === 4 ? "22.5%" : "30%" }, category === cat.id && m.catItemActive]}
+                            onPress={() => setCategory(cat.id)}
+                            accessibilityRole="button"
+                            accessibilityLabel={cat.label}
+                            accessibilityState={{ selected: category === cat.id }}
+                        >
+                            <Ionicons name={cat.icon} size={20} color={category === cat.id ? C.primaryLight : C.textSub} />
+                            <Text style={[m.catLabel, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
+                                {cat.label}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* APRENDIZAJE POR COMERCIO */}
+                {learnable && catChanged && (
+                    <View style={m.learnBox}>
+                        <View style={m.switchRow}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={m.switchLabel}>Recordar para «{merchant}»</Text>
+                                <Text style={m.hint}>Las próximas compras de este comercio se clasifican solas.</Text>
+                            </View>
+                            <Switch
+                                value={remember}
+                                onValueChange={setRemember}
+                                trackColor={{ false: C.bgDeep, true: C.accent }}
+                                thumbColor={C.text}
+                            />
+                        </View>
+                        {pastCount > 0 && (
+                            <View style={[m.switchRow, { marginTop: 10 }]}>
+                                <Text style={[m.switchLabel, { flex: 1 }]}>
+                                    Aplicar también a {pastCount} {pastCount === 1 ? "movimiento anterior" : "movimientos anteriores"} de este comercio
+                                </Text>
+                                <Switch
+                                    value={applyPast}
+                                    onValueChange={setApplyPast}
+                                    trackColor={{ false: C.bgDeep, true: C.accent }}
+                                    thumbColor={C.text}
+                                />
+                            </View>
+                        )}
+                    </View>
+                )}
+            </View>
+
             {/* DESCRIPCIÓN EDITABLE */}
             <View style={m.section}>
                 <Text style={m.sectionLabel}>DESCRIPCIÓN</Text>
@@ -151,45 +258,56 @@ function DetailModal({ tx, settings, smsOn, onClose, onSave, onDelete, onConvert
                 <GlassSegmented options={currencyOptions} value={currency} onChange={setCurrency} />
             </View>
 
-            {/* CATEGORÍA EDITABLE */}
-            <View style={m.section}>
-                <Text style={m.sectionLabel}>CATEGORÍA</Text>
-                <View style={m.catGrid}>
-                    {cats.map(cat => (
-                        <TouchableOpacity
-                            key={cat.id}
-                            style={[m.catItem, category === cat.id && m.catItemActive]}
-                            onPress={() => setCategory(cat.id)}
-                            accessibilityRole="button"
-                            accessibilityLabel={cat.label}
-                            accessibilityState={{ selected: category === cat.id }}
-                        >
-                            <Ionicons name={cat.icon} size={20} color={category === cat.id ? C.primaryLight : C.textSub} />
-                            <Text style={[m.catLabel, category === cat.id && { color: C.textPrimary }]} numberOfLines={1}>
-                                {cat.label}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-            </View>
-
             {/* SMS ORIGINAL */}
             {smsOn && tx.originalSMS && (
                 <View style={m.section}>
+                    <Text style={m.sectionLabel}>SMS ORIGINAL</Text>
                     <TouchableOpacity style={m.smsToggle} onPress={() => setShowSMS(!showSMS)}>
                         <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.accent} />
                         <Text style={m.smsToggleTxt}>Ver SMS original</Text>
                         <Ionicons name={showSMS ? "chevron-up" : "chevron-down"} size={16} color={C.accent} />
                     </TouchableOpacity>
                     {showSMS && (
-                        <View style={m.smsBox}>
-                            <Text style={m.smsTxt}>{tx.originalSMS}</Text>
-                        </View>
+                        <>
+                            <View style={m.smsBox}>
+                                <Text selectable style={m.smsTxt}>{tx.originalSMS}</Text>
+                            </View>
+                            <View style={m.smsActions}>
+                                <GlassButton
+                                    kind="ghost"
+                                    icon="share-outline"
+                                    label="Compartir SMS"
+                                    onPress={handleShareSms}
+                                    style={m.smsActionBtn}
+                                />
+                                <GlassButton
+                                    kind="ghost"
+                                    icon="flag-outline"
+                                    label="Reportar mal clasificado"
+                                    onPress={handleReportSms}
+                                    style={m.smsActionBtn}
+                                />
+                            </View>
+                            <Text style={m.hint}>Mantené presionado el texto para copiarlo.</Text>
+                        </>
                     )}
                 </View>
             )}
 
-            <View style={{ height: 16 }} />
+            {/* MÁS ACCIONES */}
+            {tx.type === 'expense' && (
+                <View style={m.section}>
+                    <Text style={m.sectionLabel}>MÁS ACCIONES</Text>
+                    <GlassButton
+                        kind="secondary"
+                        icon="card-outline"
+                        label="Convertir a Visacuota"
+                        onPress={onConvertToInstallment}
+                    />
+                </View>
+            )}
+
+            <View style={{ height: 8 }} />
         </GlassSheet>
     );
 }
@@ -281,6 +399,7 @@ interface Props {
     settings: UserSettings;
     onDelete: (id: string) => void;
     onUpdate: (tx: Transaction) => void;
+    onReplaceAll: (txs: Transaction[]) => void;
     accounts: Account[];
     onConvertToInstallment: (item: CreditInstallment, originalTxId: string) => void;
 }
@@ -294,7 +413,7 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
     { value: "income", label: "Ingresos" },
 ];
 
-export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, accounts, onConvertToInstallment }: Props) {
+export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, onReplaceAll, accounts, onConvertToInstallment }: Props) {
     const smsOn = isSmsFeatureOn(settings);
     const [filter, setFilter] = useState<TypeFilter>("all");
     const [currency, setCurrency] = useState<CurrencyFilter>("all");
@@ -438,9 +557,11 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     tx={selected}
                     settings={settings}
                     smsOn={smsOn}
+                    transactions={transactions}
                     onClose={() => setSelected(null)}
                     onSave={(updated) => { onUpdate(updated); setSelected(null); }}
                     onDelete={(id) => { onDelete(id); setSelected(null); }}
+                    onReplaceAll={(txs) => { onReplaceAll(txs); setSelected(null); }}
                     onConvertToInstallment={() => { setConvertingTx(selected); setSelected(null); }}
                 />
             )}
@@ -499,12 +620,19 @@ const m = StyleSheet.create({
     sectionLabel: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10 },
     input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 12, color: C.text, fontSize: 14 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    catItem: { width: "30%", flexGrow: 1, alignItems: "center", paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    catItem: { flexGrow: 1, alignItems: "center", paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
     catItemActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catLabel: { color: C.textSub, fontSize: 10, marginTop: 4, fontWeight: "600", textAlign: "center" },
     smsToggle: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, backgroundColor: C.accent + "11", borderRadius: 10, borderWidth: 1, borderColor: C.accent + "33" },
     smsToggleTxt: { color: C.accentLight, fontSize: 13, fontWeight: "700", flex: 1 },
     smsBox: { marginTop: 8, padding: 12, backgroundColor: C.glassInput, borderRadius: 10, borderWidth: 1, borderColor: C.glassInputBorder },
     smsTxt: { color: C.textSub, fontSize: 12, lineHeight: 18 },
-    footer: { gap: 10, paddingTop: 12 },
+    smsActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+    smsActionBtn: { flexGrow: 1, flexShrink: 1 },
+    hint: { color: C.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
+    learnBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    switchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    switchLabel: { color: C.text, fontSize: 13, fontWeight: "700" },
+    footerRow: { flexDirection: "row", gap: 10, paddingTop: 12, alignItems: "center" },
+    delBtn: { width: 50, height: 50, borderRadius: 14, backgroundColor: C.danger + "11", borderWidth: 1, borderColor: C.danger + "66", alignItems: "center", justifyContent: "center" },
 });

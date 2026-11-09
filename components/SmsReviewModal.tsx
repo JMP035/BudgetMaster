@@ -4,7 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { C } from "../theme";
 import { getCat } from "../categories";
-import { StorageService, Transaction } from "../services/storage";
+import { CustomCategory, StorageService, Transaction } from "../services/storage";
 import type { SmsReviewItem } from "../services/SmsService";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassDialog } from "./GlassDialog";
@@ -15,6 +15,8 @@ interface Props {
     items: SmsReviewItem[];
     onClose: () => void;
     onApplied: () => void;
+    /** Categorías personalizadas, para mostrar sus nombres reales en "categoría X → Y". */
+    customCategories?: CustomCategory[];
 }
 
 const TYPE_LABEL: Record<Transaction["type"], string> = {
@@ -32,7 +34,7 @@ const fmtDay = (iso: string) => {
 const shortText = (t: string, max = 40) => (t.length > max ? t.slice(0, max - 1) + "…" : t);
 
 /** "tipo Ingreso → Neutro · fecha 05 oct → 04 oct · categoría Salario → Otro" */
-function describeFix(item: SmsReviewItem): string {
+function describeFix(item: SmsReviewItem, customCategories: CustomCategory[] = []): string {
     const p = item.proposed;
     if (!p) return "";
     const o = item.original;
@@ -40,8 +42,8 @@ function describeFix(item: SmsReviewItem): string {
     if (p.type && p.type !== o.type) parts.push(`tipo ${TYPE_LABEL[o.type]} → ${TYPE_LABEL[p.type]}`);
     if (p.date) parts.push(`fecha ${fmtDay(o.date)} → ${fmtDay(p.date)}`);
     if (p.category && p.category !== o.category) {
-        const from = getCat(o.category, [], o.type).label;
-        const to = getCat(p.category, [], p.type ?? o.type).label;
+        const from = getCat(o.category, customCategories, o.type).label;
+        const to = getCat(p.category, customCategories, p.type ?? o.type).label;
         parts.push(`categoría ${from} → ${to}`);
     }
     if (p.description && p.description !== o.description) {
@@ -50,8 +52,8 @@ function describeFix(item: SmsReviewItem): string {
     return parts.join(" · ");
 }
 
-export default function SmsReviewModal({ visible, items, onClose, onApplied }: Props) {
-    const { width, height } = useWindowDimensions();
+export default function SmsReviewModal({ visible, items, onClose, onApplied, customCategories }: Props) {
+    const { width, height, fontScale } = useWindowDimensions();
     const insets = useSafeAreaInsets();
 
     const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -87,12 +89,16 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
 
     const counts = useMemo(() => {
         let remove = 0;
-        let fix = 0;
+        let fixCategory = 0;
+        let fixOther = 0;
         for (const it of items) {
             if (!selected.has(it.txId)) continue;
-            if (it.action === "remove") remove++; else fix++;
+            if (it.action === "remove") { remove++; continue; }
+            const p = it.proposed;
+            const onlyCategory = !p || (!(p.type && p.type !== it.original.type) && !p.date);
+            if (onlyCategory) fixCategory++; else fixOther++;
         }
-        return { remove, fix, total: remove + fix };
+        return { remove, fixCategory, fixOther, total: remove + fixCategory + fixOther };
     }, [items, selected]);
 
     const allSelected = selected.size === items.length && items.length > 0;
@@ -121,14 +127,20 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
     };
 
     const confirmMessage = (() => {
-        const rm = counts.remove;
-        const fx = counts.fix;
-        const rmTxt = `${rm} movimiento${rm === 1 ? "" : "s"}`;
-        const fxTxt = `${fx} movimiento${fx === 1 ? "" : "s"}`;
-        if (rm > 0 && fx > 0) return `Se eliminarán ${rmTxt} y se corregirán ${fxTxt}. Los eliminados no volverán a importarse. ¿Continuar?`;
-        if (rm > 0) return `Se eliminarán ${rmTxt}. Los eliminados no volverán a importarse. ¿Continuar?`;
-        return `Se corregirán ${fxTxt}. ¿Continuar?`;
+        const { remove: rm, fixCategory: fc, fixOther: fo } = counts;
+        const mov = (n: number) => `${n} movimiento${n === 1 ? "" : "s"}`;
+        const clauses: string[] = [];
+        if (rm > 0) clauses.push(`se eliminarán ${mov(rm)}`);
+        if (fc > 0) clauses.push(`se corregirá la categoría de ${mov(fc)}`);
+        if (fo > 0) clauses.push(`se corregirán ${mov(fo)}`);
+        const joined = clauses.length > 1
+            ? `${clauses.slice(0, -1).join(", ")} y ${clauses[clauses.length - 1]}`
+            : clauses[0] ?? "";
+        const sentence = joined.charAt(0).toUpperCase() + joined.slice(1) + ".";
+        return rm > 0 ? `${sentence} Los eliminados no volverán a importarse. ¿Continuar?` : `${sentence} ¿Continuar?`;
     })();
+
+    const stacked = width < 360 || fontScale > 1.3;
 
     const cardMaxH = Math.min(height - insets.top - insets.bottom - 32, 720);
 
@@ -138,7 +150,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
         const isOpen = expanded.has(item.txId);
         const isRemove = item.action === "remove";
         const tone = isRemove ? C.warning : C.primaryLight;
-        const fixLine = isRemove ? "" : describeFix(item);
+        const fixLine = isRemove ? "" : describeFix(item, customCategories);
         const sign = o.type === "income" ? "+" : o.type === "expense" ? "-" : "";
         const amountTone = o.type === "income" ? "income" : o.type === "expense" ? "expense" : "neutral";
 
@@ -203,7 +215,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                 </GlassCard>
             </View>
         );
-    }, [selected, expanded, toggle, toggleExpanded]);
+    }, [selected, expanded, toggle, toggleExpanded, customCategories]);
 
     return (
         <Modal
@@ -235,6 +247,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                             <Text style={s.subtitle}>
                                 {items.length} movimiento{items.length === 1 ? "" : "s"} para revisar. Destildá los que quieras conservar tal como están.
                             </Text>
+                            <Text style={s.note}>Las categorías que cambiaste a mano no se tocan.</Text>
                         </View>
                     </View>
 
@@ -260,12 +273,12 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                         contentContainerStyle={s.listContent}
                     />
 
-                    <View style={[s.actions, width < 360 && s.actionsStacked]}>
+                    <View style={[s.actions, stacked && s.actionsStacked]}>
                         <Pressable
                             accessibilityRole="button"
                             accessibilityLabel="Ahora no"
                             onPress={onClose}
-                            style={({ pressed }) => [s.btn, width < 360 ? s.btnStacked : s.btnSide, pressed && s.btnPressed]}
+                            style={({ pressed }) => [s.btn, stacked ? s.btnStacked : s.btnGrow, pressed && s.btnPressed]}
                         >
                             <GlassBackground radius={12} blur={false} />
                             <Text style={[s.btnTxt, { color: C.text }]}>Ahora no</Text>
@@ -278,7 +291,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                             onPress={() => setDlg("confirm")}
                             style={({ pressed }) => [
                                 s.btn,
-                                width < 360 ? s.btnStacked : s.btnGrow,
+                                stacked ? s.btnStacked : s.btnGrow,
                                 s.btnPrimary,
                                 counts.total === 0 && s.btnDisabled,
                                 pressed && s.btnPressed,
@@ -292,13 +305,13 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied }: P
                 <GlassDialog
                     visible={visible && dlg === "confirm"}
                     onClose={() => { if (!busy) setDlg(null); }}
-                    variant="warning"
-                    icon="trash-outline"
+                    variant={counts.remove === 0 ? "info" : "warning"}
+                    icon={counts.remove === 0 ? "construct-outline" : "trash-outline"}
                     title="Confirmar cambios"
                     message={confirmMessage}
                     actions={[
                         { label: "Cancelar", kind: "secondary", onPress: () => { if (!busy) setDlg(null); } },
-                        { label: busy ? "Aplicando..." : "Aplicar", kind: "destructive", onPress: () => { void apply(); } },
+                        { label: busy ? "Aplicando..." : "Aplicar", kind: counts.remove === 0 ? "primary" : "destructive", onPress: () => { void apply(); } },
                     ]}
                 />
                 <GlassDialog
@@ -332,6 +345,7 @@ const s = StyleSheet.create({
     headerText: { flex: 1 },
     title: { color: C.text, fontSize: 18, fontWeight: "900", marginBottom: 4 },
     subtitle: { color: C.textSub, fontSize: 13, lineHeight: 19 },
+    note: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginTop: 4 },
     selectAll: {
         flexDirection: "row",
         alignItems: "center",
@@ -379,7 +393,6 @@ const s = StyleSheet.create({
         overflow: "hidden",
     },
     btnStacked: { alignSelf: "stretch" },
-    btnSide: { flexShrink: 1 },
     btnGrow: { flex: 1 },
     btnPrimary: { backgroundColor: C.primary },
     btnDisabled: { opacity: 0.4 },

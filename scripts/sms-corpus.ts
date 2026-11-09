@@ -4,8 +4,8 @@
 // origin 'real'      → formato confirmado por el usuario o por el código/capturas.
 // origin 'sintetico' → formato INFERIDO por familia de banco (Banrural, BI, G&T y
 //                      varios de BAC); no hay muestras reales todavía. Cuando el
-//                      usuario comparta casos reales ("Compartir no reconocidos"),
-//                      agregarlos aquí con origin 'real'.
+//                      usuario comparta casos reales (buzón de "Mensajes sin clasificar"
+//                      y "Compartir muestra de mis SMS"), agregarlos aquí con origin 'real'.
 //
 // Todos los receivedAt están en hora local (se evalúan al cargar el módulo, así
 // que el test fija process.env.TZ antes de cargar este archivo con require).
@@ -41,6 +41,7 @@ export interface SmsCase {
 const jul = (d: number, h: number, m: number) => new Date(2026, 6, d, h, m).getTime();
 const aug = (d: number, h: number, m: number) => new Date(2026, 7, d, h, m).getTime();
 const oct = (d: number, h: number, m: number) => new Date(2026, 9, d, h, m).getTime();
+const nov = (d: number, h: number, m: number) => new Date(2026, 10, d, h, m).getTime();
 
 const INFO = '+Info:https://g.bac.gt/SMS';
 const visa = (rest: string) => `PRF protege tu BAC VISA: ${rest} ${INFO}`;
@@ -51,6 +52,11 @@ export const R4C_BODY = visa('compra Aprobada por Q 687.20 en EEGSA WEB REF.:000
 export const R6_BODY = 'JACOB, tu Extra por Q.15,840 esta listo HOY con deposito inmediato en la App: https://g.bac.gt/Ex16/t/mLrnNl o WhatsApp: https://g.bac.gt/ExtraB';
 export const S24_BODY = 'Abono a tarjeta de credito BAC ****1234 por Q 2,000.00 aplicado';
 export const S47_BODY = 'Banrural: Se debito Q.50.00 de tu Cuenta en: PAGO EMPAGUA';
+export const M1_BODY = visa('compra Aprobada por Q 375.00 en LA TRAMA    GUATE el 10/10/26 14:05');
+export const M2_BODY = visa('compra Aprobada por Q 15.00 en GOURMELT ZONA 11    GUATE el 10/10/26 16:30');
+// BANRURAL: formato inferido (ver comentario de B1-B5): pedir el texto real con la herramienta de muestra.
+export const B1_BODY = 'Banrural: Se debito Q.200.00 de tu Cuenta ****5678';
+export const B5_BODY = 'Banrural: Se debito Q.6.00 de tu Cuenta ****5678 en: AGENCIA CENTRAL.';
 
 export const SMS_CORPUS: SmsCase[] = [
   // ───────────── Reales ─────────────
@@ -194,4 +200,109 @@ export const SMS_CORPUS: SmsCase[] = [
     expect: { accepted: true, kind: 'debit', amount: 50, category: 'utilities', dateSource: 'received', day: '2026-10-04' } },
   { id: 'S48', origin: 'sintetico', body: 'BAC: Inicio de sesion en Banca en Linea desde un dispositivo nuevo',
     receivedAt: oct(7, 9, 35), expect: { accepted: false, kind: 'security' } },
+
+  // ───────────── Reales: avisos informativos y SMS que no son del banco ─────────────
+  // (en los reales el enlace llegaba acortado con "…" al compartirlo; aquí va un token plausible)
+  { id: 'N1', origin: 'real', body: 'BANRURAL: Cuenta ****0055 de BANCO INDUSTRIAL, S.A. asociada en Android desde APP BANRURAL en REA-NX9 info. ######',
+    receivedAt: nov(2, 9, 0), expect: { accepted: false, kind: 'notice', bank: 'BANRURAL' } },
+  { id: 'N2', origin: 'real', body: 'Estimado cliente, su tarjeta BAC Credomatic **5031 ha sido reanudada en el servicio APPLE PAY.',
+    receivedAt: nov(2, 9, 5), expect: { accepted: false, kind: 'notice', bank: 'BAC' } },
+  { id: 'N3', origin: 'real', body: 'Estimado cliente, su tarjeta BAC Credomatic **2710 ha sido activada en el servicio GOOGLE PAY.',
+    receivedAt: nov(2, 9, 10), expect: { accepted: false, kind: 'notice', bank: 'BAC' } },
+  { id: 'N4', origin: 'real', body: 'Alcanzaste el 100% del limite de tu tarjeta BAC 5031. Sigue disfrutando de los beneficios, consulta las opciones de pago en https://g.bac.gt/BACTj',
+    receivedAt: nov(2, 9, 15), expect: { accepted: false, kind: 'notice' } },
+  { id: 'N5', origin: 'real', body: 'Tigo te agradece el pago de tus servicios! Consulta tu plan y la fecha de acreditacion de tus beneficios AQUI http://tgo.gt/plapp17',
+    receivedAt: nov(2, 9, 20), expect: { accepted: false, kind: 'not_bank' } },
+  { id: 'N6', origin: 'real', body: 'Hoy se vive El Clasico Espanol! Barcelona vs Real Madrid EN VIVO por ViX+. Contratalo aqui: https://tgo.gt/vixm11 No te lo pierdas ya!',
+    receivedAt: nov(2, 9, 25), expect: { accepted: false, kind: 'not_bank' } },
+  { id: 'N7', origin: 'real', body: 'Reactiva tu plan con todos sus beneficios al poner tu cuenta al dia Aqui http://tgo.gt/smspagomc',
+    receivedAt: nov(2, 9, 30), expect: { accepted: false, kind: 'not_bank' } },
+
+  // ───────────── Reales: promociones del banco ─────────────
+  { id: 'P1', origin: 'real', body: 'Temporada Black! Sabados de nov con Tarjeta Walmart 15% de ahorro en Walmart, Paiz, Maxi Desp y Desp Fam. Inscribete https://g.bac.gt/Pr0m1',
+    receivedAt: nov(2, 10, 0), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P2', origin: 'real', body: 'NOMBRE, tienes disponible un Extra por Q.15,440 Solicitalo en minutos y recibe el dinero en tu cuenta, aprende aqui: https://g.bac.gt/Pr0m2',
+    receivedAt: nov(2, 10, 5), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P3', origin: 'real', body: 'Regresa a recargar INTERNET o SALDO en App BAC y participa en el sorteo de recargas gratis por hasta Q150, hazlo aqui https://g.bac.gt/Pr0m3',
+    receivedAt: nov(2, 10, 10), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P4', origin: 'real', body: 'Tienes 14600 disponible con tu Tarjeta Walmart. Compra a 24 cuotas y te devolvemos 1cuota. Hasta 24nov Inscribete: https://g.bac.gt/Pr0m4',
+    receivedAt: nov(2, 10, 15), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P5', origin: 'real', body: 'JACOB dejaste pendiente tu solicitud de Extra por Q.15,840 Retoma el proceso ahora desde Banca Movil. Mira como: https://g.bac.gt/Pr0m5',
+    receivedAt: nov(2, 10, 20), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P6', origin: 'real', body: 'Ultimos dias de Autoshow! Aprovecha tu precalificacion y nuestras promociones especiales para adquirir tu proximo auto. https://g.bac.gt/Pr0m6',
+    receivedAt: nov(2, 10, 25), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P7', origin: 'real', body: 'Estrena eso que quieres con Cuotas BAC. Compra a 24 MSI con tu tarjeta Walmart y te devolemos 1 cuota. Inscribite: https://g.bac.gt/Pr0m7',
+    receivedAt: nov(2, 10, 30), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P8', origin: 'real', body: 'ULTIMO DIA! Inscribete antes del 19 de octubre, realiza una transferencia y participa por un iPhone 17. Inscribete aqui https://g.bac.gt/Pr0m8',
+    receivedAt: nov(2, 10, 35), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P9', origin: 'real', body: 'Comparte tu Tarjeta CASHBACK con alguien especial y multiplica sus beneficios. Solicita una Extension de Tarjeta aqui: https://g.bac.gt/Pr0m9',
+    receivedAt: nov(2, 10, 40), expect: { accepted: false, kind: 'promo' } },
+  { id: 'P10', origin: 'real', body: 'NOMBRE, tu Extra por Q.15,840 esta listo HOY con deposito inmediato en la App: https://g.bac.gt/Pr0m10 o WhatsApp: https://g.bac.gt/ExtraB',
+    receivedAt: nov(2, 10, 45), expect: { accepted: false, kind: 'promo' } },
+
+  // ───────────── Comercios de Guatemala (formato BAC realista, comercios reportados por el usuario) ─────────────
+  { id: 'M1', origin: 'sintetico', body: M1_BODY, receivedAt: oct(10, 14, 8),
+    expect: { accepted: true, kind: 'purchase', amount: 375, category: 'food', merchant: 'La Trama' } },
+  { id: 'M2', origin: 'sintetico', body: M2_BODY, receivedAt: oct(10, 16, 33),
+    expect: { accepted: true, kind: 'purchase', amount: 15, category: 'food', merchant: 'Gourmelt Zona 11' } },
+  { id: 'M3', origin: 'sintetico', body: visa('compra Aprobada por Q 119.00 en EL MARINERO MIRAFLORES    GUATE el 11/10/26 13:15'),
+    receivedAt: oct(11, 13, 17), expect: { accepted: true, kind: 'purchase', amount: 119, category: 'food' } },
+  { id: 'M4', origin: 'sintetico', body: visa('compra Aprobada por Q 20.00 en PARQUEOS    GUATE el 11/10/26 15:00'),
+    receivedAt: oct(11, 15, 2), expect: { accepted: true, kind: 'purchase', amount: 20, category: 'transport' } },
+  { id: 'M5', origin: 'sintetico', body: visa('compra Aprobada por Q 100.00 en ESTACION DE SERVICIO J    GUATE el 12/10/26 07:45'),
+    receivedAt: oct(12, 7, 47),
+    expect: { accepted: true, kind: 'purchase', amount: 100, category: 'fuel', merchant: 'Estacion de Servicio J' } },
+  { id: 'M6', origin: 'sintetico', body: visa('compra Aprobada por Q 157.40 en LA MEGAPACA MONTSERRAT    GUATE el 12/10/26 11:20'),
+    receivedAt: oct(12, 11, 22), expect: { accepted: true, kind: 'purchase', amount: 157.4, category: 'clothes' } },
+  { id: 'M7', origin: 'sintetico', body: visa('compra Aprobada por Q 210.00 en PARMA    GUATE el 12/10/26 20:10'),
+    receivedAt: oct(12, 20, 12), expect: { accepted: true, kind: 'purchase', amount: 210, category: 'food' } },
+  { id: 'M8', origin: 'sintetico', body: visa('compra Aprobada por Q 180.00 en ANFORA    GUATE el 13/10/26 13:40'),
+    receivedAt: oct(13, 13, 42), expect: { accepted: true, kind: 'purchase', amount: 180, category: 'food' } },
+  { id: 'M9', origin: 'sintetico', body: visa('compra Aprobada por USD 20.00 en ANTHROPIC CLAUDE SUB    SAN FRANCISCO el 13/10/26 02:00'),
+    receivedAt: oct(13, 2, 3),
+    expect: { accepted: true, kind: 'purchase', amount: 20, currency: 'USD', category: 'subscriptions' } },
+  { id: 'M10', origin: 'sintetico', body: visa('compra Aprobada por USD 50.00 en STARLINK    HAWTHORNE el 14/10/26 03:10'),
+    receivedAt: oct(14, 3, 12), expect: { accepted: true, kind: 'purchase', amount: 50, currency: 'USD', category: 'internet' } },
+  { id: 'M11', origin: 'sintetico', body: visa('compra Aprobada por Q 340.00 en SUMA    GUATE el 14/10/26 18:00'),
+    receivedAt: oct(14, 18, 2), expect: { accepted: true, kind: 'purchase', amount: 340, category: 'groceries' } },
+  { id: 'M12', origin: 'sintetico', body: visa('compra Aprobada por Q 95.00 en SAN MARTIN    GUATE el 14/10/26 08:15'),
+    receivedAt: oct(14, 8, 17), expect: { accepted: true, kind: 'purchase', amount: 95, category: 'food' } },
+  { id: 'M13', origin: 'sintetico', body: visa('compra Aprobada por Q 195.00 en TRANSPORTES ROSITA    GUATE el 15/10/26 06:30'),
+    receivedAt: oct(15, 6, 32), expect: { accepted: true, kind: 'purchase', amount: 195, category: 'transport' } },
+  { id: 'M14', origin: 'sintetico', body: visa("compra Aprobada por Q 150.00 en CARL'S JR ZONA 10    GUATE el 15/10/26 13:20"),
+    receivedAt: oct(15, 13, 22),
+    expect: { accepted: true, kind: 'purchase', amount: 150, category: 'food', merchant: "Carl's Jr Zona 10" } },
+  { id: 'M15', origin: 'sintetico', body: visa('compra Aprobada por Q 99.75 en PAGGO APP RESTAURAN    GUATE el 15/10/26 14:00'),
+    receivedAt: oct(15, 14, 2), expect: { accepted: true, kind: 'purchase', amount: 99.75, category: 'food' } },
+  { id: 'M16', origin: 'sintetico', body: visa('compra Aprobada por Q 1,029.00 en SOLUCIONES TECNOLOGICA    GUATE el 16/10/26 10:30'),
+    receivedAt: oct(16, 10, 32), expect: { accepted: true, kind: 'purchase', amount: 1029, category: 'tech' } },
+  { id: 'M17', origin: 'sintetico', body: visa('compra Aprobada por USD 20.00 en OPENAI *CHATGPT SUBSCR    SAN FRANCISCO el 16/10/26 04:00'),
+    receivedAt: oct(16, 4, 2),
+    expect: { accepted: true, kind: 'purchase', amount: 20, currency: 'USD', category: 'subscriptions' } },
+
+  // ───────────── Contraejemplos: reglas de comercio que NO deben disparar ─────────────
+  { id: 'F1', origin: 'sintetico', body: visa('compra Aprobada por Q 60.00 en FARMACIA BATRES    SAN MARTIN el 17/10/26 09:00'),
+    receivedAt: oct(17, 9, 2), expect: { accepted: true, kind: 'purchase', amount: 60, category: 'pharmacy' } },
+  { id: 'F2', origin: 'sintetico', body: visa('compra Aprobada por Q 900.00 en HOTEL SAN MARTIN    ANTIGUA el 17/10/26 12:00'),
+    receivedAt: oct(17, 12, 2), expect: { accepted: true, kind: 'purchase', amount: 900, category: 'travel' } },
+  { id: 'F3', origin: 'sintetico', body: visa('compra Aprobada por Q 45.00 en CONSUMAX TIENDA    GUATE el 17/10/26 17:00'),
+    receivedAt: oct(17, 17, 2), expect: { accepted: true, kind: 'purchase', amount: 45, category: 'shopping' } },
+  { id: 'F4', origin: 'sintetico', body: visa('compra Aprobada por Q 350.00 en PACAYA TOURS    ESCUINTLA el 18/10/26 08:00'),
+    receivedAt: oct(18, 8, 2), expect: { accepted: true, kind: 'purchase', amount: 350, category: 'other' } },
+  { id: 'F5', origin: 'sintetico', body: visa('compra Aprobada por Q 120.00 en PAGGO APP FERRETERIA EL    GUATE el 18/10/26 10:00'),
+    receivedAt: oct(18, 10, 2), expect: { accepted: true, kind: 'purchase', amount: 120, category: 'other' } },
+  { id: 'F6', origin: 'sintetico', body: visa('compra Aprobada por USD 999.00 en APPLE STORE OAKLAND el 18/10/26 15:00'),
+    receivedAt: oct(18, 15, 2), expect: { accepted: true, kind: 'purchase', amount: 999, currency: 'USD', category: 'other' } },
+
+  // ───────────── BANRURAL (formato inferido: pedir el texto real con la herramienta de muestra) ─────────────
+  { id: 'B1', origin: 'sintetico', body: B1_BODY, receivedAt: nov(3, 14, 20),
+    expect: { accepted: true, kind: 'transfer_out', amount: 200, category: 'transfer', txType: 'expense', bank: 'BANRURAL' } },
+  { id: 'B2', origin: 'sintetico', body: 'Banrural: Se debito Q.5.00 de tu Cuenta ****5678 en: PLAZA ATANASIO TZUL,.', receivedAt: nov(3, 14, 20),
+    expect: { accepted: true, kind: 'bank_fee', amount: 5, category: 'bank_fees', merchant: 'Plaza Atanasio Tzul' } },
+  { id: 'B3', origin: 'sintetico', body: 'BANRURAL: Cobro de comision por transferencia Q.5.00 cuenta ****5678', receivedAt: nov(3, 14, 22),
+    expect: { accepted: true, kind: 'bank_fee', amount: 5, category: 'bank_fees', txType: 'expense' } },
+  { id: 'B4', origin: 'sintetico', body: 'BANRURAL: Deposito recibido por Q.515.00 a tu cuenta ****5678', receivedAt: nov(3, 16, 0),
+    expect: { accepted: true, kind: 'transfer_in', amount: 515, txType: 'income', category: 'transfer_in' } },
+  { id: 'B5', origin: 'sintetico', body: B5_BODY, receivedAt: nov(3, 14, 21),
+    expect: { accepted: true, kind: 'debit', amount: 6, category: 'other', txType: 'expense' } },
 ];

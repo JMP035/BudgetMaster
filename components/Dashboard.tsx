@@ -2,18 +2,17 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator, Animated, Easing, Linking, Modal, Platform, RefreshControl,
-    ScrollView, Share, StyleSheet, Text, TouchableOpacity, View
+    ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
-    FinancialPeriod, SavingsGoal, Transaction, UserSettings,
+    FinancialPeriod, SavingsGoal, StorageService, Transaction, UserSettings,
     calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
     getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import type { SmsPermissionDetail, SmsReviewItem, SyncResult } from "../services/SmsService";
-import { maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
 import { C } from "../theme";
@@ -27,6 +26,7 @@ import { isSmsFeatureOn } from "../services/features";
 import { GlassDialog } from "./GlassDialog";
 import type { GlassDialogProps, GlassDialogStat } from "./GlassDialog";
 import SmsReviewModal from "./SmsReviewModal";
+import SmsInboxModal from "./SmsInboxModal";
 
 type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
 
@@ -43,7 +43,9 @@ function buildSyncStats(r: SyncResult): { stats: GlassDialogStat[]; footnote?: s
     if (st.promos > 0) stats.push({ icon: "megaphone-outline", label: "Promociones y ofertas omitidas", value: st.promos, tone: "muted" });
     if (st.otp > 0) stats.push({ icon: "key-outline", label: "Códigos y alertas de seguridad omitidos", value: st.otp, tone: "muted" });
     if (st.declined > 0) stats.push({ icon: "close-circle-outline", label: "Transacciones rechazadas omitidas", value: st.declined, tone: "muted" });
-    if (st.unparsed > 0) stats.push({ icon: "help-circle-outline", label: "Mensajes bancarios no reconocidos", value: st.unparsed, tone: "warning" });
+    if (st.notices + st.info > 0) stats.push({ icon: "notifications-outline", label: "Avisos informativos del banco (sin movimiento)", value: st.notices + st.info, tone: "muted" });
+    if (st.ownTransfers > 0) stats.push({ icon: "repeat-outline", label: "Transferencias entre tus cuentas", value: st.ownTransfers, tone: "muted" });
+    if (st.unparsed > 0) stats.push({ icon: "help-circle-outline", label: "Mensajes sin clasificar", value: st.unparsed, tone: "warning" });
     return { stats, footnote: st.installments > 0 ? "Revisalas en Cuentas → Visacuotas." : undefined };
 }
 
@@ -518,6 +520,8 @@ export default function DashboardScreen({
     const [dialog, setDialog] = useState<SyncDialogState | null>(null);
     const [reviewItems, setReviewItems] = useState<SmsReviewItem[]>([]);
     const [showReview, setShowReview] = useState(false);
+    const [showInbox, setShowInbox] = useState(false);
+    const [inboxCount, setInboxCount] = useState(0);
 
     useEffect(() => {
         const load = async () => {
@@ -528,6 +532,14 @@ export default function DashboardScreen({
         };
         load();
     }, [transactions.length, settings.budgetLimit, settings.userName]);
+
+    const smsEnabled = isSmsFeatureOn(settings);
+    useEffect(() => {
+        if (!smsEnabled) { setInboxCount(0); return; }
+        let cancelled = false;
+        StorageService.getSmsInbox().then(i => { if (!cancelled) setInboxCount(i.length); });
+        return () => { cancelled = true; };
+    }, [smsEnabled]);
 
     // ── Flujo de sincronización SMS (GlassDialog, sin Alert nativo) ──
     // Android no maneja bien dos Modal a la vez: se cierra uno y se abre el otro con una pausa.
@@ -544,41 +556,6 @@ export default function DashboardScreen({
     const openReview = (items: SmsReviewItem[]) => {
         setReviewItems(items);
         afterDialogClosed(() => setShowReview(true));
-    };
-
-    // Texto compartible: no reconocidos + primeros 20 descartados como promo, con datos sensibles ocultos.
-    const diagnosticLines = (diagnostics: SyncResult["diagnostics"]) => {
-        const unparsed = diagnostics.filter(d => d.kind === "unparsed");
-        const promos = diagnostics.filter(d => d.kind === "promo").slice(0, 20);
-        return [...unparsed, ...promos].map(d =>
-            `${d.kind} | ${d.reason} | ${maskSmsForDiagnostics(d.body).replace(/\s+/g, " ").trim()}`
-        );
-    };
-
-    const shareDiagnostics = async (lines: string[]) => {
-        try {
-            await Share.share({
-                message: `BudgetMaster - SMS no reconocidos (${lines.length})\nformato: tipo | motivo | texto\n\n${lines.join("\n")}`,
-            });
-        } catch (e) {
-            console.warn("Share diagnostics error:", e instanceof Error ? e.message : "desconocido");
-        }
-    };
-
-    const askShareDiagnostics = (diagnostics: SyncResult["diagnostics"]) => {
-        const lines = diagnosticLines(diagnostics);
-        if (lines.length === 0) return;
-        setDialog({
-            variant: "info",
-            icon: "share-social-outline",
-            title: "Compartir no reconocidos",
-            message: `Se compartirá el texto de ${lines.length} mensaje${lines.length === 1 ? "" : "s"} bancario${lines.length === 1 ? "" : "s"} con números de cuenta ocultos. Revisalo antes de enviarlo.`,
-            footnote: "Sirve para enseñarle a la app a reconocer más formatos de tu banco.",
-            actions: [
-                { label: "Cancelar", kind: "secondary", onPress: closeDialog },
-                { label: "Compartir", kind: "primary", icon: "share-social-outline", onPress: () => afterDialogClosed(() => { void shareDiagnostics(lines); }) },
-            ],
-        });
     };
 
     const showSmsUnavailable = () => setDialog({
@@ -641,7 +618,6 @@ export default function DashboardScreen({
         const { stats, footnote } = buildSyncStats(result);
         const imported = result.transactions.length + result.installments.length;
         const hasReview = result.reviewItems.length > 0;
-        const hasUnparsed = result.stats.unparsed > 0 && diagnosticLines(result.diagnostics).length > 0;
 
         const actions: GlassDialogProps["actions"] = [];
         if (hasReview) {
@@ -652,12 +628,12 @@ export default function DashboardScreen({
                 onPress: () => openReview(result.reviewItems),
             });
         }
-        if (hasUnparsed) {
+        if (result.inbox.length > 0) {
             actions.push({
-                label: "Compartir no reconocidos",
+                label: `Ver sin clasificar (${result.inbox.length})`,
                 kind: "secondary",
-                icon: "share-social-outline",
-                onPress: () => afterDialogClosed(() => askShareDiagnostics(result.diagnostics)),
+                icon: "file-tray-outline",
+                onPress: () => afterDialogClosed(() => setShowInbox(true)),
             });
         }
         actions.push({ label: "Listo", kind: "primary", onPress: closeDialog });
@@ -716,6 +692,7 @@ export default function DashboardScreen({
         setSyncing(true);
         try {
             const result = await SmsService.syncBankSms();
+            setInboxCount(result.inbox.length);
             showSyncResult(result);
             if (result.transactions.length > 0 || result.installments.length > 0) onRefresh();
         } catch (e) {
@@ -826,6 +803,17 @@ export default function DashboardScreen({
                             <Ionicons name="time-outline" size={12} color={daysLeft <= 3 ? C.danger : C.textMuted} />
                             <Text style={[s.daysBadgeTxt, { color: daysLeft <= 3 ? C.danger : C.textMuted }]}>{daysLeft}d</Text>
                         </View>
+                    )}
+                    {smsOn && inboxCount > 0 && (
+                        <TouchableOpacity
+                            onPress={() => setShowInbox(true)}
+                            style={s.inboxChip}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${inboxCount} mensajes sin clasificar. Abrir buzón`}
+                        >
+                            <Ionicons name="file-tray-outline" size={13} color={C.warning} />
+                            <Text style={s.inboxChipTxt} numberOfLines={1}>{inboxCount} sin clasificar</Text>
+                        </TouchableOpacity>
                     )}
                     {smsOn && (
                         <View ref={syncRef} collapsable={false}>
@@ -1001,8 +989,17 @@ export default function DashboardScreen({
                 <SmsReviewModal
                     visible={showReview}
                     items={reviewItems}
+                    customCategories={settings.customCategories}
                     onClose={() => setShowReview(false)}
                     onApplied={() => { setShowReview(false); onRefresh(); }}
+                />
+            )}
+            {smsOn && (
+                <SmsInboxModal
+                    visible={showInbox}
+                    settings={settings}
+                    onClose={() => setShowInbox(false)}
+                    onChanged={() => { onRefresh(); StorageService.getSmsInbox().then(i => setInboxCount(i.length)); }}
                 />
             )}
         </View>
@@ -1026,6 +1023,8 @@ const s = StyleSheet.create({
     month: { color: C.textPrimary, fontSize: 11, marginTop: 2, letterSpacing: 1.5, fontWeight: "700" },
     daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.glassFill },
     daysBadgeTxt: { fontSize: 11, fontWeight: "700" },
+    inboxChip: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: C.warning + "66", backgroundColor: C.glassFill },
+    inboxChipTxt: { color: C.warning, fontSize: 11, fontWeight: "700", flexShrink: 1 },
     syncBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
     syncGlass: { ...StyleSheet.absoluteFillObject, borderRadius: 20, overflow: "hidden", alignItems: "center", justifyContent: "center" },
     syncOrbOuter: { position: "absolute", width: 34, height: 34, borderRadius: 17, backgroundColor: C.primary, opacity: 0.25 },

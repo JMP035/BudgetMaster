@@ -7,7 +7,7 @@ import {
   planSmsImport, reasonLabelFor, reviewImportedSms,
 } from './BankSmsParser';
 import type { ParsedSmsResult, SmsImportPlan, SmsImportStats, SmsKind, SmsReviewItem } from './BankSmsParser';
-import type { CreditInstallment, Transaction } from './storage';
+import type { CreditInstallment, SmsInboxItem, Transaction } from './storage';
 
 // El motor de parseo vive en BankSmsParser (puro, probado con `npm run test:sms`).
 // Aquí solo queda lo que toca APIs de Android: permisos y lectura de la bandeja.
@@ -34,6 +34,8 @@ export interface SyncResult {
   reviewItems: SmsReviewItem[];
   /** Mensajes bancarios no importados (máx. 300), para el diagnóstico compartible. */
   diagnostics: SmsImportPlan['diagnostics'];
+  /** Buzón persistido de SMS que el motor no entendió (sin ignorados ni registrados). */
+  inbox: SmsInboxItem[];
 }
 
 export type SmsPermissionStatus = 'granted' | 'denied' | 'never_ask_again' | 'unavailable';
@@ -49,7 +51,7 @@ export interface SmsPermissionDetail {
 function emptySyncResult(): SyncResult {
   return {
     transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
-    stats: emptySmsStats(), reviewItems: [], diagnostics: [],
+    stats: emptySmsStats(), reviewItems: [], diagnostics: [], inbox: [],
   };
 }
 
@@ -121,26 +123,30 @@ export const SmsService = {
               .filter(m => typeof m?.body === 'string' && Number(m.date) >= threeMonthsAgo)
               .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
 
-            const [txs, insts, dismissed, kept, accounts] = await Promise.all([
+            const [txs, insts, dismissed, kept, accounts, rules] = await Promise.all([
               StorageService.getTransactions(),
               StorageService.getCreditInstallments(),
               StorageService.getDismissedSms(),
               StorageService.getSmsReviewKept(),
               StorageService.getAccounts(),
+              StorageService.getMerchantRules(),
             ]);
 
             const index = buildExistingSmsIndex(txs, insts, dismissed);
-            const plan = planSmsImport(messages, index, accounts);
+            const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, existingTxs: txs });
 
             const after = await StorageService.importSmsBatch(plan.transactions, plan.installments);
-            const reviewItems = reviewImportedSms(after.transactions, new Set(kept));
+            const inbox = await StorageService.replaceSmsInbox(
+              plan.unrecognized.filter(i => !index.fingerprints.has(i.fingerprint) && !index.dismissed.has(i.fingerprint)),
+            );
+            const reviewItems = reviewImportedSms(after.transactions, new Set(kept), { merchantRules: rules });
 
             const s = plan.stats;
             console.log(
               `SMS Sync: leidos=${s.totalRead}, bancarios=${s.bankCandidates}, importados=${s.imported}, cuotas=${s.installments}, ` +
               `duplicados=${s.duplicates}, descartados=${s.dismissedByUser}, promos=${s.promos}, otp=${s.otp}, ` +
-              `rechazados=${s.declined}, info=${s.info}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
-              `no_reconocidos=${s.unparsed}, revision=${reviewItems.length}`
+              `rechazados=${s.declined}, info=${s.info}, avisos=${s.notices}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
+              `no_reconocidos=${s.unparsed}, buzon=${inbox.length}, revision=${reviewItems.length}`
             );
 
             resolve({
@@ -153,6 +159,7 @@ export const SmsService = {
               stats: s,
               reviewItems,
               diagnostics: plan.diagnostics,
+              inbox,
             });
           } catch (e) {
             console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');

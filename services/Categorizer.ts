@@ -7,6 +7,11 @@
 //
 // Módulo PURO: sin imports de React Native ni de storage. Lo usa el motor de
 // parseo de SMS (BankSmsParser) que se prueba con `npm run test:sms`.
+//
+// Nota sobre nombres truncados: el campo del comercio lo corta el propio SMS del
+// banco (BAC ~22 caracteres: "SOLUCIONES TECNOLOGICA", "PAGGO APP RESTAURAN").
+// Este módulo NO trunca nada; por eso las reglas de EXPENSE_RULES coinciden por
+// prefijo (restaura\w*, tecnolog\w*, serv\w*).
 
 export interface CategorizationResult {
   category: string;
@@ -60,28 +65,49 @@ function ruleText(text: string): string {
 
 const wb = (src: string): RegExp => new RegExp("\\b(?:" + src + ")\\b");
 
-interface ExpenseRule { category: string; re: RegExp; merchantOnly?: boolean }
+interface ExpenseRule {
+  category: string;
+  re: RegExp;
+  /** Solo se evalúa si hay comercio (no sobre el texto completo del SMS). */
+  merchantOnly?: boolean;
+  /** Anclada al INICIO del nombre del comercio (sin ubicación): para nombres cortos o comunes. */
+  merchantStart?: boolean;
+}
+
+const rule = (category: string, src: string, opts: { merchantOnly?: boolean; merchantStart?: boolean } = {}): ExpenseRule => ({
+  category,
+  re: opts.merchantStart ? new RegExp("^(?:" + src + ")\\b") : wb(src),
+  ...opts,
+});
 
 // El orden importa: gana la primera regla que coincide.
+// Ojo: BAC corta el campo del comercio en ~22 caracteres ("ESTACION DE SERVICIO J",
+// "PAGGO APP RESTAURAN"), por eso varias reglas coinciden por prefijo (\w*).
 const EXPENSE_RULES: ExpenseRule[] = [
-  { category: "food", re: wb("uber\\s*eats|pedidos\\s*ya|hugo app|hugo|rappi") },
-  { category: "food", re: wb("pizza|mcdon\\w*|burger|campero|pollo (?:granjero|brujo)|kfc|subway|domino\\w*|wendy\\w*|little caesars|taco bell|starbucks|barista|dunkin|sushi|tacos|restaurante?|cafe|cafeteria|comedor|irtra") },
-  { category: "groceries", re: wb("walmart|despensa|paiz|la torre|pricesmart|super ?24|supermercado|maxi despensa|econosuper|super del barrio") },
-  { category: "fuel", re: wb("gasolinera|estacion de serv|est de serv|shell|texaco|puma|esso|redipsa|zeta gas") },
-  { category: "fuel", re: wb("uno"), merchantOnly: true },
-  { category: "transport", re: wb("uber|indriver|yango|taxi|parqueo|parking|transmetro|tu muni") },
-  { category: "streaming", re: wb("netflix|spotify|disney|hbo|max\\.com|youtube|prime video|paramount|crunchyroll|vix") },
-  { category: "subscriptions", re: wb("google one|google storage|icloud|apple\\.com|microsoft|openai|chatgpt|dropbox|adobe|canva") },
-  { category: "entertainment", re: wb("steam|playstation|xbox|nintendo|cine|cinepolis|cinemark|games?") },
-  { category: "pharmacy", re: wb("farmacia|galeno|meykos|cruz verde|batres|kielsa|carolina|similares?") },
-  { category: "health", re: wb("hospital|medico|doctor|clinica|laboratorio|radiologia|sanatorio|dental") },
-  { category: "shopping", re: wb("amazon|amzn|ebay|aliexpress|shein|temu|mercado ?libre|pacifiko|cemaco|siman|elektra|curacao|max|tienda") },
-  { category: "clothes", re: wb("zara|bershka|pull ?& ?bear|h&m|cuadra|payless|ropa") },
-  { category: "internet", re: wb("tigo|claro|telgua|movistar|fibernet|cable"), },
-  { category: "internet", re: wb("internet"), merchantOnly: true },
-  { category: "utilities", re: wb("eegsa|energuate|empagua|electricidad|agua|luz|municipalidad") },
-  { category: "travel", re: wb("hotel|airbnb|avianca|volaris|copa|united|american airlines|aeropuerto|booking") },
-  { category: "education", re: wb("colegio|universidad|usac|url|umg|udv|academia|curso") },
+  rule("food", "uber\\s*eats|pedidos\\s*ya|hugo app|hugo|rappi"),
+  rule("food", "pizz\\w*|mcdon\\w*|burger\\w*|hamburgues\\w*|campero|pollo\\w*|granjero|kfc|subway|domino\\w*|wendy\\w*|little caesars|taco bell|papa john\\w*|carl s jr|carls jr|carl s|starbucks|barista|dunkin\\w*|sushi|tacos?|taqueri\\w*|restaura\\w*|cafe|cafeteri\\w*|coffee|comedor\\w*|panaderi\\w*|pasteleri\\w*|reposteri\\w*|parrilla\\w*|churrasc\\w*|pupuseri\\w*|marisqueri\\w*|cevicheri\\w*|marinero|antojito\\w*|gourmelt|anfora|bistro|grill|wings|irtra|los cebollines|go green|sarita|pinulito|china wok"),
+  rule("food", "san martin|la trama|parma|el portal|la cocina", { merchantStart: true }),
+  rule("groceries", "walmart|despensa\\w*|paiz|la torre|pricesmart|super ?24|supermercado\\w*|maxi despensa|econosuper|super del barrio|unisuper|la bodegona|bodegona|super selectos"),
+  rule("groceries", "suma|la barata", { merchantStart: true }),
+  rule("fuel", "gasolinera\\w*|estacion\\w* de serv\\w*|est de serv\\w*|e s shell|shell|texaco|puma|esso|redipsa|zeta gas|gas station|combustible\\w*"),
+  rule("fuel", "uno", { merchantOnly: true }),
+  rule("transport", "uber|indriver|indrive|yango|taxi\\w*|parqueo\\w*|parking|estacionamiento\\w*|transporte\\w*|transmetro|tu muni|peaje\\w*|autopista"),
+  rule("streaming", "netflix|spotify|disney\\w*|hbo|max\\.com|youtube|prime video|paramount|crunchyroll|vix|star plus|apple tv"),
+  rule("subscriptions", "anthropic|claude|openai|chatgpt|google one|google storage|google play|icloud|apple\\.com|apple com|itunes|microsoft|office 365|adobe|canva|github|notion|duolingo|dropbox|midjourney|perplexity|grammarly|suscrip\\w*|membresi\\w*"),
+  rule("internet", "starlink|tigo|claro|telgua|movistar|fibernet|cable\\w*|telecomunicacion\\w*"),
+  rule("internet", "internet", { merchantOnly: true }),
+  rule("tech", "soluciones tecnolog\\w*|tecnolog\\w*|tecno\\w*|computacion|computadora\\w*|compu\\w*|electronica\\w*|intelaf|macrosistemas|spirit|celulares|repuestos? de comput\\w*"),
+  rule("tech", "click", { merchantStart: true }),
+  rule("entertainment", "steam|playstation|xbox|nintendo|cine|cinepolis|cinemark|games?"),
+  rule("pharmacy", "farmacia|galeno|meykos|cruz verde|batres|kielsa|carolina|similares?"),
+  rule("health", "hospital|medico|doctor|clinica|laboratorio|radiologia|sanatorio|dental"),
+  // Ropa ANTES que compras: "La Megapaca" no debe caer en "tienda"/"max".
+  // `pacas?` es palabra completa para no capturar "Pacaya".
+  rule("clothes", "megapaca|pacas?|ropa|boutique\\w*|zara|bershka|stradivarius|pull ?& ?bear|h&m|cuadra|payless|levis|nike|adidas"),
+  rule("shopping", "amazon|amzn|ebay|aliexpress|shein|temu|mercado ?libre|pacifiko|cemaco|siman|elektra|curacao|max|tienda"),
+  rule("utilities", "eegsa|energuate|empagua|electricidad|agua|luz|municipalidad"),
+  rule("travel", "hotel|airbnb|avianca|volaris|copa|united|american airlines|aeropuerto|booking"),
+  rule("education", "colegio|universidad|usac|url|umg|udv|academia|curso"),
 ];
 
 // Palabras demasiado comunes para fiarse de ellas cuando NO hay comercio
@@ -96,9 +122,15 @@ export function categorizeExpense(merchant: string | null, location: string | nu
   const hasMerchant = !!merchant && merchant.trim().length > 0;
   let text = hasMerchant ? ruleText(`${merchant} ${location ?? ""}`) : ruleText(fallbackFlat);
   if (!hasMerchant) text = text.replace(FALLBACK_SKIP, " ");
-  for (const rule of EXPENSE_RULES) {
-    if (rule.merchantOnly && !hasMerchant) continue;
-    if (rule.re.test(text)) return rule.category;
+  const merchantText = hasMerchant ? ruleText(merchant as string) : "";
+  for (const r of EXPENSE_RULES) {
+    if (r.merchantOnly && !hasMerchant) continue;
+    if (r.merchantStart) {
+      // Solo el inicio del nombre del comercio (sin ubicación).
+      if (hasMerchant && r.re.test(merchantText)) return r.category;
+      continue;
+    }
+    if (r.re.test(text)) return r.category;
   }
   return "other";
 }
@@ -148,17 +180,27 @@ const LOCATION_ALIASES: Record<string, string> = {
   guatemala: "Guatemala",
 };
 
-/** TitleCase: mayúscula solo al inicio o tras espacio ("CASTOR'S" → "Castor's"). Conserva "#12", "Z10". */
+/** Conectores que van en minúscula cuando no son la primera palabra ("Estación de Servicio J"). */
+const TITLE_LOWER_WORDS = new Set(["de", "del", "la", "las", "el", "los", "y", "en"]);
+
+/**
+ * TitleCase: mayúscula solo al inicio o tras espacio ("CASTOR'S" → "Castor's"). Conserva "#12", "Z10".
+ * Los conectores (de, del, la, el...) quedan en minúscula salvo en la primera posición ("La Trama").
+ */
 function toTitleCase(str: string): string {
   return str
     .split(" ")
-    .map(tok => {
+    .map((tok, i) => {
       if (!tok) return tok;
       if (tok.length <= 4 && /[\d#]/.test(tok) && tok === tok.toUpperCase()) return tok;
+      if (i > 0 && TITLE_LOWER_WORDS.has(tok.toLowerCase())) return tok.toLowerCase();
       return tok.toLowerCase().replace(/(^|\s)(\S)/g, (_m, a: string, b: string) => a + b.toUpperCase());
     })
     .join(" ");
 }
+
+/** Quita puntuación final suelta ("Plaza Atanasio Tzul," → "Plaza Atanasio Tzul"). */
+const TRAILING_PUNCT_RE = /[\s,;:.\-]+$/;
 
 function matchSegment(raw: string): string | null {
   // BANRURAL: "... Cuenta 3012XXXX en: PAGO TIGO RESIDENCIAL."
@@ -188,7 +230,7 @@ export function extractMerchantAndLocation(raw: string): MerchantInfo {
     .trim();
   const parts = cleaned
     .split(/\s{2,}/)
-    .map(p => p.replace(INSTALLMENT_SUFFIX_RE, "").replace(/\s+/g, " ").trim())
+    .map(p => p.replace(INSTALLMENT_SUFFIX_RE, "").replace(/\s+/g, " ").replace(TRAILING_PUNCT_RE, "").trim())
     .filter(p => p.length > 0);
   if (parts.length === 0) return { merchant: null, location: null, segment };
 
@@ -220,6 +262,7 @@ const KNOWN_PLACES: [RegExp, string][] = [
   [/\bkfc\b/i, "KFC"],
   [/\bsubway\b/i, "Subway"],
   [/\bwendy/i, "Wendy's"],
+  [/carl'?s\s*jr/i, "Carl's Jr"],
   [/\bdomino/i, "Domino's Pizza"],
   // Supermercados
   [/walmart/i, "Walmart"],
@@ -241,6 +284,8 @@ const KNOWN_PLACES: [RegExp, string][] = [
   // Telecomunicaciones
   [/\btigo\b/i, "Tigo"],
   [/\bclaro\b/i, "Claro"],
+  [/\bstarlink\b/i, "Starlink"],
+  [/\banthropic\b/i, "Anthropic"],
   // Guatemala
   [/\birtra\b/i, "IRTRA"],
 ];
