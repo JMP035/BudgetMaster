@@ -1,9 +1,8 @@
 import React, { useEffect, useRef } from "react";
 import {
-    Animated, Dimensions, Easing, StyleSheet, Text, View
+    Animated, Dimensions, Easing, Image, StyleSheet, Text, View
 } from "react-native";
 import { C } from "../theme";
-import { GlassBackground } from "./GlassCard";
 
 const { width, height } = Dimensions.get("window");
 
@@ -138,7 +137,6 @@ export default function SplashScreen({ onDone }: Props) {
     const barWidth = useRef(new Animated.Value(0)).current;
     const barOpacity = useRef(new Animated.Value(0)).current;
     const fadeOut = useRef(new Animated.Value(1)).current;
-    const shimmer = useRef(new Animated.Value(0)).current;
 
     // Partículas
     const particles = [
@@ -153,14 +151,6 @@ export default function SplashScreen({ onDone }: Props) {
     ];
 
     useEffect(() => {
-        // Shimmer loop en el logo
-        Animated.loop(
-            Animated.sequence([
-                Animated.timing(shimmer, { toValue: 1, duration: 1500, useNativeDriver: true }),
-                Animated.timing(shimmer, { toValue: 0, duration: 1500, useNativeDriver: true }),
-            ])
-        ).start();
-
         // Secuencia principal
         Animated.sequence([
             // Fondo aparece
@@ -212,7 +202,6 @@ export default function SplashScreen({ onDone }: Props) {
     }, []);
 
     const barW = barWidth.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] });
-    const shimmerOpacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.05, 0.2] });
 
     return (
         <Animated.View style={[s.container, { opacity: fadeOut }]}>
@@ -244,19 +233,7 @@ export default function SplashScreen({ onDone }: Props) {
                 opacity: logoOpacity,
                 transform: [{ scale: logoScale }],
             }]}>
-                <GlassBackground radius={30} blur={false} />
-
-                {/* Shimmer interior */}
-                <Animated.View style={[s.logoShimmer, { opacity: shimmerOpacity }]} />
-
-                {/* Símbolo $ estilizado en cobre */}
-                <View style={s.logoInner}>
-                    <Text style={s.logoSymbol}>₿</Text>
-                    <Text style={s.logoSubSymbol}>M</Text>
-                </View>
-
-                {/* Borde brillante */}
-                <View style={s.logoBorderTop} />
+                <Image source={require("../assets/app_icon.png")} style={s.logoImage} resizeMode="cover" />
             </Animated.View>
 
             {/* TEXTOS */}
@@ -333,6 +310,7 @@ const s = StyleSheet.create({
         borderRadius: 30,
         borderWidth: 1.5,
         borderColor: C.primary,
+        backgroundColor: C.bgDeep,
         alignItems: "center",
         justifyContent: "center",
         marginBottom: 32,
@@ -342,41 +320,9 @@ const s = StyleSheet.create({
         elevation: 20,
         overflow: "hidden",
     },
-    logoShimmer: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: "50%",
-        backgroundColor: C.glassHighlight,
-        borderTopLeftRadius: 28,
-        borderTopRightRadius: 28,
-    },
-    logoInner: {
-        alignItems: "center",
-        justifyContent: "center",
-    },
-    logoSymbol: {
-        fontSize: 42,
-        color: C.primaryLight,
-        fontWeight: "900",
-        lineHeight: 48,
-    },
-    logoSubSymbol: {
-        fontSize: 11,
-        color: C.accent,
-        fontWeight: "900",
-        letterSpacing: 4,
-        marginTop: -4,
-    },
-    logoBorderTop: {
-        position: "absolute",
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: C.primaryGlow,
-        opacity: 0.8,
+    logoImage: {
+        width: "100%",
+        height: "100%",
     },
 
     // Textos
