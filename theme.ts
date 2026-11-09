@@ -44,6 +44,11 @@ export const C = {
     scrimSoft: "rgba(0,0,0,0.60)",
     spotlightRing: "rgba(227,188,126,0.90)",
     spotlightGlow: "rgba(252,225,176,0.22)",
+    // Cobre del monograma BM (muestreado de assets/app_icon.png) — solo logo/splash
+    copperGlow: "#FDD6AD",
+    copperLight: "#EBA87C",
+    copper: "#C57B55",
+    copperDark: "#7A4430",
 } as const;
 
 export const shadow = (color: string, r = 12, op = 0.5) => ({

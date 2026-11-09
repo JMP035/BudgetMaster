@@ -3,6 +3,21 @@ import {
     Animated, Dimensions, Easing, Image, StyleSheet, Text, View
 } from "react-native";
 import { C } from "../theme";
+import AnimatedBMLogo, { LOGO_TITLE_AT_MS } from "./AnimatedBMLogo";
+
+// La splash es lo primero que se abre: si la animación vectorial lanzara un error de JS,
+// se muestra el logo estático en lugar de dejar la app sin arrancar.
+class LogoBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+    state = { failed: false };
+    static getDerivedStateFromError() { return { failed: true }; }
+    componentDidCatch(e: unknown) { console.warn("[Splash] animación del logo falló:", e); }
+    render() {
+        if (this.state.failed) {
+            return <Image source={require("../assets/app_icon.png")} style={{ width: 120, height: 120, borderRadius: 28 }} />;
+        }
+        return this.props.children;
+    }
+}
 
 const { width, height } = Dimensions.get("window");
 
@@ -125,8 +140,6 @@ interface Props { onDone: () => void; }
 export default function SplashScreen({ onDone }: Props) {
     // Animaciones principales
     const bgOpacity = useRef(new Animated.Value(0)).current;
-    const logoScale = useRef(new Animated.Value(0)).current;
-    const logoOpacity = useRef(new Animated.Value(0)).current;
     const glowScale = useRef(new Animated.Value(0.5)).current;
     const glowOpacity = useRef(new Animated.Value(0)).current;
     const titleOpacity = useRef(new Animated.Value(0)).current;
@@ -151,53 +164,58 @@ export default function SplashScreen({ onDone }: Props) {
     ];
 
     useEffect(() => {
-        // Secuencia principal
-        Animated.sequence([
-            // Fondo aparece
-            Animated.timing(bgOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-
-            // Glow y logo entran
-            Animated.parallel([
-                Animated.spring(glowScale, { toValue: 1, friction: 4, useNativeDriver: true }),
-                Animated.timing(glowOpacity, { toValue: 0.6, duration: 600, useNativeDriver: true }),
-                Animated.spring(logoScale, { toValue: 1, friction: 3.5, tension: 40, useNativeDriver: true }),
-                Animated.timing(logoOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        // Secuencia principal: dos ramas en paralelo
+        Animated.parallel([
+            // Rama A: glow central (el logo se anima solo en AnimatedBMLogo)
+            Animated.sequence([
+                Animated.delay(400),
+                Animated.parallel([
+                    Animated.spring(glowScale, { toValue: 1, friction: 4, useNativeDriver: true }),
+                    Animated.timing(glowOpacity, { toValue: 0.6, duration: 600, useNativeDriver: true }),
+                ]),
             ]),
 
-            Animated.delay(200),
+            // Rama B: fondo, espera al logo y luego textos, barra y salida
+            Animated.sequence([
+                // Fondo aparece
+                Animated.timing(bgOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
 
-            // Título entra
-            Animated.parallel([
-                Animated.timing(titleOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-                Animated.timing(titleY, { toValue: 0, duration: 500, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
+                // El logo termina de dibujarse antes de que entre el título
+                Animated.delay(LOGO_TITLE_AT_MS - 400),
+
+                // Título entra
+                Animated.parallel([
+                    Animated.timing(titleOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+                    Animated.timing(titleY, { toValue: 0, duration: 500, easing: Easing.out(Easing.back(1.5)), useNativeDriver: true }),
+                ]),
+
+                Animated.delay(100),
+
+                // Subtítulo
+                Animated.parallel([
+                    Animated.timing(subOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+                    Animated.timing(subY, { toValue: 0, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+                ]),
+
+                Animated.delay(100),
+
+                // Tagline
+                Animated.timing(tagOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+
+                Animated.delay(200),
+
+                // Barra de carga
+                Animated.parallel([
+                    Animated.timing(barOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+                    Animated.timing(barWidth, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
+                ]),
+
+                Animated.delay(300),
+
+                // Fade out final
+                Animated.timing(fadeOut, { toValue: 0, duration: 500, useNativeDriver: true }),
+
             ]),
-
-            Animated.delay(100),
-
-            // Subtítulo
-            Animated.parallel([
-                Animated.timing(subOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-                Animated.timing(subY, { toValue: 0, duration: 400, easing: Easing.out(Easing.quad), useNativeDriver: true }),
-            ]),
-
-            Animated.delay(100),
-
-            // Tagline
-            Animated.timing(tagOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-
-            Animated.delay(200),
-
-            // Barra de carga
-            Animated.parallel([
-                Animated.timing(barOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
-                Animated.timing(barWidth, { toValue: 1, duration: 1200, easing: Easing.inOut(Easing.cubic), useNativeDriver: false }),
-            ]),
-
-            Animated.delay(300),
-
-            // Fade out final
-            Animated.timing(fadeOut, { toValue: 0, duration: 500, useNativeDriver: true }),
-
         ]).start(() => onDone());
     }, []);
 
@@ -229,12 +247,9 @@ export default function SplashScreen({ onDone }: Props) {
             }]} />
 
             {/* LOGO */}
-            <Animated.View style={[s.logoWrap, {
-                opacity: logoOpacity,
-                transform: [{ scale: logoScale }],
-            }]}>
-                <Image source={require("../assets/app_icon.png")} style={s.logoImage} resizeMode="cover" />
-            </Animated.View>
+            <View style={s.logoWrap}>
+                <LogoBoundary><AnimatedBMLogo width={150} /></LogoBoundary>
+            </View>
 
             {/* TEXTOS */}
             <View style={s.textBlock}>
@@ -305,24 +320,11 @@ const s = StyleSheet.create({
 
     // Logo
     logoWrap: {
-        width: 110,
-        height: 110,
-        borderRadius: 30,
-        borderWidth: 1.5,
-        borderColor: C.primary,
-        backgroundColor: C.bgDeep,
+        width: 160,
+        height: 122,
         alignItems: "center",
         justifyContent: "center",
-        marginBottom: 32,
-        shadowColor: C.primaryGlow,
-        shadowOpacity: 0.9,
-        shadowRadius: 30,
-        elevation: 20,
-        overflow: "hidden",
-    },
-    logoImage: {
-        width: "100%",
-        height: "100%",
+        marginBottom: 20,
     },
 
     // Textos
