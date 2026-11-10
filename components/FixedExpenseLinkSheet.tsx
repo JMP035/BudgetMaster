@@ -54,7 +54,7 @@ export interface FixedExpenseLinkSheetProps {
     fixedExpenses: FixedExpense[];
     settings: UserSettings;
     initialMode?: "pick" | "history";
-    /** Gasto fijo del que se buscan pagos anteriores (modo history). */
+    /** Gasto fijo del que se buscan duplicados manual + SMS de meses anteriores (modo history). */
     expenseId?: string;
     onClose: () => void;
     onChanged: (txs: Transaction[], fes: FixedExpense[]) => void;
@@ -96,7 +96,8 @@ export default function FixedExpenseLinkSheet({
         if (!learnKey) return [];
         const beforeKey = occurrenceKeyFor(fe.dayOfMonth, tx.date);
         if (!beforeKey) return [];
-        return findPastSmsForFixed(fe, txs, { key: learnKey, excludeTxId: tx.id, beforeKey });
+        // Solo duplicados reales (registro manual + SMS del mismo ciclo): un SMS de otro mes es el pago de ese mes.
+        return findPastSmsForFixed(fe, txs, { key: learnKey, excludeTxId: tx.id, beforeKey }).filter(p => !!p.manualId);
     }, [learnKey, tx.id, tx.date]);
 
     const enterHistory = useCallback((fe: FixedExpense, found: PastSmsForFixed[]) => {
@@ -134,7 +135,7 @@ export default function FixedExpenseLinkSheet({
         void NotificationService.syncFixedExpenseReminders(fes);
     };
 
-    /** Tras vincular/crear: ofrece los pagos anteriores o cierra con el aviso de éxito. */
+    /** Tras vincular/crear: ofrece unir duplicados de meses anteriores o cierra con el aviso de éxito. */
     const afterLink = (
         fe: FixedExpense | undefined, txs: Transaction[], outcome: "paid" | "merged" | "history" | "already",
     ) => {
@@ -264,12 +265,12 @@ export default function FixedExpenseLinkSheet({
             const res = await StorageService.linkFixedHistory(historyFe.id, items);
             publish(res.transactions, data.fes);
             setNotices(res.linked > 0
-                ? [{ variant: "success", text: `Guardado como historial de ${historyFe.name}.` }]
+                ? [{ variant: "success", text: res.merged === 1 ? "Unido: quedó el pago del banco." : `Unidos: quedó el pago del banco en ${res.merged} cobros.` }]
                 : [{ variant: "warning", text: "No se vinculó ningún pago: ya estaban asociados a otro gasto fijo." }]);
             setStage("done");
         } catch (e) {
             console.warn("[FixedExpenseLinkSheet] historial:", e);
-            setError("No se pudo guardar el historial. No se modificó nada. Probá de nuevo.");
+            setError("No se pudieron unir los cobros. No se modificó nada. Probá de nuevo.");
         } finally {
             setBusy(false);
         }
@@ -311,15 +312,15 @@ export default function FixedExpenseLinkSheet({
     }
     if (stage === "none") return null;
 
-    // ── Pagos anteriores del mismo comercio ──
+    // ── Cobros duplicados de meses anteriores (manual + SMS del mismo ciclo) ──
     if (stage === "history" && historyFe) {
         const n = checked.size;
         return (
-            <GlassSheet onClose={onClose} title="Pagos anteriores" icon="time-outline">
+            <GlassSheet onClose={onClose} title="Cobros duplicados" icon="git-merge-outline">
                 {notices.map((nt, i) => <InlineNotice key={i} variant={nt.variant} text={nt.text} style={s.notice} />)}
                 {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
                 <Text style={s.intro}>
-                    {`Encontramos ${past.length} ${past.length === 1 ? "pago anterior" : "pagos anteriores"} de «${merchantLabel}». ¿Guardarlos como historial de «${historyFe.name}»? No cambia montos ni saldos.`}
+                    {`Encontramos ${past.length} ${past.length === 1 ? "cobro" : "cobros"} de «${merchantLabel}» de meses anteriores que tienes dos veces (registro manual + SMS). ¿Unirlos? Se queda el pago del banco y se borra el registro manual.`}
                 </Text>
                 {past.map(p => {
                     const on = checked.has(p.tx.id);
@@ -358,8 +359,8 @@ export default function FixedExpenseLinkSheet({
                 })}
                 <GlassButtonGroup direction="column" style={s.actions}>
                     <GlassButton
-                        label={`Vincular ${n} ${n === 1 ? "seleccionado" : "seleccionados"}`}
-                        icon="link-outline"
+                        label={`Unir ${n} ${n === 1 ? "seleccionado" : "seleccionados"}`}
+                        icon="git-merge-outline"
                         onPress={() => { void handleHistorySave(); }}
                         loading={busy}
                         disabled={n === 0}

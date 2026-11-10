@@ -21,7 +21,7 @@ export interface FixedExpenseMatchModalProps {
     matches: FixedMatch[];
     transactions: Transaction[];
     fixedExpenses: FixedExpense[];
-    /** Para la hoja de «pagos anteriores». Sin esto no se ofrece vincular historial. */
+    /** Para la hoja de «cobros duplicados». Sin esto no se ofrece unir duplicados anteriores. */
     settings?: UserSettings;
     onClose: () => void;
     onChanged: () => void;
@@ -29,7 +29,7 @@ export interface FixedExpenseMatchModalProps {
 
 const SWITCH_DELAY_MS = 250;
 
-/** Tras confirmar: pagos anteriores del mismo comercio que se pueden vincular como historial. */
+/** Tras confirmar: duplicados reales (manual + SMS del mismo ciclo) de meses anteriores que se pueden unir. */
 interface HistoryOffer { tx: Transaction; expenseId: string; count: number; }
 
 const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -165,11 +165,11 @@ export function FixedExpenseMatchModal({
                         ? `«${expense.name}» quedó pagado. La próxima vez se marcará solo.`
                         : `«${expense.name}» quedó pagado.`,
             );
-            // ¿Hay pagos anteriores del mismo comercio para guardar como historial?
+            // ¿Hay duplicados reales (manual + SMS) de meses anteriores para unir?
             const feAfter = nextFes.find(e => e.id === match.expenseId);
             const beforeKey = feAfter ? occurrenceKeyFor(feAfter.dayOfMonth, tx.date) : null;
             const count = feAfter && learnKey && beforeKey && settings
-                ? findPastSmsForFixed(feAfter, nextTxs, { key: learnKey, excludeTxId: tx.id, beforeKey }).length
+                ? findPastSmsForFixed(feAfter, nextTxs, { key: learnKey, excludeTxId: tx.id, beforeKey }).filter(p => !!p.manualId).length
                 : 0;
             setOffer(count > 0 ? { tx, expenseId: match.expenseId, count } : null);
             onChanged();
@@ -201,7 +201,7 @@ export function FixedExpenseMatchModal({
         }
     };
 
-    // Hoja de pagos anteriores (una sola ventana a la vez)
+    // Hoja de duplicados anteriores (una sola ventana a la vez)
     if (view === "history" && offer && settings) {
         return (
             <FixedExpenseLinkSheet
@@ -224,8 +224,8 @@ export function FixedExpenseMatchModal({
             {!!success && <InlineNotice variant="success" text={success} style={s.notice} />}
             {!!success && !!offer && (
                 <GlassButton
-                    label={`Vincular ${offer.count} ${offer.count === 1 ? "pago anterior" : "pagos anteriores"}`}
-                    icon="time-outline"
+                    label={`Unir ${offer.count} ${offer.count === 1 ? "duplicado anterior" : "duplicados anteriores"}`}
+                    icon="git-merge-outline"
                     kind="secondary"
                     onPress={() => goTo("history")}
                     style={s.offerBtn}

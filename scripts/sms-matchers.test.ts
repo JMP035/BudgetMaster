@@ -513,6 +513,20 @@ console.log('Gasto fijo ↔ SMS (Disney)');
     const many: Transaction[] = [];
     for (let i = 0; i < 30; i++) many.push(dSms(`m${i}`, new Date(2024, 0 + i, 1, 8)));
     check('pasados: tope 24', findPastSmsForFixed(feDisney, many, { key: 'disney', beforeKey: '2027-01' }).length === 24);
+
+    // La UI solo ofrece unir duplicados reales (con manualId): SMS sueltos de otros meses no se ofrecen.
+    const dupsOnly = (txs: Transaction[]) =>
+      findPastSmsForFixed(feDisney, txs, { key: 'disney', beforeKey: '2026-11' }).filter(p => !!p.manualId);
+    check('pasados (solo duplicados): ago/sep/oct sin manuales -> 0', dupsOnly([ago, sep, oct]).length === 0);
+    const dupOnly = dupsOnly([ago, sep, oct, manualOctReal]);
+    check('pasados (solo duplicados): con fe_tx_fe_disney_2026-10 -> 1',
+      dupOnly.length === 1 && dupOnly[0].tx.id === 'd-oct' && dupOnly[0].manualId === 'fe_tx_fe_disney_2026-10',
+      JSON.stringify(dupOnly.map(p => p.tx.id)));
+    // Fusión: SMS de otro mes (>= 30 días del manual) no se une aunque el comercio y el monto coincidan.
+    check('fusión: SMS 30+ días antes del manual no se une',
+      findFixedFusions([manualNov, dSms('d-oct10', d(2026, 10, 10, 8))], [fePaid]).length === 0);
+    check('fusión: SMS 30+ días antes (ago/sep/oct) no se une al manual de noviembre',
+      findFixedFusions([manualNov, ago, sep, oct], [fePaid]).length === 0);
   }
 
   // (8) Período 27 oct – 26 nov: el SMS pertenece al vencimiento más cercano
