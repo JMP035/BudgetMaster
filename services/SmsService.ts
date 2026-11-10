@@ -12,7 +12,7 @@ import type { FixedMatch } from './FixedExpenseMatcher';
 import type { DupPair } from './DuplicateDetector';
 import type { TransferPair } from './TransferPairs';
 import type { SmsBatchRecord } from './storage';
-import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, matchAccountForSms } from './AccountLinking';
+import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, isPendingUnassigned, matchAccountForSms } from './AccountLinking';
 import { matchFixedExpenses } from './FixedExpenseMatcher';
 import { findManualSmsDuplicates } from './DuplicateDetector';
 import { findTransferPairs } from './TransferPairs';
@@ -335,7 +335,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (i) Movimientos sin cuenta pero con pista (solo si el usuario ya tiene cuentas con banco).
     const unassignedCount = accounts.some(a => !!a.bankName)
-      ? allTxs.filter(t => t.source === 'sms' && !t.accountId && !!t.smsAccountHint).length
+      ? allTxs.filter(isPendingUnassigned).length
       : 0;
 
     const reviewItems = reviewImportedSms(allTxs, new Set(kept), { merchantRules: rules });

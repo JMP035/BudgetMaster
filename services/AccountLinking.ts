@@ -217,13 +217,21 @@ export function assignAccountsToTransactions(
   return { txs: changedAny ? next : txs, assigned, ambiguous, unassigned };
 }
 
-/** Agrupa por smsAccountHint los movimientos SMS sin cuenta ("Por asignar"). */
+/**
+ * ¿Es un movimiento SMS "por asignar"? Sin cuenta, con pista de vínculo y sin decisión del
+ * usuario: uno descartado a propósito (accountSource 'user' sin accountId) ya no está pendiente.
+ */
+export function isPendingUnassigned(t: Transaction): boolean {
+  return t.source === 'sms' && !t.accountId && t.accountSource !== 'user' && !!t.smsAccountHint;
+}
+
+/** Agrupa por smsAccountHint los movimientos SMS sin cuenta ("Por asignar"); excluye los descartados. */
 export function groupUnassigned(
   txs: Transaction[],
 ): Array<{ key: string; label: string; txIds: string[]; total: number; currency: Currency }> {
   const groups = new Map<string, Transaction[]>();
   for (const t of txs) {
-    if (t.source !== 'sms' || t.accountId || !t.smsAccountHint) continue;
+    if (!isPendingUnassigned(t) || !t.smsAccountHint) continue;
     const g = groups.get(t.smsAccountHint);
     if (g) g.push(t); else groups.set(t.smsAccountHint, [t]);
   }

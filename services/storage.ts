@@ -1329,6 +1329,27 @@ export const StorageService = {
   },
 
   /**
+   * Asigna varios movimientos a una cuenta de una sola vez (UNA lectura y UNA escritura de
+   * transacciones). accountId null = DESCARTAR: queda sin cuenta a propósito (accountId
+   * undefined, accountSource 'user') y deja de aparecer como pendiente. No toca saldos ni
+   * crea reglas de vínculo. Devuelve la lista completa de transacciones ya guardada.
+   */
+  async setTransactionsAccount(txIds: string[], accountId: string | null): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const ids = new Set(txIds);
+    if (ids.size === 0) return txs;
+    let changed = false;
+    const next = txs.map(t => {
+      if (!ids.has(t.id)) return t;
+      changed = true;
+      return { ...t, accountId: accountId ?? undefined, accountSource: 'user' as const };
+    });
+    if (!changed) return txs;
+    await this.saveTransactions(next);
+    return next;
+  },
+
+  /**
    * Asigna a `accountId` los movimientos sin cuenta cuyo smsAccountHint es `key`.
    * Con `remember` agrega `key` a account.smsLinks (si otra cuenta ya la tiene devuelve
    * error 'conflict' y no guarda nada). accountSource: remember ? 'rule' : 'user'.
@@ -1354,7 +1375,7 @@ export const StorageService = {
     }
     let assigned = 0;
     const next = txs.map(t => {
-      if (t.smsAccountHint !== key || t.accountId) return t;
+      if (t.smsAccountHint !== key || t.accountId || t.accountSource === 'user') return t;
       assigned++;
       return { ...t, accountId, accountSource: remember ? 'rule' as const : 'user' as const };
     });

@@ -4,7 +4,7 @@ process.env.TZ = 'America/Guatemala';
 
 import {
   assignAccountsToTransactions, collectLinkSeen, computeDesiredEffect, cycleSpentForCard,
-  extractSmsLinkSignals, groupUnassigned, linkKeyLabel, matchAccountForSms, reconcileBalanceEffects,
+  extractSmsLinkSignals, groupUnassigned, isPendingUnassigned, linkKeyLabel, matchAccountForSms, reconcileBalanceEffects,
 } from '../services/AccountLinking';
 import type { Account, Transaction } from '../services/storage';
 
@@ -218,6 +218,34 @@ check('label rara = clave', linkKeyLabel('xyz') === 'xyz');
   check('moneda del grupo', g[0].currency === 'Q');
   check('segundo grupo', g[1].key === 'BANRURAL|acct:5678' && g[1].total === 10 && g[1].label === 'BANRURAL · cuenta *5678');
   check('nada por asignar → []', groupUnassigned([list[4], list[5]]).length === 0);
+
+  // Descartados por el usuario (accountSource 'user' sin accountId): ya no están pendientes.
+  const withDiscarded: Transaction[] = [
+    ...list,
+    tx('h', R1_BODY, { smsAccountHint: 'BAC|prod:BAC VISA', accountSource: 'user' }),
+    tx('i', R1_BODY, { smsAccountHint: 'BANRURAL|acct:5678', accountSource: 'user' }),
+  ];
+  const g2 = groupUnassigned(withDiscarded);
+  check('descartados: no entran al grupo', g2[0].txIds.join(',') === 'a,b,c', JSON.stringify(g2[0]));
+  check('descartados: grupo sin pendientes desaparece o no cambia', g2.length === 2 && g2[1].txIds.join(',') === 'd', JSON.stringify(g2));
+  check('descartados: total no cambia', g2[0].total === 130.5, String(g2[0].total));
+  check('solo descartados → []', groupUnassigned([withDiscarded[7], withDiscarded[8]]).length === 0);
+
+  // Contador consistente: isPendingUnassigned (SmsService) == suma de groupUnassigned (SmsPendingSheet).
+  const count = withDiscarded.filter(isPendingUnassigned).length;
+  const sum = g2.reduce((n, x) => n + x.txIds.length, 0);
+  check('contador consistente con los grupos', count === sum && count === 4, `${count} vs ${sum}`);
+  check('isPendingUnassigned: descartado no cuenta', !isPendingUnassigned(withDiscarded[7]));
+  check('isPendingUnassigned: pendiente cuenta', isPendingUnassigned(withDiscarded[0]));
+
+  // assignAccountsToTransactions no toca accountSource 'user' (ni asigna ni borra).
+  const bac = acc('c1', ['BAC|prod:BAC VISA']);
+  const discarded = tx('x', R1_BODY, { accountSource: 'user' });
+  const manual = tx('y', R1_BODY, { accountId: 'otra', accountSource: 'user' });
+  const res = assignAccountsToTransactions([discarded, manual], [bac, acc('otra', [])]);
+  check('asignación masiva: descartado queda igual', res.txs[0] === discarded && res.txs[0].accountId === undefined && res.txs[0].accountSource === 'user');
+  check('asignación masiva: manual del usuario queda igual', res.txs[1] === manual && res.txs[1].accountId === 'otra');
+  check('asignación masiva: nada asignado', res.assigned === 0);
 }
 
 // ─────────────────────────────────────────────────────────────
