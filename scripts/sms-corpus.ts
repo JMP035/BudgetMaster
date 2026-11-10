@@ -280,7 +280,25 @@ export const SMS_CORPUS: SmsCase[] = [
     receivedAt: oct(16, 4, 2),
     expect: { accepted: true, kind: 'purchase', amount: 20, currency: 'USD', category: 'subscriptions' } },
 
+  // ───────────── Estaciones de servicio abreviadas (todas son gasolineras → fuel) ─────────────
+  { id: 'M18', origin: 'sintetico', body: visa('compra Aprobada por Q 150.00 en EST. DE SERV. MAJADAS    GUATE el 19/10/26 07:30'),
+    receivedAt: oct(19, 7, 32), expect: { accepted: true, kind: 'purchase', amount: 150, category: 'fuel' } },
+  { id: 'M19', origin: 'sintetico', body: visa('compra Aprobada por Q 200.00 en EST DE SERV EL CAMINO    GUATE el 19/10/26 18:10'),
+    receivedAt: oct(19, 18, 12), expect: { accepted: true, kind: 'purchase', amount: 200, category: 'fuel' } },
+  { id: 'M20', origin: 'sintetico', body: visa('compra Aprobada por Q 125.00 en ESTACION SERV. LA ESPERANZA    GUATE el 20/10/26 06:50'),
+    receivedAt: oct(20, 6, 52), expect: { accepted: true, kind: 'purchase', amount: 125, category: 'fuel' } },
+  { id: 'M21', origin: 'sintetico', body: visa('compra Aprobada por Q 300.00 en E/S SHELL ZONA 10    GUATE el 20/10/26 12:15'),
+    receivedAt: oct(20, 12, 17), expect: { accepted: true, kind: 'purchase', amount: 300, category: 'fuel' } },
+  { id: 'M22', origin: 'sintetico', body: visa('compra Aprobada por Q 180.00 en SERVICENTRO LAS AMERICAS    GUATE el 21/10/26 09:05'),
+    receivedAt: oct(21, 9, 7), expect: { accepted: true, kind: 'purchase', amount: 180, category: 'fuel' } },
+
   // ───────────── Contraejemplos: reglas de comercio que NO deben disparar ─────────────
+  { id: 'F7', origin: 'sintetico', body: visa('compra Aprobada por Q 25.00 en ESTACIONAMIENTO CENTRO    GUATE el 21/10/26 15:00'),
+    receivedAt: oct(21, 15, 2), expect: { accepted: true, kind: 'purchase', amount: 25, category: 'transport' } },
+  { id: 'F8', origin: 'sintetico', body: visa('compra Aprobada por Q 299.00 en SERVICIO DE INTERNET CLARO    GUATE el 21/10/26 16:00'),
+    receivedAt: oct(21, 16, 2), expect: { accepted: true, kind: 'purchase', amount: 299, category: 'internet' } },
+  { id: 'F9', origin: 'sintetico', body: visa('compra Aprobada por Q 80.00 en ESTACION CENTRAL MALL    GUATE el 22/10/26 11:00'),
+    receivedAt: oct(22, 11, 2), expect: { accepted: true, kind: 'purchase', amount: 80, category: 'other' } },
   { id: 'F1', origin: 'sintetico', body: visa('compra Aprobada por Q 60.00 en FARMACIA BATRES    SAN MARTIN el 17/10/26 09:00'),
     receivedAt: oct(17, 9, 2), expect: { accepted: true, kind: 'purchase', amount: 60, category: 'pharmacy' } },
   { id: 'F2', origin: 'sintetico', body: visa('compra Aprobada por Q 900.00 en HOTEL SAN MARTIN    ANTIGUA el 17/10/26 12:00'),

@@ -4,13 +4,14 @@ import {
     Animated, Easing, ScrollView,
     StyleSheet, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
-import Svg, { Circle, G, Path, Text as SvgText } from "react-native-svg";
+import Svg, { Circle, G, Path } from "react-native-svg";
 import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
 import { EXPENSE_CATEGORIES } from "../categories";
 import { C } from "../theme";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassCard } from "./GlassCard";
 import { GlassSegmented } from "./GlassSegmented";
+import { GlassButton } from "./GlassButton";
 import { GradientText } from "./GradientText";
 import { HelpButton } from "./HelpButton";
 import Money from "./Money";
@@ -32,6 +33,22 @@ function AnimBar({ pct, color, height = 8 }: { pct: number; color: string; heigh
         </View>
     );
 }
+
+// Monto compacto sin Intl: <1000 → "Q 850", ≥1000 → "Q50.2k", ≥1,000,000 → "Q1.2M"
+function formatCompactMoney(n: number): string {
+    const v = Math.abs(isFinite(n) ? n : 0);
+    if (Math.round(v) < 1000) return `Q ${Math.round(v)}`;
+    const k = Math.round(v / 100) / 10; // un decimal en miles
+    if (k < 1000) return `Q${k.toFixed(1).replace(/\.0$/, "")}k`;
+    const mm = Math.round(v / 100000) / 10; // un decimal en millones
+    return `Q${mm.toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+const pc = StyleSheet.create({
+    center: { position: "absolute", alignItems: "center", justifyContent: "center" },
+    centerMain: { fontSize: 22, fontWeight: "900", textAlign: "center", alignSelf: "stretch", includeFontPadding: false },
+    centerSub: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 0.5, textAlign: "center", alignSelf: "stretch", marginTop: 2, includeFontPadding: false },
+});
 
 // ─────────────────────────────────────────────────────────────
 // GRÁFICA DE PASTEL SVG
@@ -71,8 +88,12 @@ function PieChart({ slices, selected, onSelect }: {
     const total = slices.reduce((s, sl) => s + sl.value, 0);
     const selectedSlice = slices.find(s => s.id === selected);
 
+    // Caja del texto central: cabe dentro del agujero de la dona
+    const centerW = (inner - 2) * 1.5;
+    const centerH = (inner - 2) * 1.2;
+
     return (
-        <View style={{ alignItems: "center" }}>
+        <View style={{ alignItems: "center", width: size, alignSelf: "center" }}>
             <Svg width={size} height={size}>
                 <G>
                     {slices.map((slice) => {
@@ -92,30 +113,50 @@ function PieChart({ slices, selected, onSelect }: {
                             </G>
                         );
                     })}
-                    {/* Centro */}
+                    {/* Centro (el texto va en un View nativo superpuesto, no en SvgText) */}
                     <Circle cx={cx} cy={cy} r={inner - 2} fill={C.bg} />
-                    {/* Texto centro */}
-                    {selectedSlice ? (
-                        <>
-                            <SvgText x={cx} y={cy - 8} textAnchor="middle" fill={selectedSlice.color} fontSize="18" fontWeight="900">
-                                {selectedSlice.pct.toFixed(0)}%
-                            </SvgText>
-                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textSub} fontSize="10">
-                                {selectedSlice.label}
-                            </SvgText>
-                        </>
-                    ) : (
-                        <>
-                            <SvgText x={cx} y={cy - 6} textAnchor="middle" fill={C.textPrimary} fontSize="14" fontWeight="900">
-                                Q {(total / 1000).toFixed(1)}k
-                            </SvgText>
-                            <SvgText x={cx} y={cy + 12} textAnchor="middle" fill={C.textSub} fontSize="10">
-                                TOTAL
-                            </SvgText>
-                        </>
-                    )}
                 </G>
             </Svg>
+            <View
+                pointerEvents="none"
+                style={[pc.center, { left: cx - centerW / 2, top: cy - centerH / 2, width: centerW, height: centerH }]}
+            >
+                {selectedSlice ? (
+                    <>
+                        <Text
+                            style={[pc.centerMain, { color: selectedSlice.color }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.6}
+                            maxFontSizeMultiplier={1}
+                        >
+                            {selectedSlice.pct.toFixed(0)}%
+                        </Text>
+                        <Text
+                            style={pc.centerSub}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.7}
+                            maxFontSizeMultiplier={1}
+                        >
+                            {selectedSlice.label}
+                        </Text>
+                    </>
+                ) : (
+                    <>
+                        <Text
+                            style={[pc.centerMain, { color: C.textPrimary }]}
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.6}
+                            maxFontSizeMultiplier={1}
+                        >
+                            {formatCompactMoney(total)}
+                        </Text>
+                        <Text style={pc.centerSub} numberOfLines={1} maxFontSizeMultiplier={1}>TOTAL</Text>
+                    </>
+                )}
+            </View>
         </View>
     );
 }
@@ -204,6 +245,7 @@ interface Props { transactions: Transaction[]; settings: UserSettings; }
 export default function StatsScreen({ transactions, settings }: Props) {
     const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
+    const [legendExpanded, setLegendExpanded] = useState(false);
 
     const headerRef = useTutorialRef('stats_header');
     const filterRef = useTutorialRef('stats_filter');
@@ -442,26 +484,32 @@ export default function StatsScreen({ transactions, settings }: Props) {
 
                         {/* Leyenda */}
                         <View style={{ marginTop: 16 }}>
-                            {byCat.slice(0, 6).map(cat => (
+                            {(legendExpanded ? byCat : byCat.slice(0, 3)).map(cat => (
                                 <TouchableOpacity
                                     key={cat.id}
                                     style={[s.legendRow, selectedSlice === cat.id && { backgroundColor: cat.color + "11", borderRadius: 8 }]}
                                     onPress={() => setSelectedSlice(selectedSlice === cat.id ? null : cat.id)}
                                 >
-                                    <View style={[s.legendDot, { backgroundColor: cat.color }]} />
-                                    <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
-                                    <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
-                                    <View style={{ flex: 1, marginHorizontal: 10 }}>
+                                    <View style={s.legendTop}>
+                                        <View style={[s.legendDot, { backgroundColor: cat.color }]} />
+                                        <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
+                                        <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
+                                        <Money size="sm" gradient={false} tone="muted" decimals={0} amount={cat.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
+                                        <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
+                                    </View>
+                                    <View style={s.legendBar}>
                                         <AnimBar pct={cat.pct} color={cat.color} height={5} />
                                     </View>
-                                    <Money size="sm" gradient={false} tone="muted" decimals={0} amount={cat.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
-                                    <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
                                 </TouchableOpacity>
                             ))}
-                            {byCat.length > 6 && (
-                                <Text style={{ color: C.textSub, fontSize: 11, textAlign: "center", marginTop: 6 }}>
-                                    +{byCat.length - 6} categorías más
-                                </Text>
+                            {byCat.length > 3 && (
+                                <GlassButton
+                                    kind="secondary"
+                                    label={legendExpanded ? "Ver menos" : `Ver todas (${byCat.length})`}
+                                    icon={legendExpanded ? "chevron-up" : "chevron-down"}
+                                    onPress={() => setLegendExpanded(v => !v)}
+                                    style={s.legendToggle}
+                                />
                             )}
                         </View>
 
@@ -590,9 +638,12 @@ const s = StyleSheet.create({
     sliceName: { fontSize: 14, fontWeight: "800" },
     sliceAmt: { marginTop: 2 },
     slicePct: { fontSize: 22, fontWeight: "900" },
-    legendRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 6 },
+    legendRow: { paddingVertical: 8, paddingHorizontal: 6 },
+    legendTop: { flexDirection: "row", alignItems: "center" },
+    legendBar: { marginTop: 6, marginLeft: 24 },
+    legendToggle: { minHeight: 42, paddingVertical: 8, marginTop: 8 },
     legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-    legendLabel: { color: C.text, fontSize: 12, fontWeight: "600", flex: 1, minWidth: 0 },
+    legendLabel: { color: C.text, fontSize: 13, fontWeight: "600", flex: 1, minWidth: 0, marginRight: 8 },
     legendAmt: { color: C.textSub, fontSize: 11, fontWeight: "700" },
     legendAmtWrap: { minWidth: 62 },
     legendPct: { fontSize: 11, fontWeight: "900", minWidth: 35, textAlign: "right" },

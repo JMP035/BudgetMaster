@@ -89,7 +89,13 @@ const EXPENSE_RULES: ExpenseRule[] = [
   rule("food", "san martin|la trama|parma|el portal|la cocina", { merchantStart: true }),
   rule("groceries", "walmart|despensa\\w*|paiz|la torre|pricesmart|super ?24|supermercado\\w*|maxi despensa|econosuper|super del barrio|unisuper|la bodegona|bodegona|super selectos"),
   rule("groceries", "suma|la barata", { merchantStart: true }),
-  rule("fuel", "gasolinera\\w*|estacion\\w* de serv\\w*|est de serv\\w*|e s shell|shell|texaco|puma|esso|redipsa|zeta gas|gas station|combustible\\w*"),
+  // Estaciones de servicio = gasolineras. ruleText conserva los puntos ("est. de serv."),
+  // por eso `est\.?` y `\s+` en vez de un espacio literal. `estacion(?:es)?` (no `estacion\w*`)
+  // para no capturar "estacionamiento"; "Estacion Central Mall" no lleva "serv" y no coincide.
+  // "E/S Shell" llega como "e s shell" (la barra se vuelve espacio).
+  rule("fuel", "gasolinera\\w*|estacion(?:es)?\\s+(?:de\\s+)?serv\\w*|est\\.?\\s+(?:de\\s+)?serv\\w*|e s shell|servicentro\\w*|shell|texaco|puma|esso|chevron|petrolera\\w*|redipsa|zeta gas|gas station|combustible\\w*"),
+  // Marcas cortas/comunes: solo al inicio del nombre del comercio ("Delta Airlines" y "Total Play" quedan fuera).
+  rule("fuel", "delta(?!\\s+air)|total(?!\\s*play)", { merchantStart: true }),
   rule("fuel", "uno", { merchantOnly: true }),
   rule("transport", "uber|indriver|indrive|yango|taxi\\w*|parqueo\\w*|parking|estacionamiento\\w*|transporte\\w*|transmetro|tu muni|peaje\\w*|autopista"),
   rule("streaming", "netflix|spotify|disney\\w*|hbo|max\\.com|youtube|prime video|paramount|crunchyroll|vix|star plus|apple tv"),

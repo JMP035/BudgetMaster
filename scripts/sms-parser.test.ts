@@ -439,6 +439,18 @@ console.log('\n=== Máscara ===');
 console.log('\n=== Categorizer ===');
 {
   check('Categorizer "Estacion de Servicio J" → fuel', categorizeExpense('Estacion de Servicio J', null, '') === 'fuel');
+  for (const fuelName of ['EST. DE SERV. MAJADAS', 'EST DE SERV EL CAMINO', 'Est. de Serv.', 'Est. Servicio', 'Est Serv', 'ESTACION SERV. LA ESPERANZA',
+    'Estación de Servicio', 'Estacion Serv.', 'E/S SHELL ZONA 10', 'Gas. Shell', 'Gasolinera', 'Gasolineras', 'GASOLINERA SHELL',
+    'SERVICENTRO LAS AMERICAS', 'Combustibles', 'Texaco', 'Puma Energy', 'Uno Zona 4', 'Esso', 'Delta Zona 4', 'Total Zona 10',
+    'Chevron', 'Petrolera del Sur', 'Redipsa', 'Zeta Gas']) {
+    check(`Categorizer "${fuelName}" → fuel`, categorizeExpense(fuelName, 'Guatemala', '') === 'fuel', categorizeExpense(fuelName, 'Guatemala', ''));
+  }
+  check('Categorizer "Estacionamiento Centro" → transport (no fuel)', categorizeExpense('ESTACIONAMIENTO CENTRO', 'Guatemala', '') === 'transport');
+  check('Categorizer "Servicio de Internet Claro" → internet (no fuel)', categorizeExpense('SERVICIO DE INTERNET CLARO', 'Guatemala', '') === 'internet');
+  check('Categorizer "Estacion Central Mall" → other (no fuel)', categorizeExpense('ESTACION CENTRAL MALL', 'Guatemala', '') === 'other');
+  check('Categorizer "Pacaya" sigue other', categorizeExpense('PACAYA', null, '') === 'other');
+  check('Categorizer "Delta Airlines" no es fuel', categorizeExpense('Delta Airlines', null, '') !== 'fuel');
+  check('Categorizer "Total Play" no es fuel', categorizeExpense('Total Play', null, '') !== 'fuel');
   check('Categorizer "Parqueos" → transport', categorizeExpense('Parqueos', null, '') === 'transport');
   check('Categorizer "Paggo App Restauran" → food', categorizeExpense('Paggo App Restauran', null, '') === 'food');
   check('Categorizer "Soluciones Tecnologica" → tech', categorizeExpense('Soluciones Tecnologica', 'Guatemala', '') === 'tech');

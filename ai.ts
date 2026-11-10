@@ -88,6 +88,66 @@ function calcZeroBasedBudget(monthlyIncome: number, currency: string) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// LLAMADA A GEMINI (misma lógica anti-corte que components/AIAdvisor.tsx)
+// ─────────────────────────────────────────────────────────────
+const GEMINI_MODEL = "gemini-2.5-flash";
+// En los modelos 2.5 el "thinking" comparte este presupuesto con la respuesta visible.
+const GEMINI_MAX_OUTPUT_TOKENS = 1024;
+const GEMINI_CONTINUE_PROMPT = "Continúa exactamente donde quedaste, sin repetir lo anterior ni saludar.";
+
+interface GeminiContent {
+    role: "user" | "model";
+    parts: { text: string }[];
+}
+
+interface GeminiChunk {
+    text: string;
+    finishReason?: string;
+}
+
+/** thinkingBudget: 0 solo es válido en la familia flash (2.5-pro no permite desactivarlo). */
+function supportsThinkingOff(model: string): boolean {
+    return /^gemini-2\.5-flash/.test(model);
+}
+
+async function requestGemini(contents: GeminiContent[], apiKey: string, disableThinking: boolean): Promise<GeminiChunk> {
+    const generationConfig: Record<string, unknown> = { maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS };
+    if (disableThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
+    const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ contents, generationConfig }),
+        }
+    );
+    if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+
+    const data = await res.json();
+    const candidate = data?.candidates?.[0];
+    const parts: any[] = candidate?.content?.parts ?? [];
+    // Concatenar TODAS las partes de texto, ignorando las marcadas "thought"
+    const text = parts
+        .filter(p => typeof p?.text === "string" && !p?.thought)
+        .map(p => p.text)
+        .join("");
+    return { text, finishReason: candidate?.finishReason };
+}
+
+/** Con thinking desactivado si el modelo lo soporta; si la API responde 400, reintenta sin ese campo. */
+async function requestGeminiSafe(contents: GeminiContent[], apiKey: string): Promise<GeminiChunk> {
+    if (supportsThinkingOff(GEMINI_MODEL)) {
+        try {
+            return await requestGemini(contents, apiKey, true);
+        } catch (e: any) {
+            if (!String(e?.message ?? "").includes("400")) throw e;
+        }
+    }
+    return requestGemini(contents, apiKey, false);
+}
+
+// ─────────────────────────────────────────────────────────────
 // RESPUESTA PRINCIPAL CON IA
 // ─────────────────────────────────────────────────────────────
 export async function getAIResponse(
@@ -111,12 +171,29 @@ export async function getAIResponse(
             const { spent, income, projected } = calcCashFlowProjection(transactions, settings);
             const balance = income - spent;
             const prompt = `Eres el ASESOR SMITH — CFO personal experto en finanzas guatemaltecas. Contexto: ${context.label}. Período actual: Gastos=${fmt(spent, cur)}, Ingresos=${fmt(income, cur)}, Saldo libre=${fmt(balance, cur)}, Proyección fin de mes=${fmt(projected, cur)}, Presupuesto=${fmt(settings.budgetLimit, cur)}. Ingreso mensual declarado=${fmt(settings.monthlyIncome || 0, cur)}. Responde de forma directa, sobria y sin emojis. Responde a: "${rawMsg}"`;
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${settings.geminiApiKey}`, {
-                method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-            });
-            const data = await res.json();
-            if (!data.error && data.candidates) return data.candidates[0].content.parts[0].text.replace(/\*\*/g, "");
+            const apiKey = settings.geminiApiKey.trim();
+            const userContent: GeminiContent = { role: "user", parts: [{ text: prompt }] };
+            const first = await requestGeminiSafe([userContent], apiKey);
+            let fullText = first.text;
+            // Una sola continuación como máximo si la respuesta se cortó por límite de tokens
+            if (first.finishReason === "MAX_TOKENS" && fullText) {
+                try {
+                    const next = await requestGeminiSafe(
+                        [
+                            userContent,
+                            { role: "model", parts: [{ text: fullText }] },
+                            { role: "user", parts: [{ text: GEMINI_CONTINUE_PROMPT }] },
+                        ],
+                        apiKey,
+                    );
+                    fullText += next.text;
+                } catch {
+                    // Si falla la continuación se entrega lo ya recibido
+                }
+            }
+            const cleaned = fullText.replace(/\*\*/g, "").trim();
+            if (cleaned) return cleaned;
+            // Texto vacío -> cae al fallback local
         } catch (e) {}
     }
 

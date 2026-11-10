@@ -131,27 +131,70 @@ Meta de ahorro mensual: Q${settings.monthlySavingsGoal}
 // ─────────────────────────────────────────────────────────────
 // LLAMADA A GEMINI
 // ─────────────────────────────────────────────────────────────
+const GEMINI_MODEL = 'gemini-2.5-flash';
+// Textos cortos: con thinkingBudget 0 alcanza; sin él el "thinking" consumiría este presupuesto.
+const GEMINI_MAX_OUTPUT_TOKENS = 256;
+
+interface GeminiChunk {
+    text: string;
+    finishReason?: string;
+}
+
+/** thinkingBudget: 0 solo es válido en la familia flash (2.5-pro no permite desactivarlo). */
+function supportsThinkingOff(model: string): boolean {
+    return /^gemini-2\.5-flash/.test(model);
+}
+
+async function requestGemini(prompt: string, apiKey: string, disableThinking: boolean): Promise<GeminiChunk> {
+    const generationConfig: Record<string, unknown> = {
+        maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+        temperature: 0.7,
+    };
+    if (disableThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
+    const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig,
+            }),
+        }
+    );
+    if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+
+    const data = await res.json();
+    const candidate = data?.candidates?.[0];
+    const parts: any[] = candidate?.content?.parts ?? [];
+    // Concatenar TODAS las partes de texto, ignorando las marcadas "thought"
+    const text = parts
+        .filter(p => typeof p?.text === 'string' && !p?.thought)
+        .map(p => p.text)
+        .join('');
+    return { text, finishReason: candidate?.finishReason };
+}
+
+/** Con thinking desactivado si el modelo lo soporta; si la API responde 400, reintenta sin ese campo. */
+async function requestGeminiSafe(prompt: string, apiKey: string): Promise<GeminiChunk> {
+    if (supportsThinkingOff(GEMINI_MODEL)) {
+        try {
+            return await requestGemini(prompt, apiKey, true);
+        } catch (e: any) {
+            if (!String(e?.message ?? '').includes('400')) throw e;
+        }
+    }
+    return requestGemini(prompt, apiKey, false);
+}
+
+/** Devuelve el texto de la IA o null (vacío, cortado por MAX_TOKENS o error) para usar el fallback local. */
 async function getGeminiMessage(prompt: string, apiKey: string): Promise<string | null> {
     try {
-        const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { maxOutputTokens: 200, temperature: 0.7 },
-                }),
-            }
-        );
-        const data = await res.json();
-        if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            return data.candidates[0].content.parts[0].text
-                .replace(/\*\*/g, '')
-                .replace(/\*/g, '')
-                .trim();
-        }
-        return null;
+        const { text, finishReason } = await requestGeminiSafe(prompt, apiKey.trim());
+        if (finishReason === 'MAX_TOKENS') return null;
+        const cleaned = text.replace(/\*\*/g, '').replace(/\*/g, '').trim();
+        return cleaned || null;
     } catch {
         return null;
     }

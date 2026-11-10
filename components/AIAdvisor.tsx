@@ -240,11 +240,84 @@ TONO: Directo, honesto, como un buen amigo que sabe de finanzas. Inspirado en Da
 // ─────────────────────────────────────────────────────────────
 // LLAMADA A GEMINI CON HISTORIAL
 // ─────────────────────────────────────────────────────────────
+const GEMINI_MODEL = "gemini-2.5-flash";
+// Holgado: en los modelos 2.5 el "thinking" comparte este presupuesto con la respuesta visible.
+const GEMINI_MAX_OUTPUT_TOKENS = 2048;
+// Continuaciones automáticas máximas cuando la respuesta se corta por MAX_TOKENS.
+const GEMINI_MAX_CONTINUATIONS = 2;
+const GEMINI_TIMEOUT_MS = 14000;
+const CONTINUE_PROMPT = "Continúa exactamente donde quedaste, sin repetir lo anterior ni saludar.";
+
+interface GeminiChunk {
+    text: string;
+    finishReason?: string;
+}
+
+/** thinkingBudget: 0 solo es válido en la familia flash (2.5-pro no permite desactivarlo). */
+function supportsThinkingOff(model: string): boolean {
+    return /^gemini-2\.5-flash/.test(model);
+}
+
+/** Una sola petición a Gemini con timeout propio. Devuelve texto (todas las parts) y finishReason. */
+async function requestGemini(
+    messages: GeminiMessage[],
+    apiKey: string,
+    disableThinking: boolean,
+): Promise<GeminiChunk> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    try {
+        const generationConfig: Record<string, unknown> = {
+            maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
+            temperature: 0.7,
+            topP: 0.9,
+        };
+        if (disableThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+
+        const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ contents: messages, generationConfig }),
+                signal: controller.signal,
+            }
+        );
+        if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
+
+        const data = await res.json();
+        const candidate = data?.candidates?.[0];
+        const parts: any[] = candidate?.content?.parts ?? [];
+        // Concatenar TODAS las partes de texto (ignorando las de "thought" si vinieran)
+        const text = parts
+            .filter(p => typeof p?.text === "string" && !p?.thought)
+            .map(p => p.text)
+            .join("");
+        return { text, finishReason: candidate?.finishReason };
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+/** Petición con thinking desactivado (si el modelo lo soporta); si la API responde 400, reintenta sin ese campo. */
+async function requestGeminiSafe(messages: GeminiMessage[], apiKey: string): Promise<GeminiChunk> {
+    if (supportsThinkingOff(GEMINI_MODEL)) {
+        try {
+            return await requestGemini(messages, apiKey, true);
+        } catch (e: any) {
+            if (!String(e?.message ?? "").includes("400")) throw e;
+            // 400: posible campo no soportado -> reintento sin thinkingConfig
+        }
+    }
+    return requestGemini(messages, apiKey, false);
+}
+
 async function callGemini(
     history: GeminiMessage[],
     apiKey: string,
     newMessage: string,
     context: string,
+    onContinue?: () => void,
 ): Promise<string> {
     // Primer mensaje siempre incluye el contexto financiero
     const contextMessage: GeminiMessage = {
@@ -264,50 +337,37 @@ async function callGemini(
     ];
 
     const trimmedKey = apiKey.trim();
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 14000);
 
-    try {
-        const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${trimmedKey}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: messages,
-                    generationConfig: {
-                        maxOutputTokens: 1024,
-                        temperature: 0.7,
-                        topP: 0.9,
-                    },
-                }),
-                signal: controller.signal,
-            }
-        );
+    const first = await requestGeminiSafe(messages, trimmedKey);
+    let fullText = first.text;
+    let finishReason = first.finishReason;
 
-        clearTimeout(timeoutId);
-
-        if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
-
-        const data = await res.json();
-        const finishReason = data?.candidates?.[0]?.finishReason;
-        if (finishReason === "MAX_TOKENS") {
-            console.warn(
-                "Gemini: respuesta truncada por MAX_TOKENS. Texto parcial recibido:",
-                data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "(sin texto)"
+    // Continuación automática si se cortó por límite de tokens
+    let continuations = 0;
+    while (finishReason === "MAX_TOKENS" && fullText && continuations < GEMINI_MAX_CONTINUATIONS) {
+        continuations++;
+        onContinue?.();
+        try {
+            const next = await requestGeminiSafe(
+                [
+                    ...messages,
+                    { role: "model", parts: [{ text: fullText }] },
+                    { role: "user", parts: [{ text: CONTINUE_PROMPT }] },
+                ],
+                trimmedKey,
             );
+            if (!next.text) break;
+            fullText += next.text;
+            finishReason = next.finishReason;
+        } catch {
+            // Si falla la continuación, se entrega lo que ya se tiene en vez de perder la respuesta
+            break;
         }
-        if (data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-            return data.candidates[0].content.parts[0].text
-                .replace(/\*\*/g, "")
-                .replace(/\*/g, "")
-                .trim();
-        }
-        throw new Error("Respuesta vacía de Gemini");
-    } catch (e) {
-        clearTimeout(timeoutId);
-        throw e;
     }
+
+    const cleaned = fullText.replace(/\*\*/g, "").replace(/\*/g, "").trim();
+    if (!cleaned) throw new Error("Respuesta vacía de Gemini");
+    return cleaned;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -348,7 +408,7 @@ function MessageBubble({ message }: { message: Message }) {
                     {message.loading ? (
                         <View style={bs.loadingRow}>
                             <ActivityIndicator size="small" color={C.primary} />
-                            <Text style={bs.loadingTxt}>Analizando...</Text>
+                            <Text style={bs.loadingTxt}>{message.text || "Analizando..."}</Text>
                         </View>
                     ) : (
                         <Text style={bs.text}>{message.text}</Text>
@@ -447,7 +507,9 @@ export default function AIAdvisor({
                     ? geminiHistory.slice(-(MAX_HISTORY_PAIRS * 2))
                     : geminiHistory;
 
-                response = await callGemini(trimmedHistory, settings.geminiApiKey!, userText, context);
+                response = await callGemini(trimmedHistory, settings.geminiApiKey!, userText, context, () => {
+                    setMessages(prev => prev.map(m => m.loading ? { ...m, text: "Escribiendo..." } : m));
+                });
 
                 // Actualizar historial de Gemini
                 setGeminiHistory(prev => {
