@@ -8,11 +8,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTutorialAction, useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import {
   Account, AccountType, CreditInstallment,
-  Currency, StorageService, Transaction, UserSettings,
+  Currency, SmsLinkSeen, StorageService, Transaction, UserSettings,
   calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
   getAccountMonthlyInstallmentTotal, getMonthlyInstallmentTotal, hasReliableConversion,
   parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
+import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
+import { detectBankName } from "../services/BankSmsParser";
+import { isSmsFeatureOn } from "../services/features";
 import { formatMoney } from "../services/format";
 import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
@@ -49,6 +52,21 @@ const CURRENCY_OPTIONS: { value: 'Q' | 'USD'; label: string }[] = [
   { value: 'USD', label: 'USD' },
 ];
 
+// Bancos conocidos para vincular mensajes (códigos que usa el lector de SMS)
+const LINK_BANKS = ['BAC', 'BI', 'BANRURAL', 'GYT', 'BAM', 'PROMERICA', 'BANTRAB'];
+
+type LinkKind = 'prod' | 'card' | 'acct';
+const LINK_KIND_OPTIONS: { value: LinkKind; label: string }[] = [
+  { value: 'prod', label: 'Producto' },
+  { value: 'card', label: 'Tarjeta' },
+  { value: 'acct', label: 'Cuenta' },
+];
+const LINK_KIND_HINT: Record<LinkKind, string> = {
+  prod: 'Producto o marca tal como la nombra el mensaje. Ej: BAC VISA.',
+  card: 'Últimos 4 dígitos de la tarjeta (terminación).',
+  acct: 'Últimos 4 dígitos de la cuenta (terminación).',
+};
+
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
 // ─────────────────────────────────────────────────────────────
@@ -68,9 +86,13 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVA CUENTA
 // ─────────────────────────────────────────────────────────────
-export function AccountModal({ onSave, onClose, existing, defaultType, defaultCurrency }: {
+export function AccountModal({ onSave, onClose, existing, defaultType, defaultCurrency, smsOn = false, allAccounts }: {
   onSave: (a: Account) => void; onClose: () => void; existing?: Account; defaultType?: AccountType;
   defaultCurrency?: Currency;
+  /** Muestra la sección de mensajes (SMS) que actualizan la cuenta. Apagado = oculta. */
+  smsOn?: boolean;
+  /** Todas las cuentas, para avisar si otra ya usa la misma clave de vínculo. */
+  allAccounts?: Account[];
 }) {
   const [name, setName] = useState(existing?.name || '');
   const [type, setType] = useState<AccountType>(existing?.type || defaultType || 'bank');
@@ -83,13 +105,76 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
   const [paymentDueDay, setPaymentDueDay] = useState(existing?.paymentDueDay?.toString() || '');
   const [error, setError] = useState('');
 
+  // ── Mensajes (SMS) que actualizan esta cuenta ─────────────
+  const [smsLinks, setSmsLinks] = useState<string[]>(existing?.smsLinks ?? []);
+  const [showAddLink, setShowAddLink] = useState(false);
+  const [linkBank, setLinkBank] = useState<string>(() => {
+    const b = detectBankName(existing?.bankName || '');
+    return b === 'Banco' ? '' : b;
+  });
+  const [linkKind, setLinkKind] = useState<LinkKind>('prod');
+  const [linkValue, setLinkValue] = useState('');
+  const [linkNotice, setLinkNotice] = useState<{ variant: InlineNoticeVariant; text: string } | null>(null);
+  const [linkSeen, setLinkSeen] = useState<SmsLinkSeen[]>([]);
+
+  useEffect(() => {
+    if (!smsOn) return;
+    let alive = true;
+    StorageService.getSmsLinkSeen()
+      .then(list => { if (alive) setLinkSeen(list); })
+      .catch(() => { });
+    return () => { alive = false; };
+  }, [smsOn]);
+
   const typeInfo = ACCOUNT_TYPES.find(t => t.type === type)!;
+  const showSmsSection = smsOn && (type === 'bank' || type === 'credit' || type === 'savings');
 
   // Cada cambio en un campo limpia el aviso de error
   const ch = (set: (v: string) => void) => (v: string) => { set(v); setError(''); };
 
+  // Sugerencias vistas en los SMS, del banco y tipo elegidos y que aún no estén en la cuenta
+  const linkSuggestions = linkSeen.filter(
+    x => x.key.startsWith(`${linkBank}|${linkKind}:`) && !smsLinks.includes(x.key),
+  ).slice(0, 8);
+
+  const handleAddLink = () => {
+    if (!linkBank) { setLinkNotice({ variant: 'error', text: 'Elige el banco del mensaje.' }); return; }
+    let value = linkValue.trim();
+    if (linkKind === 'prod') {
+      value = value.replace(/\s+/g, ' ').toUpperCase();
+      if (!value) { setLinkNotice({ variant: 'error', text: 'Escribe el producto o marca, por ejemplo BAC VISA.' }); return; }
+      if (value.includes('|')) { setLinkNotice({ variant: 'error', text: 'El producto no puede llevar el símbolo |.' }); return; }
+    } else if (!/^\d{4}$/.test(value)) {
+      setLinkNotice({ variant: 'error', text: 'Ingresa exactamente 4 dígitos.' });
+      return;
+    }
+    const key = `${linkBank}|${linkKind}:${value}`;
+    if (smsLinks.includes(key)) {
+      setLinkNotice({ variant: 'info', text: 'Esta cuenta ya tiene ese vínculo.' });
+      return;
+    }
+    const owner = (allAccounts ?? []).find(a => a.id !== existing?.id && a.isActive && a.smsLinks?.includes(key));
+    if (owner) {
+      setLinkNotice({ variant: 'warning', text: `Ese mensaje ya actualiza la cuenta «${owner.name}». Quítalo de allá para usarlo aquí.` });
+      return;
+    }
+    setSmsLinks(prev => [...prev, key]);
+    setLinkValue('');
+    setLinkNotice(null);
+    setShowAddLink(false);
+    setError('');
+  };
+
   const handleSave = () => {
     if (!name.trim()) { setError('Ingresa el nombre de la cuenta.'); return; }
+
+    const linksChanged = [...smsLinks].sort().join('\n') !== [...(existing?.smsLinks ?? [])].sort().join('\n');
+    const smsFields = {
+      smsLinks: smsLinks.length > 0 ? smsLinks : undefined,
+      smsLinkedAt: linksChanged ? new Date().toISOString() : existing?.smsLinkedAt,
+      smsAutoBalance: existing?.smsAutoBalance,
+      balanceAnchorAt: existing?.balanceAnchorAt,
+    };
 
     if (type === 'credit') {
       let parsedCutoff: number | undefined;
@@ -125,6 +210,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
         isActive: true,
         createdAt: existing?.createdAt || new Date().toISOString(),
         notes: notes.trim() || undefined,
+        ...smsFields,
       };
       onSave(account);
       onClose();
@@ -150,6 +236,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
       isActive: true,
       createdAt: existing?.createdAt || new Date().toISOString(),
       notes: notes.trim() || undefined,
+      ...smsFields,
     };
     onSave(account);
     onClose();
@@ -225,6 +312,117 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
             <Text style={md.lbl}>DÍA DE PAGO (Opcional)</Text>
             <TextInput style={md.input} value={paymentDueDay} onChangeText={ch(setPaymentDueDay)} placeholder="Ej: 10" placeholderTextColor={C.textMuted} keyboardType="number-pad" maxLength={2} />
           </View>
+        </View>
+      )}
+
+      {/* Mensajes (SMS) que actualizan esta cuenta */}
+      {showSmsSection && (
+        <View>
+          <Text style={md.lbl}>MENSAJES QUE ACTUALIZAN ESTA CUENTA</Text>
+          {smsLinks.length === 0 ? (
+            <Text style={md.hint}>Aún no hay mensajes vinculados a esta cuenta.</Text>
+          ) : (
+            <View style={md.linkWrap}>
+              {smsLinks.map(key => (
+                <View key={key} style={md.linkChip}>
+                  <Text style={md.linkChipTxt} numberOfLines={1}>{linkKeyLabel(key)}</Text>
+                  <TouchableOpacity
+                    onPress={() => { setSmsLinks(prev => prev.filter(k => k !== key)); setLinkNotice(null); }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Quitar vínculo ${linkKeyLabel(key)}`}
+                  >
+                    <Ionicons name="close" size={14} color={C.textSub} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {showAddLink ? (
+            <View style={md.addLinkBox}>
+              <Text style={md.subLbl}>BANCO</Text>
+              <View style={md.linkWrap}>
+                {LINK_BANKS.map(b => (
+                  <TouchableOpacity
+                    key={b}
+                    style={[md.bankChip, linkBank === b && md.bankChipActive]}
+                    onPress={() => { setLinkBank(b); setLinkNotice(null); }}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: linkBank === b }}
+                  >
+                    <Text style={[md.bankChipTxt, linkBank === b && { color: C.primaryLight }]}>{b}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={md.subLbl}>TIPO</Text>
+              <GlassSegmented
+                options={LINK_KIND_OPTIONS}
+                value={linkKind}
+                onChange={v => { setLinkKind(v); setLinkValue(''); setLinkNotice(null); }}
+              />
+              <Text style={md.hint}>{LINK_KIND_HINT[linkKind]}</Text>
+
+              <Text style={md.subLbl}>VALOR</Text>
+              <TextInput
+                style={md.input}
+                value={linkValue}
+                onChangeText={v => { setLinkValue(linkKind === 'prod' ? v : v.replace(/\D/g, '').slice(0, 4)); setLinkNotice(null); }}
+                placeholder={linkKind === 'prod' ? 'Ej: BAC VISA' : '1234'}
+                placeholderTextColor={C.textMuted}
+                keyboardType={linkKind === 'prod' ? 'default' : 'number-pad'}
+                autoCapitalize={linkKind === 'prod' ? 'characters' : 'none'}
+                maxLength={linkKind === 'prod' ? 30 : 4}
+              />
+              {linkSuggestions.length > 0 && (
+                <>
+                  <Text style={md.hint}>Vistos en tus mensajes:</Text>
+                  <View style={[md.linkWrap, { marginTop: 6 }]}>
+                    {linkSuggestions.map(x => {
+                      const val = x.key.slice(x.key.indexOf(':') + 1);
+                      return (
+                        <TouchableOpacity
+                          key={x.key}
+                          style={[md.bankChip, linkValue === val && md.bankChipActive]}
+                          onPress={() => { setLinkValue(val); setLinkNotice(null); }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Usar ${val}`}
+                        >
+                          <Text style={[md.bankChipTxt, linkValue === val && { color: C.primaryLight }]}>
+                            {linkKind === 'prod' ? val : `*${val}`}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              {!!linkNotice && <InlineNotice variant={linkNotice.variant} text={linkNotice.text} style={{ marginTop: 10 }} />}
+              <View style={md.addLinkActions}>
+                <GlassButton kind="ghost" label="Cancelar" onPress={() => { setShowAddLink(false); setLinkNotice(null); setLinkValue(''); }} style={{ flex: 1 }} />
+                <GlassButton kind="secondary" icon="add-circle-outline" label="Agregar" onPress={handleAddLink} style={{ flex: 1 }} />
+              </View>
+            </View>
+          ) : (
+            <GlassButton
+              kind="secondary"
+              icon="add-circle-outline"
+              label="Agregar mensaje"
+              onPress={() => { setShowAddLink(true); setLinkNotice(null); }}
+              style={{ marginTop: 10 }}
+            />
+          )}
+
+          <Text style={[md.hint, { marginTop: 10 }]}>
+            Vincular no cambia saldos pasados: por ahora solo organiza tus movimientos por cuenta.
+          </Text>
+          {type === 'credit' && (
+            <Text style={md.hint}>
+              Las tarjetas no llevan saldo en la app: verás «Consumido este ciclo».
+            </Text>
+          )}
         </View>
       )}
 
@@ -361,6 +559,7 @@ export default function AccountsScreen({
   // Columna derecha de saldos: ancho explícito para que el importe pueda medirse/encogerse
   const balColW = Math.min(160, Math.max(104, Math.round(winW * 0.34)));
   const dialog = useGlassDialog();
+  const smsOn = isSmsFeatureOn(settings);
 
   const [activeTab, setActiveTab] = useState<'accounts' | 'installments'>('accounts');
   const [showAccModal, setShowAccModal] = useState(false);
@@ -410,12 +609,19 @@ export default function AccountsScreen({
 
   // ── Handlers Cuentas ─────────────────────────────────────
   const handleSaveAccount = async (account: Account) => {
-    const isNew = !accounts.find(a => a.id === account.id);
+    const previous = accounts.find(a => a.id === account.id);
+    const isNew = !previous;
+    const linksChanged = (previous?.smsLinks ?? []).join('\n') !== (account.smsLinks ?? []).join('\n');
     try {
       const updated = isNew
         ? await StorageService.addAccount(account)
         : await StorageService.updateAccount(account);
       setAccounts(updated);
+      // Si cambiaron los vínculos, se vuelve a asignar la cuenta a los movimientos SMS (no toca saldos)
+      if (linksChanged) {
+        const relinked = await StorageService.relinkAllTransactions();
+        setTransactions(relinked);
+      }
     } catch (e) {
       console.warn('[AccountsScreen] No se pudo guardar la cuenta:', e);
       void dialog.alert({ variant: 'error', title: 'No se pudo guardar', message: 'No se pudo guardar la cuenta. Intenta de nuevo.' });
@@ -634,6 +840,11 @@ export default function AccountsScreen({
                       acc.paymentDueDay ? `Pago: día ${acc.paymentDueDay}` : null,
                     ].filter(Boolean).join(' · ')
                   : null;
+                const links = smsOn ? (acc.smsLinks ?? []) : [];
+                const linksLabel = links.length > 0
+                  ? `SMS: ${linkKeyLabel(links[0])}${links.length > 1 ? ` +${links.length - 1}` : ''}`
+                  : null;
+                const cycle = smsOn && isCredit ? cycleSpentForCard(transactions, acc, new Date()) : null;
 
                 return (
                   <TouchableOpacity
@@ -663,6 +874,17 @@ export default function AccountsScreen({
                           <Text style={[s.accExtra, { color: C.warning }]}>
                             Cuota mensual: {formatMoney(monthlyTotal, acc.currency)}
                           </Text>
+                        )}
+                        {cycle && (
+                          <Text style={[s.accExtra, { color: C.primaryLight }]}>
+                            Consumido este ciclo: {formatMoney(cycle.amount, cycle.currency)}
+                          </Text>
+                        )}
+                        {linksLabel && (
+                          <View style={s.linkBadge}>
+                            <Ionicons name="chatbubble-ellipses-outline" size={10} color={C.accent} />
+                            <Text style={s.linkBadgeTxt} numberOfLines={1}>{linksLabel}</Text>
+                          </View>
                         )}
                       </View>
                       <View style={{ alignItems: 'flex-end', width: balColW }}>
@@ -787,6 +1009,8 @@ export default function AccountsScreen({
         <AccountModal
           existing={editingAcc}
           defaultCurrency={settings.currency}
+          smsOn={smsOn}
+          allAccounts={accounts}
           onSave={handleSaveAccount}
           onClose={() => { setShowAccModal(false); setEditingAcc(undefined); }}
         />
@@ -836,6 +1060,8 @@ const s = StyleSheet.create({
   bankBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   bankBadgeTxt: { fontSize: 9, fontWeight: '800' },
   deleteBtn: { padding: 6, borderRadius: 8, backgroundColor: C.danger + '11' },
+  linkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.accent + '55', backgroundColor: C.accent + '22' },
+  linkBadgeTxt: { color: C.accent, fontSize: 9, fontWeight: '800', flexShrink: 1 },
 
   instContent: { padding: 14, paddingLeft: 17 },
   instHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 },
@@ -870,6 +1096,16 @@ const md = StyleSheet.create({
   colorGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
   colorDot: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   colorDotActive: { borderWidth: 3, borderColor: C.text },
+
+  subLbl: { color: C.textSub, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 6, marginTop: 12 },
+  linkWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  linkChip: { flexDirection: 'row', alignItems: 'center', gap: 6, maxWidth: '100%', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+  linkChipTxt: { color: C.textPrimary, fontSize: 12, fontWeight: '700', flexShrink: 1 },
+  addLinkBox: { marginTop: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+  bankChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+  bankChipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+  bankChipTxt: { color: C.textSub, fontSize: 12, fontWeight: '700' },
+  addLinkActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
 
   accSelectRow: { borderWidth: 1, marginBottom: 8 },
   accSelectContent: { flexDirection: 'row', alignItems: 'center', padding: 12, gap: 10 },

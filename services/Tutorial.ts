@@ -494,7 +494,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_7', elementId: 'settings_sms', screen: 'settings', position: 'bottom', icon: 'chatbubble-outline', padding: 8,
                 title: 'Sincronización SMS',
-                description: 'Este interruptor activa o desactiva la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan. Disponible solo en Android.',
+                description: 'Este interruptor activa o desactiva la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan. Con «Sincronizar al abrir la app» activado, la sincronización corre sola cada vez que abrís la app y solo lee los mensajes nuevos (nunca pide permisos por su cuenta). Abajo podés sincronizar 3 meses completos, deshacer la última sincronización y revisar pendientes. Disponible solo en Android.',
                 noSmsDescription: 'Activá este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan.',
             },
             {

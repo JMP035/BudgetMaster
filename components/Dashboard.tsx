@@ -12,7 +12,7 @@ import {
     getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
-import type { SmsPermissionDetail, SmsReviewItem, SyncResult } from "../services/SmsService";
+import type { SmsPermissionDetail, SmsSyncMode, SyncResult } from "../services/SmsService";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
 import { C } from "../theme";
@@ -25,8 +25,11 @@ import { formatMoney } from "../services/format";
 import { isSmsFeatureOn } from "../services/features";
 import { GlassDialog } from "./GlassDialog";
 import type { GlassDialogProps, GlassDialogStat } from "./GlassDialog";
-import SmsReviewModal from "./SmsReviewModal";
 import SmsInboxModal from "./SmsInboxModal";
+import SmsPendingSheet, { countPending } from "./SmsPendingSheet";
+import { InlineNotice } from "./InlineNotice";
+import { useGlassDialog } from "./GlassDialogProvider";
+import { useUndoLastSync } from "./useUndoLastSync";
 
 type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
 
@@ -34,10 +37,11 @@ type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
 function buildSyncStats(r: SyncResult): { stats: GlassDialogStat[]; footnote?: string } {
     const st = r.stats;
     const stats: GlassDialogStat[] = [
-        { icon: "mail-outline", label: "SMS revisados (últimos 3 meses)", value: st.totalRead },
+        { icon: "mail-outline", label: r.mode === "full" ? "SMS revisados (últimos 3 meses)" : "SMS revisados", value: st.totalRead },
         { icon: "business-outline", label: "Mensajes bancarios", value: st.bankCandidates },
         { icon: "copy-outline", label: "Ya registrados", value: st.duplicates + st.dismissedByUser },
     ];
+    if (r.fixedAutoMarked.length > 0) stats.push({ icon: "calendar-outline", label: "Gastos fijos pagados", value: r.fixedAutoMarked.length, tone: "positive" });
     if (st.installments > 0) stats.push({ icon: "layers-outline", label: "Compras a cuotas", value: st.installments, tone: "positive" });
     if (st.neutral > 0) stats.push({ icon: "swap-horizontal-outline", label: "Pagos de tarjeta y transferencias neutras", value: st.neutral });
     if (st.promos > 0) stats.push({ icon: "megaphone-outline", label: "Promociones y ofertas omitidas", value: st.promos, tone: "muted" });
@@ -489,13 +493,39 @@ interface Props {
     refreshing: boolean;
     onNavigateBudget?: () => void;
     onNavigateAccounts?: () => void;
+    /** Resultado de la última sincronización automática (alimenta el aviso bajo el encabezado). */
+    smsAutoResult?: SyncResult | null;
+    onDismissSmsAuto?: () => void;
+}
+
+// Texto del aviso de sincronización automática; null si no hay nada que decir.
+function buildAutoNotice(r: SyncResult): { text: string; variant: "success" | "warning"; actionLabel: "Ver" | "Revisar" } | null {
+    const fresh = r.transactions.length + r.installments.length;
+    const pending = countPending(r);
+    if (fresh === 0 && pending === 0) return null;
+    if (pending === 0) {
+        return {
+            text: `${fresh} ${fresh === 1 ? "movimiento nuevo importado" : "movimientos nuevos importados"}`,
+            variant: "success",
+            actionLabel: "Ver",
+        };
+    }
+    const toReview = `${pending} por revisar`;
+    return {
+        text: fresh > 0 ? `${fresh} ${fresh === 1 ? "nuevo" : "nuevos"} · ${toReview}` : toReview,
+        variant: "warning",
+        actionLabel: "Revisar",
+    };
 }
 
 export default function DashboardScreen({
     transactions, settings, fixedExpenses, categoryBudgets,
     savingsGoals, accounts, creditInstallments,
     onRefresh, refreshing, onNavigateBudget, onNavigateAccounts,
+    smsAutoResult, onDismissSmsAuto,
 }: Props) {
+    const glass = useGlassDialog();
+    const undo = useUndoLastSync(onRefresh);
     const now = new Date();
 
     const briefingRef = useTutorialRef('briefing_card');
@@ -518,8 +548,8 @@ export default function DashboardScreen({
     const [syncing, setSyncing] = useState(false);
     const [showNetWorthInfo, setShowNetWorthInfo] = useState(false);
     const [dialog, setDialog] = useState<SyncDialogState | null>(null);
-    const [reviewItems, setReviewItems] = useState<SmsReviewItem[]>([]);
-    const [showReview, setShowReview] = useState(false);
+    const [showPending, setShowPending] = useState(false);
+    const [pendingResult, setPendingResult] = useState<SyncResult | null>(null);
     const [showInbox, setShowInbox] = useState(false);
     const [inboxCount, setInboxCount] = useState(0);
 
@@ -553,9 +583,9 @@ export default function DashboardScreen({
         afterDialogClosed(() => { Linking.openSettings().catch(() => { }); });
     };
 
-    const openReview = (items: SmsReviewItem[]) => {
-        setReviewItems(items);
-        afterDialogClosed(() => setShowReview(true));
+    const openPending = (result: SyncResult) => {
+        setPendingResult(result);
+        afterDialogClosed(() => setShowPending(true));
     };
 
     const showSmsUnavailable = () => setDialog({
@@ -617,23 +647,23 @@ export default function DashboardScreen({
     const showSyncResult = (result: SyncResult) => {
         const { stats, footnote } = buildSyncStats(result);
         const imported = result.transactions.length + result.installments.length;
-        const hasReview = result.reviewItems.length > 0;
+        const pending = countPending(result);
 
         const actions: GlassDialogProps["actions"] = [];
-        if (hasReview) {
+        if (pending > 0) {
             actions.push({
-                label: `Revisar dudosos (${result.reviewItems.length})`,
+                label: `Revisar (${pending})`,
                 kind: "secondary",
                 icon: "shield-checkmark-outline",
-                onPress: () => openReview(result.reviewItems),
+                onPress: () => openPending(result),
             });
         }
-        if (result.inbox.length > 0) {
+        if (result.batchId) {
             actions.push({
-                label: `Ver sin clasificar (${result.inbox.length})`,
+                label: "Deshacer",
                 kind: "secondary",
-                icon: "file-tray-outline",
-                onPress: () => afterDialogClosed(() => setShowInbox(true)),
+                icon: "arrow-undo-outline",
+                onPress: () => afterDialogClosed(() => { void undo.requestUndo(); }),
             });
         }
         actions.push({ label: "Listo", kind: "primary", onPress: closeDialog });
@@ -661,7 +691,7 @@ export default function DashboardScreen({
         }
     };
 
-    const handleSmsSync = async () => {
+    const handleSmsSync = async (mode: Exclude<SmsSyncMode, "auto"> = "manual") => {
         if (syncing) return;
 
         if (Platform.OS !== 'android') {
@@ -691,10 +721,11 @@ export default function DashboardScreen({
 
         setSyncing(true);
         try {
-            const result = await SmsService.syncBankSms();
+            const result = await SmsService.syncBankSms({ mode });
             setInboxCount(result.inbox.length);
             showSyncResult(result);
-            if (result.transactions.length > 0 || result.installments.length > 0) onRefresh();
+            if (result.transactions.length > 0 || result.installments.length > 0 || result.fixedAutoMarked.length > 0) onRefresh();
+            void undo.reload();
         } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             if (msg === 'SMS_PERMISSION_DENIED') {
@@ -712,6 +743,34 @@ export default function DashboardScreen({
             }
         } finally {
             setSyncing(false);
+        }
+    };
+
+    // Pulsación larga del botón: relee los últimos 3 meses (con confirmación previa).
+    const confirmFullSync = async () => {
+        if (syncing) return;
+        const ok = await glass.confirm({
+            variant: "info",
+            icon: "sync-outline",
+            title: "Sincronizar todo",
+            message: "Volver a leer los últimos 3 meses. Puede tardar unos segundos.",
+            confirmLabel: "Sincronizar",
+            destructive: false,
+        });
+        if (ok) void handleSmsSync("full");
+    };
+
+    // Aviso de la sincronización automática (Ver / Revisar). Se descarta al abrirlo.
+    const autoNotice = smsAutoResult ? buildAutoNotice(smsAutoResult) : null;
+    const onAutoNoticeAction = () => {
+        if (!smsAutoResult) return;
+        const r = smsAutoResult;
+        onDismissSmsAuto?.();
+        if (countPending(r) > 0) {
+            setPendingResult(r);
+            setShowPending(true);
+        } else {
+            showSyncResult(r);
         }
     };
 
@@ -817,7 +876,16 @@ export default function DashboardScreen({
                     )}
                     {smsOn && (
                         <View ref={syncRef} collapsable={false}>
-                            <TouchableOpacity onPress={handleSmsSync} style={s.syncBtn} disabled={syncing}>
+                            <TouchableOpacity
+                                onPress={() => { void handleSmsSync(); }}
+                                onLongPress={() => { void confirmFullSync(); }}
+                                delayLongPress={500}
+                                style={s.syncBtn}
+                                disabled={syncing}
+                                accessibilityRole="button"
+                                accessibilityLabel="Sincronizar SMS"
+                                accessibilityHint="Mantené presionado para volver a leer los últimos 3 meses"
+                            >
                                 <View pointerEvents="none" style={s.syncGlass}>
                                     <View style={s.syncOrbOuter} />
                                     <View style={s.syncOrbInner} />
@@ -836,6 +904,29 @@ export default function DashboardScreen({
                     )}
                 </View>
             </View>
+
+            {/* AVISO DE SINCRONIZACIÓN AUTOMÁTICA DE SMS */}
+            {smsOn && autoNotice && (
+                <View style={s.autoNoticeRow}>
+                    <InlineNotice
+                        variant={autoNotice.variant}
+                        text={autoNotice.text}
+                        icon="sync-circle-outline"
+                        actionLabel={autoNotice.actionLabel}
+                        onAction={onAutoNoticeAction}
+                        style={s.autoNotice}
+                    />
+                    <TouchableOpacity
+                        onPress={() => onDismissSmsAuto?.()}
+                        style={s.autoNoticeClose}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Descartar aviso"
+                    >
+                        <Ionicons name="close" size={18} color={C.textMuted} />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* BRIEFING CFO */}
             <View ref={briefingRef} collapsable={false}>
@@ -986,12 +1077,15 @@ export default function DashboardScreen({
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
             {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
             {smsOn && (
-                <SmsReviewModal
-                    visible={showReview}
-                    items={reviewItems}
-                    customCategories={settings.customCategories}
-                    onClose={() => setShowReview(false)}
-                    onApplied={() => { setShowReview(false); onRefresh(); }}
+                <SmsPendingSheet
+                    visible={showPending}
+                    result={pendingResult}
+                    settings={settings}
+                    accounts={accounts}
+                    transactions={transactions}
+                    fixedExpenses={fixedExpenses}
+                    onClose={() => setShowPending(false)}
+                    onChanged={() => { onRefresh(); StorageService.getSmsInbox().then(i => setInboxCount(i.length)).catch(() => { }); }}
                 />
             )}
             {smsOn && (
@@ -1030,6 +1124,10 @@ const s = StyleSheet.create({
     syncOrbOuter: { position: "absolute", width: 34, height: 34, borderRadius: 17, backgroundColor: C.primary, opacity: 0.25 },
     syncOrbInner: { position: "absolute", width: 20, height: 20, borderRadius: 10, backgroundColor: C.primaryLight, opacity: 0.35 },
     syncDot: { position: "absolute", top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: C.accent },
+
+    autoNoticeRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14, marginTop: -6 },
+    autoNotice: { flex: 1 },
+    autoNoticeClose: { width: 28, height: 28, alignItems: "center", justifyContent: "center" },
 
     glassOuter: { marginBottom: 14 },
 

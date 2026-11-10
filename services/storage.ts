@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { buildSmsFingerprint } from './BankSmsParser';
+import { assignAccountsToTransactions } from './AccountLinking';
+import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
+import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPairKey } from './TransferPairs';
 import { merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 
 // ─────────────────────────────────────────────────────────────
@@ -30,6 +33,26 @@ export interface Transaction {
   smsFingerprint?: string; // Huella del SMS de origen (deduplicación y descartes)
   merchant?: string;       // Comercio normalizado para mostrar (SMS)
   categoryEditedAt?: string; // ISO: el usuario eligió la categoría a mano
+  accountId?: string;        // Cuenta/tarjeta a la que pertenece (solo para mostrar; ver balanceEffect)
+  accountSource?: 'rule' | 'user'; // Quién asignó la cuenta: regla de vínculo SMS o el usuario
+  smsAccountHint?: string;   // Clave de señal más específica del SMS (ej. 'BAC|prod:BAC VISA')
+  fixedExpenseId?: string;   // Gasto fijo que pagó este movimiento
+  /** Efecto aplicado al saldo de una cuenta (saldo automático; ronda R-C, hoy sin uso). */
+  balanceEffect?: { accountId: string; delta: number; appliedAt: string; settled?: boolean };
+  /** Copia del movimiento manual que se unió a este SMS (permite "Separar"). */
+  mergedFrom?: {
+    id: string; description: string; category: string; date: string; amount: number; currency: Currency;
+    accountId?: string;        // cuenta del manual (para devolverla al separar)
+    categoryEditedAt?: string; // categoryEditedAt del manual (para devolverlo al separar)
+    smsPrev?: {
+      description: string; category: string; categoryEditedAt?: string;
+      accountId?: string; accountSource?: 'rule' | 'user'; // cuenta del SMS antes de que la pisara la del manual
+    };
+  };
+  /** Id compartido por las dos mitades de una transferencia entre cuentas propias (par neutro). */
+  transferPairId?: string;
+  /** Tipo y categoría antes de marcar el par como neutro (permite revertir). */
+  transferPrev?: { type: 'income' | 'expense' | 'transfer'; category: string };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -51,6 +74,10 @@ export interface Account {
   isActive: boolean;
   createdAt: string;
   notes?: string;
+  smsLinks?: string[];       // Claves de vínculo SMS normalizadas ('BANCO|tipo:valor')
+  smsLinkedAt?: string;      // ISO: última vez que cambiaron los vínculos
+  smsAutoBalance?: boolean;  // Saldo automático con SMS (ronda R-C, hoy sin uso)
+  balanceAnchorAt?: string;  // ISO: solo cuentan los movimientos posteriores (R-C)
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -111,6 +138,9 @@ export interface FixedExpense {
   notes?: string;
   isActive: boolean;
   lastTxId?: string;
+  paidTxId?: string;         // Movimiento SMS que lo pagó (NUNCA se borra al desmarcar)
+  paidBy?: 'manual' | 'sms';
+  smsMatchKey?: string;      // merchantKey aprendido para emparejar SMS
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -177,6 +207,30 @@ export interface UserSettings {
   cardsOnboardingComplete: boolean;
   financialScoreHistory: { month: string; score: number }[];
   activeDebtsList?: any[];
+  /** Sincronizar SMS al abrir la app (default true). Nunca pide permisos por su cuenta. */
+  smsAutoSync?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────
+// SINCRONIZACIÓN SMS: ESTADO, LOTES (DESHACER) Y SEÑALES VISTAS
+// ─────────────────────────────────────────────────────────────
+export interface SmsSyncState { lastSyncAt?: string; lastFullSyncAt?: string; lastAutoAttemptAt?: string; }
+
+export interface SmsBatchRecord {
+  id: string; at: string; mode: 'auto' | 'manual' | 'full';
+  txIds: string[]; installmentIds: string[];
+  fixedMarks: Array<{ expenseId: string; prev: Pick<FixedExpense, 'isPaid' | 'paidDate' | 'paidTxId' | 'paidBy'> }>;
+}
+
+export interface SmsLinkSeen { key: string; count: number; lastAt: string; }
+
+/** Resultado de deshacer un lote de sincronización. */
+export interface SmsUndoResult { removedTx: number; removedInst: number; keptEdited: number; revertedFixed: number; }
+
+/** Conteos para la confirmación de "Deshacer última sincronización". */
+export interface SmsUndoPreview {
+  batchId: string; at: string; mode: 'auto' | 'manual' | 'full';
+  txCount: number; installmentCount: number; editedCount: number; fixedCount: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -220,6 +274,10 @@ const K = {
   MERCHANT_RULES: '@bm_merchant_rules',
   SMS_INBOX: '@bm_sms_inbox',
   SMS_INBOX_IGNORED: '@bm_sms_inbox_ignored',
+  SMS_SYNC_STATE: '@bm_sms_sync_state',
+  SMS_BATCHES: '@bm_sms_batches',
+  DUP_IGNORED: '@bm_dup_ignored',
+  SMS_LINK_SEEN: '@bm_sms_link_seen',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -254,6 +312,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   cardsOnboardingComplete: false,
   financialScoreHistory: [],
   activeDebtsList: [],
+  smsAutoSync: true,
 };
 
 /**
@@ -649,6 +708,9 @@ const MAX_SMS_DISMISSED = 5000;
 const MAX_SMS_REVIEW_KEPT = 5000;
 const MAX_SMS_INBOX = 200;
 const MAX_SMS_INBOX_IGNORED = 2000;
+const MAX_DUP_IGNORED = 2000;
+const MAX_SMS_BATCHES = 3;
+const SMS_UNDO_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Llaves (id y huella) que impiden que un movimiento SMS borrado vuelva a importarse. */
 function smsTombstoneKeys(tx: Transaction): string[] {
@@ -656,6 +718,61 @@ function smsTombstoneKeys(tx: Transaction): string[] {
   const fp = tx.smsFingerprint
     ?? (tx.originalSMS ? buildSmsFingerprint(tx.originalSMS, isNaN(ts) ? undefined : ts) : '');
   return [tx.id, fp].filter(Boolean);
+}
+
+/** Plan (sin escribir nada) para deshacer un lote de sincronización. Criterio de "editado": D6. */
+function planSmsUndo(
+  batch: SmsBatchRecord,
+  txs: Transaction[],
+  insts: CreditInstallment[],
+  expenses: FixedExpense[],
+  includeEdited: boolean,
+) {
+  const batchAt = Date.parse(batch.at);
+  const autoFixedIds = new Set((batch.fixedMarks ?? []).map(m => m.expenseId));
+  const txIdSet = new Set(batch.txIds ?? []);
+  const instIdSet = new Set(batch.installmentIds ?? []);
+
+  const isTxEdited = (t: Transaction): boolean => {
+    const edited = t.categoryEditedAt ? Date.parse(t.categoryEditedAt) : NaN;
+    if (!isNaN(edited) && !isNaN(batchAt) && edited > batchAt) return true;
+    if (t.accountSource === 'user') return true;
+    if (t.mergedFrom) return true;
+    // fixedExpenseId que no puso el lote (lo puso el usuario después)
+    if (t.fixedExpenseId && !autoFixedIds.has(t.fixedExpenseId)) return true;
+    return false;
+  };
+  // Sin instantánea de la visacuota solo se detectan las claras: con cuotas pagadas, cerrada
+  // (inactiva) o con notas del usuario.
+  const isInstEdited = (i: CreditInstallment): boolean =>
+    (i.paidInstallments ?? 0) > 0 || !i.isActive || !!(i.notes && i.notes.trim());
+
+  const batchTxs = txs.filter(t => txIdSet.has(t.id));
+  const batchInsts = insts.filter(i => instIdSet.has(i.id));
+  const editedTxs = batchTxs.filter(isTxEdited);
+  const editedInsts = batchInsts.filter(isInstEdited);
+  const removeTxs = includeEdited ? batchTxs : batchTxs.filter(t => !isTxEdited(t));
+  const removeInsts = includeEdited ? batchInsts : batchInsts.filter(i => !isInstEdited(i));
+  const removedTxIds = new Set(removeTxs.map(t => t.id));
+
+  // Gastos fijos: solo se tocan si siguen vinculados (paidTxId) a un movimiento que se elimina.
+  const prevByExpense = new Map((batch.fixedMarks ?? []).map(m => [m.expenseId, m.prev]));
+  let revertedFixed = 0;
+  const nextExpenses = expenses.map(e => {
+    if (!e.paidTxId || !removedTxIds.has(e.paidTxId)) return e;
+    revertedFixed++;
+    const prev = prevByExpense.get(e.id);
+    if (prev) {
+      return { ...e, isPaid: prev.isPaid, paidDate: prev.paidDate, paidTxId: prev.paidTxId, paidBy: prev.paidBy };
+    }
+    return { ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined };
+  });
+
+  return {
+    removeTxs, removeInsts, removedTxIds, nextExpenses, revertedFixed,
+    editedCount: editedTxs.length + editedInsts.length,
+    keptEdited: includeEdited ? 0 : editedTxs.length + editedInsts.length,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -692,8 +809,27 @@ export const StorageService = {
     if (target && target.source === 'sms') {
       await this.addDismissedSms(smsTombstoneKeys(target));
     }
-    const updated = all.filter(t => t.id !== id);
+    let updated = all.filter(t => t.id !== id);
+    // Mitad de un par de transferencia: la otra queda neutra pero sin transferPairId (sin huérfanos).
+    if (target?.transferPairId) updated = clearPairIdOfPartner(updated, target.transferPairId);
     await this.saveTransactions(updated);
+    // Si el movimiento pagaba un gasto fijo, ese gasto vuelve a "no pagado". Solo se toca
+    // si el vínculo vigente apunta a este movimiento (uno de un mes anterior no desmarca el actual).
+    if (target?.fixedExpenseId) {
+      try {
+        const expenses = await this.getFixedExpenses();
+        let changed = false;
+        const nextExpenses = expenses.map(e => {
+          if (e.id !== target.fixedExpenseId || (e.paidTxId !== id && e.lastTxId !== id)) return e;
+          changed = true;
+          return {
+            ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined,
+            lastTxId: e.lastTxId === id ? undefined : e.lastTxId,
+          };
+        });
+        if (changed) await this.saveFixedExpenses(nextExpenses);
+      } catch { }
+    }
     return updated;
   },
 
@@ -896,6 +1032,336 @@ export const StorageService = {
     return updated;
   },
 
+  /**
+   * Buzón incremental: fusiona por huella con el buzón actual (sin perder lo no revisado),
+   * quita ignorados y SMS ya registrados como movimiento, y deja los 200 más nuevos
+   * por receivedAt. `replaceSmsInbox` no cambia (se usa en la sincronización completa).
+   */
+  async mergeSmsInbox(items: SmsInboxItem[]): Promise<SmsInboxItem[]> {
+    const [current, ignoredList, txs] = await Promise.all([
+      this.getSmsInbox(), this.getSmsInboxIgnored(), this.getTransactions(),
+    ]);
+    const ignored = new Set(ignoredList);
+    const registered = new Set<string>();
+    for (const t of txs) { registered.add(t.id); if (t.smsFingerprint) registered.add(t.smsFingerprint); }
+    const byFp = new Map<string, SmsInboxItem>();
+    for (const i of current) byFp.set(i.fingerprint, i);
+    for (const i of items) byFp.set(i.fingerprint, i);
+    const next = Array.from(byFp.values())
+      .filter(i => !ignored.has(i.fingerprint) && !registered.has(i.fingerprint))
+      .sort((a, b) => (b.receivedAt ?? 0) - (a.receivedAt ?? 0))
+      .slice(0, MAX_SMS_INBOX);
+    try { await AsyncStorage.setItem(K.SMS_INBOX, JSON.stringify(next)); } catch { }
+    return next;
+  },
+
+  // ── Sincronización SMS: estado y lotes (deshacer) ─────────
+  async getSmsSyncState(): Promise<SmsSyncState> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_SYNC_STATE);
+      const parsed = data ? JSON.parse(data) : {};
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  },
+
+  /** Fusiona `patch` con el estado guardado y devuelve el estado resultante. */
+  async saveSmsSyncState(patch: Partial<SmsSyncState>): Promise<SmsSyncState> {
+    const next = { ...(await this.getSmsSyncState()), ...patch };
+    try { await AsyncStorage.setItem(K.SMS_SYNC_STATE, JSON.stringify(next)); } catch { }
+    return next;
+  },
+
+  async getSmsBatches(): Promise<SmsBatchRecord[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_BATCHES);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Agrega el lote al inicio y deja solo los 3 más nuevos. */
+  async recordSmsBatch(rec: SmsBatchRecord): Promise<void> {
+    try {
+      const current = await this.getSmsBatches();
+      const next = [rec, ...current.filter(b => b.id !== rec.id)].slice(0, MAX_SMS_BATCHES);
+      await AsyncStorage.setItem(K.SMS_BATCHES, JSON.stringify(next));
+    } catch { }
+  },
+
+  /** Último lote si tiene 7 días o menos (los lotes deshechos se quitan del registro). */
+  async getLastSmsBatch(): Promise<SmsBatchRecord | null> {
+    const [last] = await this.getSmsBatches();
+    if (!last) return null;
+    const at = Date.parse(last.at);
+    if (isNaN(at) || Date.now() - at > SMS_UNDO_WINDOW_MS) return null;
+    return last;
+  },
+
+  /**
+   * Solo conteos para la confirmación de "Deshacer". null si `batchId` no es el último lote
+   * o tiene más de 7 días. txCount/installmentCount/fixedCount = lo que se deshace por defecto
+   * (sin editados); editedCount = los que el interruptor "Incluir también los N que editaste" sumaría.
+   */
+  async previewUndoSmsBatch(batchId: string): Promise<SmsUndoPreview | null> {
+    const batch = await this.getLastSmsBatch();
+    if (!batch || batch.id !== batchId) return null;
+    const [txs, insts, expenses] = await Promise.all([
+      this.getTransactions(), this.getCreditInstallments(), this.getFixedExpenses(),
+    ]);
+    const plan = planSmsUndo(batch, txs, insts, Array.isArray(expenses) ? expenses : [], false);
+    return {
+      batchId: batch.id, at: batch.at, mode: batch.mode,
+      txCount: plan.removeTxs.length, installmentCount: plan.removeInsts.length,
+      editedCount: plan.editedCount, fixedCount: plan.revertedFixed,
+    };
+  },
+
+  /**
+   * Deshace el último lote: elimina sus movimientos y visacuotas (los editados se conservan salvo
+   * `includeEdited`), los agrega a descartados (no vuelven a importarse), restaura los gastos fijos
+   * marcados por el lote y quita el lote del registro. Si `batchId` no es el último lote vigente
+   * (o ya pasaron 7 días) no hace nada y devuelve ceros. Una lectura y una escritura por colección.
+   */
+  async undoSmsBatch(batchId: string, opts: { includeEdited: boolean }): Promise<SmsUndoResult> {
+    const empty: SmsUndoResult = { removedTx: 0, removedInst: 0, keptEdited: 0, revertedFixed: 0 };
+    const batch = await this.getLastSmsBatch();
+    if (!batch || batch.id !== batchId) return empty;
+    const [txs, insts, expenses] = await Promise.all([
+      this.getTransactions(), this.getCreditInstallments(), this.getFixedExpenses(),
+    ]);
+    const safeExpenses = Array.isArray(expenses) ? expenses : [];
+    const plan = planSmsUndo(batch, txs, insts, safeExpenses, !!opts.includeEdited);
+
+    if (plan.removeTxs.length > 0) {
+      // saveTransactions es el punto por donde se revertirán los saldos cuando exista el saldo automático.
+      await this.saveTransactions(txs.filter(t => !plan.removedTxIds.has(t.id)));
+    }
+    if (plan.removeInsts.length > 0) {
+      const instIds = new Set(plan.removeInsts.map(i => i.id));
+      await this.saveCreditInstallments(insts.filter(i => !instIds.has(i.id)));
+    }
+    if (plan.revertedFixed > 0) await this.saveFixedExpenses(plan.nextExpenses);
+
+    const tombstones = [
+      ...plan.removeTxs.flatMap(smsTombstoneKeys),
+      ...plan.removeInsts.flatMap(i => [i.id, i.smsFingerprint ?? ''].filter(Boolean)),
+    ];
+    await this.addDismissedSms(tombstones);
+
+    try {
+      const rest = (await this.getSmsBatches()).filter(b => b.id !== batchId);
+      await AsyncStorage.setItem(K.SMS_BATCHES, JSON.stringify(rest));
+    } catch { }
+
+    return {
+      removedTx: plan.removeTxs.length, removedInst: plan.removeInsts.length,
+      keptEdited: plan.keptEdited, revertedFixed: plan.revertedFixed,
+    };
+  },
+
+  // ── Gastos fijos pagados por SMS ──────────────────────────
+  /**
+   * Marca el gasto fijo como pagado por un movimiento SMS: isPaid, paidDate = tx.date,
+   * paidTxId, paidBy 'sms' (lastTxId no se toca) y tx.fixedExpenseId. Con `learnKey`
+   * guarda smsMatchKey para que los próximos meses se marque solo.
+   */
+  async markFixedPaidBySms(expenseId: string, txId: string, learnKey?: string): Promise<FixedExpense[]> {
+    const [expenses, txs] = await Promise.all([this.getFixedExpenses(), this.getTransactions()]);
+    const tx = txs.find(t => t.id === txId);
+    if (!tx || !expenses.some(e => e.id === expenseId)) return expenses;
+    const nextExpenses = expenses.map(e => e.id !== expenseId ? e : {
+      ...e, isPaid: true, paidDate: tx.date, paidTxId: txId, paidBy: 'sms' as const,
+      ...(learnKey ? { smsMatchKey: learnKey } : {}),
+    });
+    await this.saveFixedExpenses(nextExpenses);
+    await this.saveTransactions(txs.map(t => t.id === txId ? { ...t, fixedExpenseId: expenseId } : t));
+    return nextExpenses;
+  },
+
+  /**
+   * Desmarca un gasto fijo. Si lo pagó un SMS (paidTxId) solo suelta el vínculo y NO borra
+   * el movimiento. Si lo pagó un registro manual (lastTxId 'fe_tx_*') lo borra, como antes.
+   */
+  async unmarkFixedPaid(expenseId: string): Promise<FixedExpense[]> {
+    const expenses = await this.getFixedExpenses();
+    const exp = expenses.find(e => e.id === expenseId);
+    if (!exp) return expenses;
+    if (exp.paidTxId) {
+      const txs = await this.getTransactions();
+      await this.saveTransactions(txs.map(t => t.id === exp.paidTxId ? { ...t, fixedExpenseId: undefined } : t));
+    }
+    if (exp.lastTxId && exp.lastTxId.startsWith('fe_tx_')) await this.deleteTransaction(exp.lastTxId);
+    const next = expenses.map(e => e.id !== expenseId ? e : {
+      ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined, lastTxId: undefined,
+    });
+    await this.saveFixedExpenses(next);
+    return next;
+  },
+
+  // ── Duplicados manual/SMS ─────────────────────────────────
+  async getDupIgnored(): Promise<string[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.DUP_IGNORED);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  /** Agrega claves de par (dupPairKey) a la lista de ignorados. Sin repetidos; tope de 2000. */
+  async addDupIgnored(keys: string[]): Promise<void> {
+    if (keys.length === 0) return;
+    try {
+      const merged = Array.from(new Set([...(await this.getDupIgnored()), ...keys]));
+      const trimmed = merged.length > MAX_DUP_IGNORED ? merged.slice(merged.length - MAX_DUP_IGNORED) : merged;
+      await AsyncStorage.setItem(K.DUP_IGNORED, JSON.stringify(trimmed));
+    } catch { }
+  },
+
+  /**
+   * Une el movimiento manual al SMS (sobrevive el SMS; ver mergeManualIntoSms). El manual se borra
+   * del arreglo SIN descartar su huella (no es SMS). Si el manual era el lastTxId de un gasto fijo,
+   * el vínculo pasa al SMS (paidTxId = smsId, paidBy 'sms', lastTxId undefined).
+   * Si alguno no existe o no son manual/SMS, no cambia nada.
+   */
+  async mergeDuplicate(manualId: string, smsId: string): Promise<Transaction[]> {
+    const [txs, expenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const manual = txs.find(t => t.id === manualId);
+    const sms = txs.find(t => t.id === smsId);
+    if (!manual || !sms || manualId === smsId || manual.source !== 'manual' || sms.source !== 'sms') return txs;
+
+    let merged = mergeManualIntoSms(manual, sms, new Date().toISOString());
+    const safeExpenses = Array.isArray(expenses) ? expenses : [];
+    let expensesChanged = false;
+    const nextExpenses = safeExpenses.map(e => {
+      if (e.lastTxId !== manualId && e.paidTxId !== manualId) return e;
+      expensesChanged = true;
+      if (!merged.fixedExpenseId) merged = { ...merged, fixedExpenseId: e.id };
+      return { ...e, paidTxId: smsId, paidBy: 'sms' as const, lastTxId: undefined };
+    });
+
+    const next = txs.filter(t => t.id !== manualId).map(t => t.id === smsId ? merged : t);
+    await this.saveTransactions(next);
+    if (expensesChanged) await this.saveFixedExpenses(nextExpenses);
+    return next;
+  },
+
+  /** Separa un SMS unido (splitMerged): restaura el SMS y vuelve a crear el manual. Sin mergedFrom no cambia nada. */
+  async splitDuplicate(smsId: string): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const sms = txs.find(t => t.id === smsId);
+    if (!sms) return txs;
+    const res = splitMerged(sms);
+    if (!res) return txs;
+    const hasManual = txs.some(t => t.id === res.manual.id);
+    const next: Transaction[] = [];
+    for (const t of txs) {
+      if (t.id === smsId) {
+        next.push(res.sms);
+        if (!hasManual) next.push(res.manual);
+      } else next.push(t);
+    }
+    await this.saveTransactions(next);
+    return next;
+  },
+
+  // ── Pares de transferencia entre cuentas propias (neutros; no mueven saldos) ──
+  /** Marca salida y entrada como neutras (type/category 'transfer') con un transferPairId compartido. */
+  async linkTransferPair(outId: string, inId: string): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const next = applyTransferPair(txs, outId, inId);
+    if (next !== txs) await this.saveTransactions(next);
+    return next;
+  },
+
+  /** Deshace el par al que pertenece txId: ambos vuelven a su type/category previos. */
+  async unlinkTransferPair(txId: string): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const next = revertTransferPair(txs, txId);
+    if (next !== txs) await this.saveTransactions(next);
+    return next;
+  },
+
+  /** "No es un par": el par (outId, inId) no vuelve a proponerse (misma lista de ignorados que los duplicados). */
+  async dismissTransferPair(outId: string, inId: string): Promise<void> {
+    await this.addDupIgnored([transferPairKey(outId, inId)]);
+  },
+
+  // ── Vínculo SMS <-> cuentas (solo para mostrar; no mueve saldos) ──
+  async getSmsLinkSeen(): Promise<SmsLinkSeen[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.SMS_LINK_SEEN);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  async saveSmsLinkSeen(items: SmsLinkSeen[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.SMS_LINK_SEEN, JSON.stringify(items)); } catch { }
+  },
+
+  /** Vuelve a asignar cuentas a todos los movimientos SMS según los vínculos actuales. */
+  async relinkAllTransactions(): Promise<Transaction[]> {
+    const [txs, accounts] = await Promise.all([this.getTransactions(), this.getAccounts()]);
+    const res = assignAccountsToTransactions(txs, accounts);
+    if (res.txs !== txs) await this.saveTransactions(res.txs);
+    return res.txs;
+  },
+
+  /**
+   * Asigna (o quita, con null) la cuenta de un movimiento a mano: accountSource 'user'.
+   * `suggestRule` = smsAccountHint del movimiento cuando ninguna cuenta lo usa todavía,
+   * para ofrecer "Recordar: los SMS de X van a esta cuenta".
+   */
+  async setTransactionAccount(
+    txId: string,
+    accountId: string | null,
+  ): Promise<{ transactions: Transaction[]; suggestRule?: string }> {
+    const [txs, accounts] = await Promise.all([this.getTransactions(), this.getAccounts()]);
+    const tx = txs.find(t => t.id === txId);
+    if (!tx) return { transactions: txs };
+    const next = txs.map(t => t.id !== txId ? t : {
+      ...t, accountId: accountId ?? undefined, accountSource: 'user' as const,
+    });
+    await this.saveTransactions(next);
+    const hint = tx.smsAccountHint;
+    const taken = hint ? accounts.some(a => a.smsLinks?.includes(hint)) : true;
+    return accountId && hint && !taken ? { transactions: next, suggestRule: hint } : { transactions: next };
+  },
+
+  /**
+   * Asigna a `accountId` los movimientos sin cuenta cuyo smsAccountHint es `key`.
+   * Con `remember` agrega `key` a account.smsLinks (si otra cuenta ya la tiene devuelve
+   * error 'conflict' y no guarda nada). accountSource: remember ? 'rule' : 'user'.
+   */
+  async assignUnassignedGroup(
+    key: string,
+    accountId: string,
+    remember: boolean,
+  ): Promise<{ ok: boolean; error?: 'conflict' | 'not_found'; assigned: number; transactions: Transaction[] }> {
+    const [txs, accounts] = await Promise.all([this.getTransactions(), this.getAccounts()]);
+    const target = accounts.find(a => a.id === accountId);
+    if (!target) return { ok: false, error: 'not_found', assigned: 0, transactions: txs };
+    if (remember) {
+      if (accounts.some(a => a.id !== accountId && a.isActive && a.smsLinks?.includes(key))) {
+        return { ok: false, error: 'conflict', assigned: 0, transactions: txs };
+      }
+      if (!target.smsLinks?.includes(key)) {
+        const nowIso = new Date().toISOString();
+        await this.saveAccounts(accounts.map(a => a.id !== accountId ? a : {
+          ...a, smsLinks: [...(a.smsLinks ?? []), key], smsLinkedAt: nowIso,
+        }));
+      }
+    }
+    let assigned = 0;
+    const next = txs.map(t => {
+      if (t.smsAccountHint !== key || t.accountId) return t;
+      assigned++;
+      return { ...t, accountId, accountSource: remember ? 'rule' as const : 'user' as const };
+    });
+    if (assigned > 0) await this.saveTransactions(next);
+    return { ok: true, assigned, transactions: next };
+  },
+
   // ── Settings ──────────────────────────────────────────────
   async getSettings(): Promise<UserSettings> {
     try {
@@ -922,7 +1388,8 @@ export const StorageService = {
   async getFixedExpenses(): Promise<FixedExpense[]> {
     try {
       const data = await AsyncStorage.getItem(K.FIXED_EXPENSES);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch { return []; }
   },
 
@@ -953,7 +1420,11 @@ export const StorageService = {
 
   async resetFixedExpensesForNewMonth(): Promise<void> {
     const all = await this.getFixedExpenses();
-    const reset = all.map(e => ({ ...e, isPaid: false, paidDate: undefined }));
+    // Limpia también los vínculos con el movimiento del mes anterior (no se borra ningún
+    // movimiento: quedan como historial). Evita ids repetidos entre meses al desmarcar.
+    const reset = all.map(e => ({
+      ...e, isPaid: false, paidDate: undefined, lastTxId: undefined, paidTxId: undefined, paidBy: undefined,
+    }));
     await this.saveFixedExpenses(reset);
   },
 

@@ -12,6 +12,8 @@ import {
     formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
     parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
+import { isSmsFeatureOn } from "../services/features";
+import { merchantKey } from "../services/MerchantRules";
 import { getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
@@ -126,12 +128,14 @@ const FORM_CURRENCIES: Currency[] = ["Q", "USD"];
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVO GASTO FIJO
 // ─────────────────────────────────────────────────────────────
-function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaultCurrency }: {
+function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaultCurrency, smsOn = false }: {
     onSave: (e: FixedExpense) => void;
     onClose: () => void;
     existing?: FixedExpense;
     customCategories?: CustomCategory[];
     defaultCurrency: Currency;
+    /** Muestra el campo «Nombre en el SMS». Apagado = oculto. */
+    smsOn?: boolean;
 }) {
     const allCats = getAllExpenseCategories(customCategories);
     const [name, setName] = useState(existing?.name || "");
@@ -141,8 +145,10 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaul
     const [day, setDay] = useState(existing?.dayOfMonth.toString() || "1");
     const [autoRecord, setAutoRecord] = useState(existing?.autoRecord ?? true);
     const [notes, setNotes] = useState(existing?.notes || "");
+    const [matchKey, setMatchKey] = useState(existing?.smsMatchKey || "");
     const [error, setError] = useState("");
     const currencyOptions = FORM_CURRENCIES.includes(currency) ? FORM_CURRENCIES : [...FORM_CURRENCIES, currency];
+    const learned = !!existing?.smsMatchKey && matchKey === existing.smsMatchKey;
 
     const handleSave = () => {
         if (!name.trim()) { setError("Ingresa el nombre del gasto."); return; }
@@ -150,6 +156,17 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaul
         if (isNaN(amt) || amt <= 0) { setError("Ingresa un monto válido."); return; }
         const dayNum = parseInt(day);
         if (isNaN(dayNum) || dayNum < 1 || dayNum > 31) { setError("Día inválido (1-31)."); return; }
+        // «Nombre en el SMS»: se guarda normalizado igual que el aprendizaje por comercio
+        let smsMatchKey = existing?.smsMatchKey;
+        if (smsOn) {
+            if (matchKey.trim()) {
+                const k = merchantKey(matchKey);
+                if (!k) { setError("El nombre en el SMS es muy corto o genérico. Prueba con el nombre del comercio."); return; }
+                smsMatchKey = k;
+            } else {
+                smsMatchKey = undefined;
+            }
+        }
 
         const expense: FixedExpense = {
             id: existing?.id || `fe_${Date.now()}`,
@@ -161,6 +178,9 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaul
             isPaid: existing?.isPaid || false,
             paidDate: existing?.paidDate,
             lastTxId: existing?.lastTxId,
+            paidTxId: existing?.paidTxId,
+            paidBy: existing?.paidBy,
+            smsMatchKey,
             autoRecord,
             notes: notes.trim(),
             isActive: true,
@@ -236,6 +256,41 @@ function FixedExpenseModal({ onSave, onClose, existing, customCategories, defaul
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            {smsOn && (
+                <View>
+                    <View style={md.matchLblRow}>
+                        <Text style={[md.lbl, { marginTop: 0, marginBottom: 0 }]}>NOMBRE EN EL SMS (Opcional)</Text>
+                        {learned && (
+                            <View style={md.learnedChip}>
+                                <Ionicons name="sparkles-outline" size={11} color={C.accent} />
+                                <Text style={md.learnedTxt}>Aprendido</Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={md.matchRow}>
+                        <TextInput
+                            style={[md.input, { flex: 1 }]}
+                            value={matchKey}
+                            onChangeText={v => { setMatchKey(v); setError(""); }}
+                            placeholder="Ej: EEGSA, Tigo, Netflix..."
+                            placeholderTextColor={C.textMuted}
+                            autoCapitalize="none"
+                        />
+                        {!!matchKey && (
+                            <TouchableOpacity
+                                style={md.matchClear}
+                                onPress={() => { setMatchKey(""); setError(""); }}
+                                accessibilityRole="button"
+                                accessibilityLabel="Borrar el nombre en el SMS"
+                            >
+                                <Ionicons name="trash-outline" size={18} color={C.danger} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                    <Text style={md.hint}>Cómo aparece este pago en el mensaje del banco. Sirve para marcarlo como pagado solo.</Text>
+                </View>
+            )}
 
             <Text style={md.lbl}>NOTAS (Opcional)</Text>
             <TextInput style={md.input} value={notes} onChangeText={setNotes} placeholder="Ej: Tarjeta BAC cuota mínima..." placeholderTextColor={C.textMuted} />
@@ -426,6 +481,7 @@ function FixedExpensesTab({
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<FixedExpense | undefined>();
     const dialog = useGlassDialog();
+    const smsOn = isSmsFeatureOn(settings);
     const tutScroll = useTutorialScroll('budget_fixed');
     const summaryRef = useTutorialRef('budget_fixed_summary');
     const listRef = useTutorialRef('budget_fixed_list');
@@ -441,16 +497,23 @@ function FixedExpensesTab({
         let lastTxId = expense.lastTxId;
 
         if (!willBePaid) {
-            // Al desmarcar: revertir la transacción auto-generada (si existe) ANTES de actualizar el gasto fijo
-            if (expense.lastTxId) {
-                const txAll = await StorageService.deleteTransaction(expense.lastTxId);
-                setTransactions(txAll);
+            // Al desmarcar: unmarkFixedPaid borra solo el registro manual (fe_tx_*) y,
+            // si lo pagó un SMS, suelta el vínculo SIN borrar ni descartar el movimiento.
+            const all = await StorageService.unmarkFixedPaid(expense.id);
+            setFixedExpenses(all);
+            setTransactions(await StorageService.getTransactions());
+            const reverted = all.find(e => e.id === expense.id);
+            if (reverted) {
+                void NotificationService.scheduleFixedExpenseReminder(reverted).catch(e => console.warn("[FixedExpense] recordatorio:", e));
             }
-            lastTxId = undefined;
+            onRefresh?.();
+            return;
         } else if (expense.autoRecord) {
-            // Al marcar como pagado con auto-registro: usar id determinístico y reversible
+            // Al marcar como pagado con auto-registro: id determinístico, reversible y único por mes
+            const now = new Date();
+            const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
             const tx: Transaction = {
-                id: `fe_tx_${expense.id}`,
+                id: `fe_tx_${expense.id}_${ym}`,
                 amount: expense.amount,
                 description: expense.name,
                 category: expense.category,
@@ -466,9 +529,10 @@ function FixedExpensesTab({
 
         const updated: FixedExpense = {
             ...expense,
-            isPaid: willBePaid,
-            paidDate: willBePaid ? new Date().toISOString() : undefined,
+            isPaid: true,
+            paidDate: new Date().toISOString(),
             lastTxId,
+            paidBy: 'manual',
         };
         const all = await StorageService.updateFixedExpense(updated);
         setFixedExpenses(all);
@@ -582,6 +646,7 @@ function FixedExpensesTab({
                                                     <Text style={s.fixedDay}>Día {expense.dayOfMonth}</Text>
                                                     {isOverdue && <View style={s.overdueBadge}><Text style={s.overdueTxt}>VENCIDO</Text></View>}
                                                     {expense.autoRecord && <View style={s.autoBadge}><Text style={s.autoTxt}>AUTO</Text></View>}
+                                                    {smsOn && expense.isPaid && expense.paidBy === 'sms' && <View style={s.autoBadge}><Text style={s.autoTxt}>SMS</Text></View>}
                                                 </View>
                                             </View>
 
@@ -624,6 +689,7 @@ function FixedExpensesTab({
                     onClose={() => { setShowModal(false); setEditing(undefined); }}
                     customCategories={settings.customCategories}
                     defaultCurrency={settings.currency || "Q"}
+                    smsOn={smsOn}
                 />
             )}
         </View>
@@ -1215,6 +1281,11 @@ const md = StyleSheet.create({
     notice: { marginBottom: 10 },
     dateField: { flexDirection: "row", alignItems: "center", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, overflow: "hidden" },
     dateTxt: { flex: 1, color: C.text, fontSize: 15, fontWeight: "700" },
+    matchLblRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 16, marginBottom: 8 },
+    matchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    matchClear: { width: 46, height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: C.danger + "11", borderWidth: 1, borderColor: C.danger + "44" },
+    learnedChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, backgroundColor: C.accent + "22", borderWidth: 1, borderColor: C.accent + "55" },
+    learnedTxt: { color: C.accent, fontSize: 9, fontWeight: "900" },
     iosPickerWrap: { marginTop: 8 },
     iosPickerDone: { alignSelf: "flex-end", paddingHorizontal: 16, paddingVertical: 8 },
     iosPickerDoneTxt: { color: C.primaryLight, fontWeight: "800" },

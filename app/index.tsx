@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  LayoutAnimation, Platform, StatusBar,
+  AppState, InteractionManager, LayoutAnimation, Platform, StatusBar,
   StyleSheet, Text, TouchableOpacity,
   UIManager, View
 } from "react-native";
@@ -14,6 +14,9 @@ import {
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
 import { isSmsFeatureOn } from "../services/features";
+import { maybeAutoSync } from "../services/SmsAutoSync";
+import { hasSomethingToShow } from "../services/SmsService";
+import type { SyncResult } from "../services/SmsService";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
@@ -171,6 +174,11 @@ function AppContent() {
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
   const contentRef = useTutorialRef('app_content');
+  // Resultado de la última sincronización automática de SMS (alimenta el aviso del Dashboard)
+  const [smsAuto, setSmsAuto] = useState<SyncResult | null>(null);
+  const autoSyncRunningRef = useRef(false);
+  const showSplashRef = useRef(true);
+  showSplashRef.current = showSplash;
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
@@ -234,6 +242,54 @@ function AppContent() {
       if (granted) await NotificationService.runStartupNotifications(data);
     })().catch(e => console.warn("[startup] notificaciones:", e));
   }, [loadData]);
+
+  // ── Sincronización automática de SMS ──────────────────────
+  // maybeAutoSync ya valida Android, permiso, interruptores y el límite de 15 min (persistido).
+  const runAutoSync = useCallback(async (s: UserSettings) => {
+    if (autoSyncRunningRef.current) return;
+    autoSyncRunningRef.current = true;
+    try {
+      const r = await maybeAutoSync(s);
+      if (!r) return;
+      if (r.transactions.length || r.installments.length || r.fixedAutoMarked.length) await loadData();
+      if (hasSomethingToShow(r)) setSmsAuto(r);
+    } catch (e) {
+      console.warn("[autoSync]", e);
+    } finally {
+      autoSyncRunningRef.current = false;
+    }
+  }, [loadData]);
+
+  // Al arrancar: una vez que terminó la splash, sin bloquear la interfaz.
+  useEffect(() => {
+    if (showSplash) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const task = InteractionManager.runAfterInteractions(() => {
+      timer = setTimeout(() => {
+        if (cancelled) return;
+        StorageService.getSettings()
+          .then(st => (st.onboardingComplete ? runAutoSync(st) : undefined))
+          .catch(e => console.warn("[autoSync] arranque:", e));
+      }, 1500);
+    });
+    return () => {
+      cancelled = true;
+      task.cancel();
+      if (timer) clearTimeout(timer);
+    };
+  }, [showSplash, runAutoSync]);
+
+  // Al volver a primer plano (el límite de 15 min evita repeticiones).
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", state => {
+      if (state !== "active" || showSplashRef.current) return;
+      StorageService.getSettings()
+        .then(st => runAutoSync(st))
+        .catch(e => console.warn("[autoSync] primer plano:", e));
+    });
+    return () => sub.remove();
+  }, [runAutoSync]);
 
   // ── Handlers ──────────────────────────────────────────────
   const hRefresh = async () => {
@@ -378,6 +434,8 @@ function AppContent() {
               refreshing={refreshing}
               onNavigateBudget={() => switchTab("budget")}
               onNavigateAccounts={() => setShowAccounts(true)}
+              smsAutoResult={smsAuto}
+              onDismissSmsAuto={() => setSmsAuto(null)}
             />
           )}
           {tab === "transactions" && !showAI && (

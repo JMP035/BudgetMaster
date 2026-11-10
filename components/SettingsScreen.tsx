@@ -5,7 +5,8 @@ import {
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { Currency, CustomCategory, StorageService, UserSettings, parseAmount } from "../services/storage";
+import { Account, Currency, CustomCategory, FixedExpense, StorageService, Transaction, UserSettings, parseAmount } from "../services/storage";
+import SmsPendingSheet from "./SmsPendingSheet";
 import { ExchangeRateService, RateResult } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
 import { buildSmsSampleReport } from "../services/SmsDiagnostics";
@@ -25,10 +26,26 @@ import { InlineNotice } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
 import { useGlassDialog } from "./GlassDialogProvider";
 import { useKeyboardHeight } from "./useKeyboardHeight";
+import { useUndoLastSync } from "./useUndoLastSync";
+import { SmsService } from "../services/SmsService";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** "hace 5 min", "hace 2 horas", "hace 3 días" a partir de una fecha ISO (sin Intl). */
+function formatAgo(iso?: string): string {
+    if (!iso) return "Todavía no sincronizaste";
+    const ts = Date.parse(iso);
+    if (isNaN(ts)) return "Todavía no sincronizaste";
+    const mins = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+    if (mins < 1) return "Última sincronización: hace instantes";
+    if (mins < 60) return `Última sincronización: hace ${mins} min`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `Última sincronización: hace ${hours} ${hours === 1 ? "hora" : "horas"}`;
+    const days = Math.floor(hours / 24);
+    return `Última sincronización: hace ${days} ${days === 1 ? "día" : "días"}`;
+}
 
 /** Fecha y hora local en formato dd/mm/aaaa hh:mm (es-GT), sin depender de Intl. */
 function formatStamp(ts: number): string {
@@ -203,11 +220,32 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
     const [showRules, setShowRules] = useState(false);
     const [showInbox, setShowInbox] = useState(false);
     const [sharingSms, setSharingSms] = useState(false);
+    const [smsAutoOpt, setSmsAutoOpt] = useState(settings.smsAutoSync !== false);
+    const [lastSyncAt, setLastSyncAt] = useState<string | undefined>(undefined);
+    const [syncingFull, setSyncingFull] = useState(false);
+    const [syncNotice, setSyncNotice] = useState<string | null>(null);
     const reloadSmsCounts = React.useCallback(async () => {
-        const [rules, inbox] = await Promise.all([StorageService.getMerchantRules(), StorageService.getSmsInbox()]);
+        const [rules, inbox, syncState] = await Promise.all([
+            StorageService.getMerchantRules(),
+            StorageService.getSmsInbox(),
+            StorageService.getSmsSyncState(),
+        ]);
         setRuleCount(rules.length);
         setInboxCount(inbox.length);
+        setLastSyncAt(syncState.lastSyncAt);
     }, []);
+    const undo = useUndoLastSync(() => { void reloadSmsCounts(); });
+    const [pendingData, setPendingData] = useState<{ accounts: Account[]; transactions: Transaction[]; fixedExpenses: FixedExpense[] } | null>(null);
+    const [showPending, setShowPending] = useState(false);
+    const openPending = async () => {
+        try {
+            const [accounts, transactions, fixedExpenses] = await Promise.all([
+                StorageService.getAccounts(), StorageService.getTransactions(), StorageService.getFixedExpenses(),
+            ]);
+            setPendingData({ accounts, transactions, fixedExpenses });
+            setShowPending(true);
+        } catch (e) { console.warn("[Settings] pendientes:", e); }
+    };
     useEffect(() => {
         if (smsOpt) void reloadSmsCounts();
     }, [smsOpt, reloadSmsCounts]);
@@ -327,6 +365,47 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
         } catch (e) {
             console.warn("[Settings] sms:", e);
             setSmsOpt(!v);
+        }
+    };
+
+    /** "Sincronizar al abrir la app": se guarda al instante, igual que el interruptor de SMS. */
+    const toggleSmsAuto = async (v: boolean) => {
+        setSmsAutoOpt(v);
+        try {
+            const fresh = await StorageService.getSettings();
+            const upd: UserSettings = { ...fresh, smsAutoSync: v };
+            await StorageService.saveSettings(upd);
+            onSave(upd);
+        } catch (e) {
+            console.warn("[Settings] smsAutoSync:", e);
+            setSmsAutoOpt(!v);
+        }
+    };
+
+    /** Relee 3 meses. Ajustes nunca pide permisos: si falta, se indica sincronizar desde Inicio. */
+    const handleSyncFull = async () => {
+        if (syncingFull) return;
+        setSyncNotice(null);
+        setSyncingFull(true);
+        try {
+            if (!(await SmsService.hasReadSmsPermission())) {
+                setSyncNotice("Primero sincronizá desde Inicio para dar el permiso.");
+                return;
+            }
+            const r = await SmsService.syncBankSms({ mode: "full" });
+            const imported = r.transactions.length + r.installments.length;
+            await dialog.alert({
+                variant: "success",
+                title: "Sincronización completa",
+                message: `Importados: ${imported}. Ya registrados: ${r.totalSkipped}. Sin clasificar: ${r.inbox.length}.`,
+            });
+            await reloadSmsCounts();
+            await undo.reload();
+        } catch (e) {
+            console.warn("[Settings] sync full:", e);
+            await dialog.alert({ variant: "error", title: "No se pudo sincronizar", message: "Intentá de nuevo." });
+        } finally {
+            setSyncingFull(false);
         }
     };
 
@@ -511,7 +590,38 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                         <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
                     </View>
                     {smsOpt && (
+                        <View style={[s.switchRow, { marginTop: 16 }]}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={s.switchLabel}>Sincronizar al abrir la app</Text>
+                                <Text style={s.hint}>Solo lee los mensajes nuevos. Nunca pide permisos por su cuenta.</Text>
+                            </View>
+                            <Switch value={smsAutoOpt} onValueChange={toggleSmsAuto} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
+                        </View>
+                    )}
+                    {smsOpt && <Text style={[s.hint, { marginTop: 12 }]}>{formatAgo(lastSyncAt)}</Text>}
+                    {smsOpt && (
                         <View style={s.smsTools}>
+                            <GlassButton
+                                kind="secondary"
+                                icon="sync-outline"
+                                label="Sincronizar todo (3 meses)"
+                                loading={syncingFull}
+                                onPress={() => { void handleSyncFull(); }}
+                            />
+                            {!!syncNotice && <InlineNotice variant="info" text={syncNotice} />}
+                            <GlassButton
+                                kind="secondary"
+                                icon="albums-outline"
+                                label="Revisar pendientes"
+                                onPress={() => { void openPending(); }}
+                            />
+                            <GlassButton
+                                kind="destructive"
+                                icon="arrow-undo-outline"
+                                label="Deshacer última sincronización"
+                                disabled={!undo.canUndo}
+                                onPress={() => { void undo.requestUndo(); }}
+                            />
                             <GlassButton
                                 kind="secondary"
                                 icon="school-outline"
@@ -793,6 +903,18 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                 onClose={() => setShowInbox(false)}
                 onChanged={() => { void reloadSmsCounts(); }}
             />
+            {pendingData && (
+                <SmsPendingSheet
+                    visible={showPending}
+                    result={null}
+                    settings={settings}
+                    accounts={pendingData.accounts}
+                    transactions={pendingData.transactions}
+                    fixedExpenses={pendingData.fixedExpenses}
+                    onClose={() => setShowPending(false)}
+                    onChanged={() => { void reloadSmsCounts(); void undo.reload(); }}
+                />
+            )}
         </KeyboardAvoidingView>
     );
 }

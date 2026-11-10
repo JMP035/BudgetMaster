@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList, KeyboardAvoidingView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
 import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds } from "../services/MerchantRules";
+import { linkKeyLabel } from "../services/AccountLinking";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
 import { C } from "../theme";
 import { isSmsFeatureOn } from "../services/features";
@@ -34,6 +35,7 @@ interface DetailModalProps {
     settings: UserSettings;
     smsOn: boolean;
     transactions: Transaction[];
+    accounts: Account[];
     onClose: () => void;
     onSave: (updated: Transaction) => void;
     onDelete: (id: string) => void;
@@ -41,7 +43,7 @@ interface DetailModalProps {
     onConvertToInstallment: () => void;
 }
 
-function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDelete, onReplaceAll, onConvertToInstallment }: DetailModalProps) {
+function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onSave, onDelete, onReplaceAll, onConvertToInstallment }: DetailModalProps) {
     const dialog = useGlassDialog();
     const { width } = useWindowDimensions();
     const cols = width >= 360 ? 4 : 3;
@@ -52,6 +54,26 @@ function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDel
     const [saving, setSaving] = useState(false);
     const [remember, setRemember] = useState(true);
     const [applyPast, setApplyPast] = useState(true);
+    const [accountId, setAccountId] = useState<string | null>(tx.accountId ?? null);
+    const [fixedName, setFixedName] = useState<string | null>(null);
+
+    // Cuenta: solo se ofrece con SMS activo o si el movimiento ya tiene cuenta
+    const showAccount = smsOn || !!tx.accountId;
+    const accountChoices = accounts.filter(a => a.isActive || a.id === tx.accountId);
+    const accountChanged = accountId !== (tx.accountId ?? null);
+    const hintLabel = smsOn && tx.smsAccountHint ? linkKeyLabel(tx.smsAccountHint) : null;
+
+    // Nombre del gasto fijo que pagó este movimiento (si lo hay)
+    useEffect(() => {
+        if (!smsOn || !tx.fixedExpenseId) return;
+        let alive = true;
+        StorageService.getFixedExpenses()
+            .then(list => {
+                if (alive) setFixedName(list.find(e => e.id === tx.fixedExpenseId)?.name ?? null);
+            })
+            .catch(() => { });
+        return () => { alive = false; };
+    }, [smsOn, tx.fixedExpenseId]);
 
     const merchant = merchantOfTransaction(tx);
     const learnable = tx.source === 'sms' && tx.type === 'expense' && merchantKey(merchant) !== null;
@@ -80,18 +102,63 @@ function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDel
                 ...tx, category, currency, description,
                 ...(catChanged ? { categoryEditedAt: new Date().toISOString() } : {}),
             };
+            let latest: Transaction[] | null = null;
             if (catChanged && learnable && (remember || applyPast)) {
                 const r = await StorageService.saveTransactionWithLearning(updated, {
                     remember,
                     applyToPast: applyPast && pastCount > 0,
                 });
-                onReplaceAll(r.transactions);
-                onClose();
+                latest = r.transactions;
             } else {
                 await StorageService.updateTransaction(updated);
-                onSave(updated);
-                onClose();
             }
+
+            // Cuenta (solo organiza: no toca saldos)
+            if (showAccount && accountChanged) {
+                const res = await StorageService.setTransactionAccount(tx.id, accountId);
+                latest = res.transactions;
+                if (accountId && res.suggestRule) {
+                    const target = accounts.find(a => a.id === accountId);
+                    const ok = await dialog.confirm({
+                        title: "Recordar esta cuenta",
+                        message: `¿Los próximos SMS de ${linkKeyLabel(res.suggestRule)} van a ${target?.name ?? "esta cuenta"}?`,
+                        confirmLabel: "Sí, recordar",
+                        cancelLabel: "No",
+                        destructive: false,
+                        variant: "info",
+                    });
+                    if (ok) {
+                        const g = await StorageService.assignUnassignedGroup(res.suggestRule, accountId, true);
+                        if (g.ok) latest = g.transactions;
+                    }
+                }
+            }
+
+            if (latest) onReplaceAll(latest);
+            else onSave(updated);
+            onClose();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleSplitMerged = async () => {
+        setSaving(true);
+        try {
+            const next = await StorageService.splitDuplicate(tx.id);
+            onReplaceAll(next);
+            onClose();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUnlinkPair = async () => {
+        setSaving(true);
+        try {
+            const next = await StorageService.unlinkTransferPair(tx.id);
+            onReplaceAll(next);
+            onClose();
         } finally {
             setSaving(false);
         }
@@ -186,6 +253,54 @@ function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDel
                 </Text>
             </View>
 
+            {/* ESTADO SMS: transferencia propia, gasto fijo pagado, unión con manual */}
+            {smsOn && (!!tx.transferPairId || (!!tx.fixedExpenseId && !!fixedName) || !!tx.mergedFrom) && (
+                <View style={m.statusWrap}>
+                    {!!tx.transferPairId && (
+                        <View style={m.statusChip}>
+                            <Ionicons name="swap-horizontal-outline" size={14} color={C.primaryLight} />
+                            <Text style={m.statusChipTxt} numberOfLines={2}>Transferencia entre tus cuentas</Text>
+                        </View>
+                    )}
+                    {!!tx.fixedExpenseId && !!fixedName && (
+                        <View style={m.statusChip}>
+                            <Ionicons name="calendar-outline" size={14} color={C.primaryLight} />
+                            <Text style={m.statusChipTxt} numberOfLines={2}>Pagó: {fixedName}</Text>
+                        </View>
+                    )}
+                    {!!tx.mergedFrom && (
+                        <View style={m.statusChip}>
+                            <Ionicons name="git-merge-outline" size={14} color={C.primaryLight} />
+                            <Text style={m.statusChipTxt} numberOfLines={2}>Unido con un registro manual</Text>
+                        </View>
+                    )}
+                </View>
+            )}
+            {smsOn && (!!tx.transferPairId || !!tx.mergedFrom) && (
+                <View style={m.smsActions}>
+                    {!!tx.mergedFrom && (
+                        <GlassButton
+                            kind="ghost"
+                            icon="git-branch-outline"
+                            label="Separar movimientos"
+                            onPress={handleSplitMerged}
+                            disabled={saving}
+                            style={m.smsActionBtn}
+                        />
+                    )}
+                    {!!tx.transferPairId && (
+                        <GlassButton
+                            kind="ghost"
+                            icon="unlink-outline"
+                            label="Separar"
+                            onPress={handleUnlinkPair}
+                            disabled={saving}
+                            style={m.smsActionBtn}
+                        />
+                    )}
+                </View>
+            )}
+
             {/* CATEGORÍA EDITABLE */}
             <View style={m.section}>
                 <Text style={m.sectionLabel}>CATEGORÍA</Text>
@@ -258,6 +373,43 @@ function DetailModal({ tx, settings, smsOn, transactions, onClose, onSave, onDel
                 <GlassSegmented options={currencyOptions} value={currency} onChange={setCurrency} />
             </View>
 
+            {/* CUENTA */}
+            {showAccount && (
+                <View style={m.section}>
+                    <Text style={m.sectionLabel}>CUENTA</Text>
+                    <View style={m.accWrap}>
+                        <TouchableOpacity
+                            style={[m.accChip, accountId === null && m.accChipActive]}
+                            onPress={() => setAccountId(null)}
+                            accessibilityRole="button"
+                            accessibilityLabel="Sin cuenta"
+                            accessibilityState={{ selected: accountId === null }}
+                        >
+                            <Text style={[m.accChipTxt, accountId === null && { color: C.textPrimary }]} numberOfLines={1}>Sin cuenta</Text>
+                        </TouchableOpacity>
+                        {accountChoices.map(a => (
+                            <TouchableOpacity
+                                key={a.id}
+                                style={[m.accChip, accountId === a.id && m.accChipActive]}
+                                onPress={() => setAccountId(a.id)}
+                                accessibilityRole="button"
+                                accessibilityLabel={a.name}
+                                accessibilityState={{ selected: accountId === a.id }}
+                            >
+                                <View style={[m.accDot, { backgroundColor: a.color }]} />
+                                <Text style={[m.accChipTxt, accountId === a.id && { color: C.textPrimary }]} numberOfLines={1}>{a.name}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                    {!!hintLabel && accountId === null && (
+                        <Text style={m.hint}>El mensaje trae: {hintLabel}</Text>
+                    )}
+                    <Text style={m.hint}>
+                        Los movimientos no cambian el saldo de la cuenta: por ahora la cuenta solo organiza tus movimientos.
+                    </Text>
+                </View>
+            )}
+
             {/* SMS ORIGINAL */}
             {smsOn && tx.originalSMS && (
                 <View style={m.section}>
@@ -321,9 +473,13 @@ interface TxCardProps {
     smsOn: boolean;
     onDelete: (id: string) => void;
     onPress: (tx: Transaction) => void;
+    /** Nombre de la cuenta asignada (ya filtrado: undefined = no mostrar). */
+    accountName?: string;
 }
 
-export function TxCard({ tx, settings, smsOn, onDelete, onPress }: TxCardProps) {
+const shortAccountName = (name: string) => (name.length > 14 ? `${name.slice(0, 13).trim()}…` : name);
+
+export function TxCard({ tx, settings, smsOn, onDelete, onPress, accountName }: TxCardProps) {
     const dialog = useGlassDialog();
     const cat = getCat(tx.category, settings.customCategories, tx.type);
     const isIncome = tx.type === "income";
@@ -349,6 +505,11 @@ export function TxCard({ tx, settings, smsOn, onDelete, onPress }: TxCardProps) 
                         {tx.bank && (
                             <View style={s.bankBadge}>
                                 <Text style={s.bankTxt}>{tx.bank.toUpperCase()}</Text>
+                            </View>
+                        )}
+                        {!!accountName && (
+                            <View style={s.accBadge}>
+                                <Text style={s.accBadgeTxt} numberOfLines={1}>{shortAccountName(accountName)}</Text>
                             </View>
                         )}
                         {smsOn && tx.source === "sms" && (
@@ -455,7 +616,17 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
     }, [hasUSD, hasEUR]);
 
     // Renderizador memoizado para FlatList (evita re-renders innecesarios)
+    const accountNames = useMemo(() => {
+        const map = new Map<string, string>();
+        for (const a of accounts) map.set(a.id, a.name);
+        return map;
+    }, [accounts]);
+
     const renderItem = useCallback(({ item, index }: { item: Transaction; index: number }) => {
+        // La cuenta se muestra con SMS activo o si la eligió el usuario a mano
+        const accountName = item.accountId && (smsOn || item.accountSource === 'user')
+            ? accountNames.get(item.accountId)
+            : undefined;
         const card = (
             <TxCard
                 tx={item}
@@ -463,12 +634,13 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                 smsOn={smsOn}
                 onDelete={onDelete}
                 onPress={setSelected}
+                accountName={accountName}
             />
         );
         return index === 0
             ? <View ref={firstRef} collapsable={false}>{card}</View>
             : card;
-    }, [settings, smsOn, onDelete, firstRef]);
+    }, [settings, smsOn, onDelete, firstRef, accountNames]);
 
     const keyExtractor = useCallback((item: Transaction) => item.id, []);
 
@@ -558,6 +730,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     settings={settings}
                     smsOn={smsOn}
                     transactions={transactions}
+                    accounts={accounts}
                     onClose={() => setSelected(null)}
                     onSave={(updated) => { onUpdate(updated); setSelected(null); }}
                     onDelete={(id) => { onDelete(id); setSelected(null); }}
@@ -599,6 +772,8 @@ const s = StyleSheet.create({
     delBtn: { backgroundColor: C.danger + "22", padding: 6, borderRadius: 8, borderWidth: 1, borderColor: C.danger + "44" },
     bankBadge: { backgroundColor: C.primary + "33", paddingHorizontal: 6, borderRadius: 4, borderWidth: 1, borderColor: C.primary + "55" },
     bankTxt: { color: C.primaryLight, fontSize: 8, fontWeight: "900" },
+    accBadge: { maxWidth: 110, backgroundColor: C.glassActive, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, borderWidth: 1, borderColor: C.glassActiveBorder },
+    accBadgeTxt: { color: C.textPrimary, fontSize: 9, fontWeight: "800" },
     smsBadge: { backgroundColor: C.accent + "22", borderRadius: 4, paddingHorizontal: 4, paddingVertical: 2, borderWidth: 1, borderColor: C.accent + "55" },
     smsBadgeTxt: { color: C.accent, fontSize: 9, fontWeight: "800" },
     currencyBadge: { paddingHorizontal: 6, borderRadius: 4, paddingVertical: 2, borderWidth: 1 },
@@ -630,6 +805,14 @@ const m = StyleSheet.create({
     smsActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
     smsActionBtn: { flexGrow: 1, flexShrink: 1 },
     hint: { color: C.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
+    statusWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
+    statusChip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+    statusChipTxt: { color: C.textPrimary, fontSize: 12, fontWeight: "700", flexShrink: 1 },
+    accWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+    accChip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    accChipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+    accChipTxt: { color: C.textSub, fontSize: 12, fontWeight: "700", flexShrink: 1 },
+    accDot: { width: 10, height: 10, borderRadius: 5 },
     learnBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
     switchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     switchLabel: { color: C.text, fontSize: 13, fontWeight: "700" },

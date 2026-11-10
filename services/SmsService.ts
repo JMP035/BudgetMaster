@@ -8,6 +8,14 @@ import {
 } from './BankSmsParser';
 import type { ParsedSmsResult, SmsImportPlan, SmsImportStats, SmsKind, SmsReviewItem } from './BankSmsParser';
 import type { CreditInstallment, SmsInboxItem, Transaction } from './storage';
+import type { FixedMatch } from './FixedExpenseMatcher';
+import type { DupPair } from './DuplicateDetector';
+import type { TransferPair } from './TransferPairs';
+import type { SmsBatchRecord } from './storage';
+import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, matchAccountForSms } from './AccountLinking';
+import { matchFixedExpenses } from './FixedExpenseMatcher';
+import { findManualSmsDuplicates } from './DuplicateDetector';
+import { findTransferPairs } from './TransferPairs';
 
 // El motor de parseo vive en BankSmsParser (puro, probado con `npm run test:sms`).
 // Aquí solo queda lo que toca APIs de Android: permisos y lectura de la bandeja.
@@ -36,7 +44,23 @@ export interface SyncResult {
   diagnostics: SmsImportPlan['diagnostics'];
   /** Buzón persistido de SMS que el motor no entendió (sin ignorados ni registrados). */
   inbox: SmsInboxItem[];
+  /** Id del lote registrado para "Deshacer" (null si no se importó ni marcó nada). */
+  batchId: string | null;
+  /** Modo con que se corrió: 'auto' (al abrir), 'manual' (botón) o 'full' (3 meses completos). */
+  mode: SmsSyncMode;
+  /** Gastos fijos marcados como pagados automáticamente en esta sincronización. */
+  fixedAutoMarked: FixedMatch[];
+  /** Posibles pagos de gastos fijos que el usuario debe confirmar. */
+  fixedProposals: FixedMatch[];
+  /** Posibles duplicados manual/SMS pendientes de decidir. */
+  duplicates: DupPair[];
+  /** Movimientos SMS con pista de cuenta (smsAccountHint) pero sin cuenta asignada. */
+  unassignedCount: number;
+  /** Pares "transferencia enviada + recibida" probables que el usuario debe confirmar (los `auto` ya se vincularon). */
+  transferPairs: TransferPair[];
 }
+
+export type SmsSyncMode = 'auto' | 'manual' | 'full';
 
 export type SmsPermissionStatus = 'granted' | 'denied' | 'never_ask_again' | 'unavailable';
 
@@ -48,10 +72,11 @@ export interface SmsPermissionDetail {
   manufacturer: string;
 }
 
-function emptySyncResult(): SyncResult {
+function emptySyncResult(mode: SmsSyncMode = 'manual'): SyncResult {
   return {
     transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
     stats: emptySmsStats(), reviewItems: [], diagnostics: [], inbox: [],
+    batchId: null, mode, fixedAutoMarked: [], fixedProposals: [], duplicates: [], unassignedCount: 0, transferPairs: [],
   };
 }
 
@@ -97,77 +122,33 @@ export const SmsService = {
     return (await this.requestReadSmsPermissionDetailed()).status;
   },
 
-  async syncBankSms(): Promise<SyncResult> {
-    if (Platform.OS !== 'android') return emptySyncResult();
+  /**
+   * Solo VERIFICA el permiso de lectura de SMS (PermissionsAndroid.check). NUNCA lo pide.
+   * Seguro en cualquier plataforma: devuelve false fuera de Android o ante cualquier error.
+   */
+  async hasReadSmsPermission(): Promise<boolean> {
+    if (Platform.OS !== 'android') return false;
+    try {
+      return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+    } catch {
+      return false;
+    }
+  },
 
-    if (!this.isSmsModuleAvailable()) throw new Error('SMS_MODULE_UNAVAILABLE');
-    const hasPerm = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
-    if (!hasPerm) throw new Error('SMS_PERMISSION_DENIED');
-
-    const now = new Date();
-    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
-    const filter = { box: 'inbox', minDate: threeMonthsAgo, indexFrom: 0, maxCount: 5000 };
-
-    return new Promise<SyncResult>((resolve, reject) => {
-      SmsAndroid.list(
-        JSON.stringify(filter),
-        (fail: string) => { console.error('SMS list failed:', fail); reject(new Error(fail)); },
-        async (_count: number, smsList: string) => {
-          try {
-            let parsedList: Array<{ body?: string; date?: number | string; address?: string }> = [];
-            try { parsedList = JSON.parse(smsList); } catch {
-              resolve(emptyResultWithRead(0));
-              return;
-            }
-            const messages = (Array.isArray(parsedList) ? parsedList : [])
-              .filter(m => typeof m?.body === 'string' && Number(m.date) >= threeMonthsAgo)
-              .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
-
-            const [txs, insts, dismissed, kept, accounts, rules] = await Promise.all([
-              StorageService.getTransactions(),
-              StorageService.getCreditInstallments(),
-              StorageService.getDismissedSms(),
-              StorageService.getSmsReviewKept(),
-              StorageService.getAccounts(),
-              StorageService.getMerchantRules(),
-            ]);
-
-            const index = buildExistingSmsIndex(txs, insts, dismissed);
-            const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, existingTxs: txs });
-
-            const after = await StorageService.importSmsBatch(plan.transactions, plan.installments);
-            const inbox = await StorageService.replaceSmsInbox(
-              plan.unrecognized.filter(i => !index.fingerprints.has(i.fingerprint) && !index.dismissed.has(i.fingerprint)),
-            );
-            const reviewItems = reviewImportedSms(after.transactions, new Set(kept), { merchantRules: rules });
-
-            const s = plan.stats;
-            console.log(
-              `SMS Sync: leidos=${s.totalRead}, bancarios=${s.bankCandidates}, importados=${s.imported}, cuotas=${s.installments}, ` +
-              `duplicados=${s.duplicates}, descartados=${s.dismissedByUser}, promos=${s.promos}, otp=${s.otp}, ` +
-              `rechazados=${s.declined}, info=${s.info}, avisos=${s.notices}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
-              `no_reconocidos=${s.unparsed}, buzon=${inbox.length}, revision=${reviewItems.length}`
-            );
-
-            resolve({
-              transactions: plan.transactions,
-              installments: plan.installments,
-              totalRead: s.totalRead,
-              totalMatched: s.bankCandidates,
-              totalSkipped: s.duplicates + s.dismissedByUser,
-              totalIgnored: s.bankCandidates - s.imported - s.installments - s.duplicates - s.dismissedByUser,
-              stats: s,
-              reviewItems,
-              diagnostics: plan.diagnostics,
-              inbox,
-            });
-          } catch (e) {
-            console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
-            reject(e instanceof Error ? e : new Error('SMS_SYNC_FAILED'));
-          }
-        }
-      );
+  /**
+   * Sincroniza los SMS bancarios. Hay un único candado de módulo: si ya corre una
+   * sincronización (botón o automática) se devuelve la MISMA promesa.
+   * 'full' relee 3 meses (5000 SMS); 'manual' y 'auto' son incrementales (1000 SMS).
+   */
+  syncBankSms(opts?: { mode?: SmsSyncMode }): Promise<SyncResult> {
+    const mode: SmsSyncMode = opts?.mode ?? 'manual';
+    if (Platform.OS !== 'android') return Promise.resolve(emptySyncResult(mode));
+    if (syncInFlight) return syncInFlight;
+    const run: Promise<SyncResult> = runSmsSync(mode).finally(() => {
+      if (syncInFlight === run) syncInFlight = null;
     });
+    syncInFlight = run;
+    return run;
   },
 
   /**
@@ -190,8 +171,228 @@ export const SmsService = {
   },
 };
 
-function emptyResultWithRead(totalRead: number): SyncResult {
-  const r = emptySyncResult();
+// ─────────────────────────────────────────────────────────────
+// SINCRONIZACIÓN (privado del módulo)
+// ─────────────────────────────────────────────────────────────
+let syncInFlight: Promise<SyncResult> | null = null;
+
+const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000;
+
+function listSms(filter: object): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    SmsAndroid.list(
+      JSON.stringify(filter),
+      (fail: string) => { console.error('SMS list failed:', fail); reject(new Error(fail)); },
+      (_count: number, smsList: string) => resolve(smsList),
+    );
+  });
+}
+
+/** Tarjeta de crédito para una visacuota sin tarjeta asignada (solo si la señal es inequívoca). */
+function creditAccountForInstallment(inst: CreditInstallment, accounts: Account[]): string {
+  if (inst.accountId || !inst.originalSMS) return inst.accountId;
+  const credit = accounts.filter(a => a.type === 'credit');
+  if (credit.length === 0) return inst.accountId;
+  const m = matchAccountForSms(extractSmsLinkSignals(inst.originalSMS), credit);
+  return m.accountId ?? inst.accountId;
+}
+
+async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
+  if (Platform.OS !== 'android') return emptySyncResult(mode);
+
+  if (!SmsService.isSmsModuleAvailable()) throw new Error('SMS_MODULE_UNAVAILABLE');
+  const hasPerm = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.READ_SMS);
+  if (!hasPerm) throw new Error('SMS_PERMISSION_DENIED');
+
+  try {
+    const full = mode === 'full';
+    const startedAt = new Date().toISOString();
+    const now = new Date();
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1).getTime();
+
+    const syncState = await StorageService.getSmsSyncState();
+    const lastSyncMs = syncState.lastSyncAt ? Date.parse(syncState.lastSyncAt) : NaN;
+    const minDate = full || isNaN(lastSyncMs)
+      ? threeMonthsAgo
+      : Math.max(threeMonthsAgo, lastSyncMs - TWO_DAYS_MS);
+    const filter = { box: 'inbox', minDate, indexFrom: 0, maxCount: full ? 5000 : 1000 };
+
+    const smsList = await listSms(filter);
+    let parsedList: Array<{ body?: string; date?: number | string; address?: string }> = [];
+    try { parsedList = JSON.parse(smsList); } catch { return emptyResultWithRead(0, mode); }
+    const messages = (Array.isArray(parsedList) ? parsedList : [])
+      .filter(m => typeof m?.body === 'string' && Number(m.date) >= minDate)
+      .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
+
+    const [txs, insts, dismissed, kept, accounts, rules, fixedBefore, dupIgnoredList, linkSeenPrev] = await Promise.all([
+      StorageService.getTransactions(),
+      StorageService.getCreditInstallments(),
+      StorageService.getDismissedSms(),
+      StorageService.getSmsReviewKept(),
+      StorageService.getAccounts(),
+      StorageService.getMerchantRules(),
+      StorageService.getFixedExpenses(),
+      StorageService.getDupIgnored(),
+      StorageService.getSmsLinkSeen(),
+    ]);
+
+    const index = buildExistingSmsIndex(txs, insts, dismissed);
+    const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, existingTxs: txs });
+
+    // (a) Cuenta de cada movimiento nuevo (por vínculos SMS) y tarjeta de las visacuotas ambiguas.
+    const newTxs = assignAccountsToTransactions(plan.transactions, accounts).txs;
+    const newInsts = plan.installments.map(i => {
+      const accountId = creditAccountForInstallment(i, accounts);
+      return accountId === i.accountId ? i : { ...i, accountId };
+    });
+
+    // (b) Importación en lote.
+    const after = await StorageService.importSmsBatch(newTxs, newInsts);
+
+    // (c) Buzón: la completa reemplaza; el resto fusiona (no pierde lo no revisado).
+    const inboxCandidates = plan.unrecognized.filter(
+      i => !index.fingerprints.has(i.fingerprint) && !index.dismissed.has(i.fingerprint),
+    );
+    const inbox = full
+      ? await StorageService.replaceSmsInbox(inboxCandidates)
+      : await StorageService.mergeSmsInbox(inboxCandidates);
+
+    const newIds = new Set(newTxs.map(t => t.id));
+    let allTxs = after.transactions;
+    let mutated = false;
+
+    // (d) Gastos fijos: los `auto` se marcan ya (guardando el estado previo para Deshacer); el resto se propone.
+    const fixedMarks: SmsBatchRecord['fixedMarks'] = [];
+    const fixedAutoMarked: FixedMatch[] = [];
+    let fixedProposals: FixedMatch[] = [];
+    try {
+      const matches = matchFixedExpenses(newTxs, fixedBefore, allTxs, now);
+      fixedProposals = matches.filter(m => !m.auto);
+      for (const m of matches.filter(x => x.auto)) {
+        const fe = fixedBefore.find(e => e.id === m.expenseId);
+        if (!fe) continue;
+        fixedMarks.push({
+          expenseId: fe.id,
+          prev: { isPaid: fe.isPaid, paidDate: fe.paidDate, paidTxId: fe.paidTxId, paidBy: fe.paidBy },
+        });
+        await StorageService.markFixedPaidBySms(m.expenseId, m.txId);
+        fixedAutoMarked.push(m);
+        mutated = true;
+      }
+    } catch (e) {
+      console.warn('SMS sync (gastos fijos) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
+    // (e) Duplicados manual/SMS entre los movimientos nuevos y los manuales existentes.
+    let duplicates: DupPair[] = [];
+    try {
+      duplicates = findManualSmsDuplicates(allTxs, new Set(dupIgnoredList), { onlySmsIds: newIds });
+    } catch (e) {
+      console.warn('SMS sync (duplicados) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
+    // (e2) Pares de transferencia entre cuentas propias: los `auto` se vinculan, el resto se propone.
+    let transferPairs: TransferPair[] = [];
+    try {
+      const pairs = findTransferPairs(allTxs, new Set(dupIgnoredList), { onlyIds: newIds, accounts });
+      transferPairs = pairs.filter(p => !p.auto);
+      for (const p of pairs.filter(x => x.auto)) {
+        await StorageService.linkTransferPair(p.outId, p.inId);
+        mutated = true;
+      }
+    } catch (e) {
+      console.warn('SMS sync (transferencias) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
+    if (mutated) allTxs = await StorageService.getTransactions();
+
+    // (f) Lote para "Deshacer".
+    let batchId: string | null = null;
+    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0) {
+      batchId = `smsb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      await StorageService.recordSmsBatch({
+        id: batchId,
+        at: startedAt,
+        mode,
+        txIds: newTxs.map(t => t.id),
+        installmentIds: newInsts.map(i => i.id),
+        fixedMarks,
+      });
+    }
+
+    // (h) Inventario de terminaciones vistas (solo claves y conteos; usa los textos bancarios nuevos).
+    try {
+      const bodies = [
+        ...newTxs.map(t => t.originalSMS ?? ''),
+        ...newInsts.map(i => i.originalSMS ?? ''),
+        ...inboxCandidates.map(i => i.body),
+      ].filter(b => b.length > 0);
+      const seen = collectLinkSeen(bodies, linkSeenPrev, startedAt);
+      if (seen !== linkSeenPrev) await StorageService.saveSmsLinkSeen(seen);
+    } catch (e) {
+      console.warn('SMS sync (terminaciones) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
+    // (i) Movimientos sin cuenta pero con pista (solo si el usuario ya tiene cuentas con banco).
+    const unassignedCount = accounts.some(a => !!a.bankName)
+      ? allTxs.filter(t => t.source === 'sms' && !t.accountId && !!t.smsAccountHint).length
+      : 0;
+
+    const reviewItems = reviewImportedSms(allTxs, new Set(kept), { merchantRules: rules });
+
+    // (g) Solo si todo terminó bien.
+    await StorageService.saveSmsSyncState({ lastSyncAt: startedAt, ...(full ? { lastFullSyncAt: startedAt } : {}) });
+
+    const s = plan.stats;
+    console.log(
+      `SMS Sync[${mode}]: leidos=${s.totalRead}, bancarios=${s.bankCandidates}, importados=${s.imported}, cuotas=${s.installments}, ` +
+      `duplicados=${s.duplicates}, descartados=${s.dismissedByUser}, promos=${s.promos}, otp=${s.otp}, ` +
+      `rechazados=${s.declined}, info=${s.info}, avisos=${s.notices}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
+      `no_reconocidos=${s.unparsed}, buzon=${inbox.length}, revision=${reviewItems.length}, ` +
+      `fijos_auto=${fixedAutoMarked.length}, fijos_prop=${fixedProposals.length}, dup=${duplicates.length}, ` +
+      `transf=${transferPairs.length}, sin_cuenta=${unassignedCount}`
+    );
+
+    return {
+      transactions: newTxs,
+      installments: newInsts,
+      totalRead: s.totalRead,
+      totalMatched: s.bankCandidates,
+      totalSkipped: s.duplicates + s.dismissedByUser,
+      totalIgnored: s.bankCandidates - s.imported - s.installments - s.duplicates - s.dismissedByUser,
+      stats: s,
+      reviewItems,
+      diagnostics: plan.diagnostics,
+      inbox,
+      batchId,
+      mode,
+      fixedAutoMarked,
+      fixedProposals,
+      duplicates,
+      unassignedCount,
+      transferPairs,
+    };
+  } catch (e) {
+    console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
+    throw e instanceof Error ? e : new Error('SMS_SYNC_FAILED');
+  }
+}
+
+/** ¿Hay algo que mostrarle al usuario tras la sincronización? (puro; sirve para el aviso del Dashboard) */
+export function hasSomethingToShow(r: SyncResult): boolean {
+  return r.transactions.length > 0
+    || r.installments.length > 0
+    || r.fixedAutoMarked.length > 0
+    || r.fixedProposals.length > 0
+    || r.duplicates.length > 0
+    || r.transferPairs.length > 0
+    || r.unassignedCount > 0
+    || r.inbox.length > 0
+    || r.reviewItems.length > 0;
+}
+
+function emptyResultWithRead(totalRead: number, mode: SmsSyncMode = 'manual'): SyncResult {
+  const r = emptySyncResult(mode);
   r.totalRead = totalRead;
   r.stats.totalRead = totalRead;
   return r;
