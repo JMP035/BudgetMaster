@@ -93,6 +93,18 @@ export function dueDistanceDays(dayOfMonth: number, stored: string): number | nu
   return nearestOccurrence(dayOfMonth, stored)?.distance ?? null;
 }
 
+/**
+ * Fecha por defecto al marcar pagado a mano: el día de cobro (recortado al largo del mes) del mes de
+ * `now` si ya pasó o es hoy; si todavía no llega, hoy. Siempre a las 12:00 locales (sin desfase de zona).
+ */
+export function defaultPaidDate(dayOfMonth: number, now: Date): Date {
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const due = effectiveDay(dayOfMonth, y, m);
+  const day = due <= now.getDate() ? due : now.getDate();
+  return new Date(y, m, day, 12, 0, 0, 0);
+}
+
 /** Id del movimiento manual de "marcar pagado". */
 export function feTxId(expenseId: string, key: string): string {
   return `${FE_TX_PREFIX}${expenseId}_${key}`;

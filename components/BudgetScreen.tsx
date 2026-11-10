@@ -15,14 +15,14 @@ import {
 import { isSmsFeatureOn } from "../services/features";
 import { merchantOfTransaction } from "../services/MerchantRules";
 import { matchFixedExpenses } from "../services/FixedExpenseMatcher";
-import { feTxId, monthKey } from "../services/FixedCycle";
+import { defaultPaidDate, feTxId, monthKey, occurrenceKeyFor } from "../services/FixedCycle";
 import { getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
 import { useTutorialAction, useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { NotificationService } from "../services/NotificationService";
 import { GlassBackground, GlassCard } from "./GlassCard";
-import { GlassButton } from "./GlassButton";
+import { GlassButton, GlassButtonGroup } from "./GlassButton";
 import { GlassSheet } from "./GlassSheet";
 import FixedExpenseModal from "./FixedExpenseModal";
 import { useGlassDialog } from "./GlassDialogProvider";
@@ -295,6 +295,85 @@ function SavingsGoalModal({ onSave, onClose, existing, defaultCurrency }: {
 }
 
 // ─────────────────────────────────────────────────────────────
+// HOJA "¿CUÁNDO SE PAGÓ?" (marcar un gasto fijo como pagado a mano)
+// ─────────────────────────────────────────────────────────────
+function PaidDateSheet({ expenseName, initial, onConfirm, onCancel }: {
+    expenseName: string;
+    initial: Date;
+    onConfirm: (picked: Date) => void;
+    onCancel: () => void;
+}) {
+    const [picked, setPicked] = useState(initial);
+    const [showPicker, setShowPicker] = useState(false);
+    // Sin fechas futuras: el tope es el final de hoy.
+    const maxDate = new Date();
+    maxDate.setHours(23, 59, 59, 999);
+    const dateLabel = picked.toLocaleDateString("es-GT", { weekday: "short", day: "2-digit", month: "long", year: "numeric" });
+    const toNoon = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
+
+    return (
+        <GlassSheet
+            onClose={onCancel}
+            title="¿Cuándo se pagó?"
+            icon="calendar-outline"
+            footer={
+                <View style={md.footer}>
+                    <GlassButtonGroup>
+                        <GlassButton label="Confirmar" icon="checkmark" onPress={() => onConfirm(picked)} />
+                        <GlassButton label="Cancelar" kind="secondary" onPress={onCancel} />
+                    </GlassButtonGroup>
+                </View>
+            }
+        >
+            <Text style={md.paidSubtitle}>{expenseName}</Text>
+            <Text style={md.lbl}>FECHA DE PAGO</Text>
+            <TouchableOpacity
+                style={md.dateField}
+                onPress={() => setShowPicker(v => !v)}
+                activeOpacity={0.75}
+                accessibilityRole="button"
+                accessibilityLabel={`Fecha de pago: ${dateLabel}. Toca para cambiarla`}
+            >
+                <GlassBackground radius={12} blur={false} />
+                <Ionicons name="calendar-outline" size={18} color={C.primaryLight} style={{ marginRight: 10 }} />
+                <Text style={[md.dateTxt, { textTransform: "capitalize" }]}>{dateLabel}</Text>
+                <Ionicons name="chevron-down" size={16} color={C.textSub} />
+            </TouchableOpacity>
+            <Text style={md.hint}>No se pueden elegir fechas futuras.</Text>
+            {showPicker && Platform.OS === "android" && (
+                <DateTimePicker
+                    value={picked}
+                    mode="date"
+                    display="default"
+                    maximumDate={maxDate}
+                    onChange={(event, selected) => {
+                        setShowPicker(false);
+                        if (event.type === "set" && selected) setPicked(toNoon(selected));
+                    }}
+                />
+            )}
+            {showPicker && Platform.OS === "ios" && (
+                <View style={md.iosPickerWrap}>
+                    <DateTimePicker
+                        value={picked}
+                        mode="date"
+                        display="inline"
+                        themeVariant="dark"
+                        maximumDate={maxDate}
+                        accentColor={C.primary}
+                        onChange={(_e, selected) => { if (selected) setPicked(toNoon(selected)); }}
+                    />
+                    <TouchableOpacity style={md.iosPickerDone} onPress={() => setShowPicker(false)}>
+                        <Text style={md.iosPickerDoneTxt}>Listo</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
+            <View style={{ height: 8 }} />
+        </GlassSheet>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // SECCIÓN 1 — GASTOS FIJOS
 // ─────────────────────────────────────────────────────────────
 function FixedExpensesTab({
@@ -309,6 +388,7 @@ function FixedExpensesTab({
 }) {
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<FixedExpense | undefined>();
+    const [paidPrompt, setPaidPrompt] = useState<{ expense: FixedExpense; initial: Date; resolve: (d: Date | null) => void } | null>(null);
     const dialog = useGlassDialog();
     const smsOn = isSmsFeatureOn(settings);
     const tutScroll = useTutorialScroll('budget_fixed');
@@ -320,6 +400,15 @@ function FixedExpensesTab({
     const paid = active.filter(e => e.isPaid).length;
     const totalQ = active.filter(e => e.currency === 'Q').reduce((s, e) => s + e.amount, 0);
     const paidQ = active.filter(e => e.isPaid && e.currency === 'Q').reduce((s, e) => s + e.amount, 0);
+
+    /** Abre la hoja "¿Cuándo se pagó?"; resuelve con la fecha elegida o null si se cancela. */
+    const askPaidDate = (expense: FixedExpense, initial: Date) =>
+        new Promise<Date | null>(resolve => setPaidPrompt({ expense, initial, resolve }));
+
+    const closePaidPrompt = (result: Date | null) => {
+        paidPrompt?.resolve(result);
+        setPaidPrompt(null);
+    };
 
     const handleTogglePaid = async (expense: FixedExpense) => {
         const willBePaid = !expense.isPaid;
@@ -374,8 +463,14 @@ function FixedExpensesTab({
             }
         }
 
+        // Pago a mano: se pregunta la fecha (por defecto, el día de cobro si ya pasó; si no, hoy).
         const now = new Date();
-        const cycle = monthKey(now);
+        const pickedDay = await askPaidDate(expense, defaultPaidDate(expense.dayOfMonth, now));
+        if (!pickedDay) return;
+        // Día elegido + hora actual (conserva el orden dentro del día; mismo criterio que AddScreen).
+        const paidAt = new Date(pickedDay.getFullYear(), pickedDay.getMonth(), pickedDay.getDate(),
+            now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+        const cycle = occurrenceKeyFor(expense.dayOfMonth, formatDateOnly(pickedDay)) ?? monthKey(pickedDay);
         if (expense.autoRecord) {
             // Al marcar como pagado con auto-registro: id determinístico, reversible y único por mes
             let txId = feTxId(expense.id, cycle);
@@ -385,7 +480,7 @@ function FixedExpensesTab({
                 amount: expense.amount,
                 description: expense.name,
                 category: expense.category,
-                date: new Date().toISOString(),
+                date: paidAt.toISOString(),
                 type: 'expense',
                 source: 'manual',
                 currency: expense.currency,
@@ -398,7 +493,7 @@ function FixedExpensesTab({
         const updated: FixedExpense = {
             ...expense,
             isPaid: true,
-            paidDate: new Date().toISOString(),
+            paidDate: paidAt.toISOString(),
             lastTxId,
             paidBy: 'manual',
             paidCycleKey: cycle,
@@ -550,6 +645,15 @@ function FixedExpensesTab({
                     <Ionicons name="add" size={28} color={C.onPrimary} />
                 </TouchableOpacity>
             </View>
+
+            {paidPrompt && (
+                <PaidDateSheet
+                    expenseName={paidPrompt.expense.name}
+                    initial={paidPrompt.initial}
+                    onConfirm={d => closePaidPrompt(d)}
+                    onCancel={() => closePaidPrompt(null)}
+                />
+            )}
 
             {showModal && (
                 <FixedExpenseModal
@@ -1155,6 +1259,7 @@ const md = StyleSheet.create({
     iosPickerDoneTxt: { color: C.primaryLight, fontWeight: "800" },
     lbl: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 8, marginTop: 16 },
     hint: { color: C.textSub, fontSize: 12, marginTop: 4, lineHeight: 17 },
+    paidSubtitle: { color: C.textSub, fontSize: 15, fontWeight: "600", lineHeight: 21 },
     input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 14, color: C.text, fontSize: 15 },
     row: { flexDirection: "row", alignItems: "flex-start" },
     amtRow: { flexDirection: "row", alignItems: "center", backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, paddingHorizontal: 14, paddingVertical: 10 },

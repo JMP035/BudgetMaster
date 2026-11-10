@@ -10,7 +10,7 @@ import {
   findFixedFusions, findPastSmsForFixed, fixedRejectKey, planFixedFusion, rankFixedForTx, relinkFixedAfterSplit,
 } from '../services/FixedExpenseMatcher';
 import {
-  cycleKeyFromFeTxId, feTxId, fixedIdFromFeTxId, occurrenceKeyFor, planFixedMonthlyReset,
+  cycleKeyFromFeTxId, defaultPaidDate, feTxId, fixedIdFromFeTxId, occurrenceKeyFor, planFixedMonthlyReset,
 } from '../services/FixedCycle';
 import { planSmsUndo } from '../services/SmsUndoPlan';
 import type { FixedExpense, SmsBatchRecord, Transaction } from '../services/storage';
@@ -618,6 +618,21 @@ console.log('Fusión gasto fijo: separar y deshacer');
   const feY = fixed('fe_y', 'Internet', 100, 11, { isPaid: true, paidBy: 'sms', paidTxId: 's_pay', lastTxId: 'keep_me' });
   const uMark = planSmsUndo(oldMark, [sPay], [], [feY], false);
   check('deshacer lote viejo: lastTxId intacto', uMark.nextExpenses[0].lastTxId === 'keep_me' && uMark.nextExpenses[0].isPaid === false);
+}
+
+// ═════════════ defaultPaidDate (fecha por defecto al marcar pagado a mano) ═════════════
+console.log('defaultPaidDate');
+{
+  const ymd = (x: Date) => `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`;
+  const hoy10 = new Date(2026, 10, 10, 9, 30); // 10/11/2026
+  check('defaultPaidDate: día 1 y hoy 10 nov -> 1 nov', ymd(defaultPaidDate(1, hoy10)) === '2026-11-1', ymd(defaultPaidDate(1, hoy10)));
+  check('defaultPaidDate: día 15 y hoy 10 nov -> hoy', ymd(defaultPaidDate(15, hoy10)) === '2026-11-10');
+  check('defaultPaidDate: día = hoy -> hoy', ymd(defaultPaidDate(10, hoy10)) === '2026-11-10');
+  const hoy28feb = new Date(2026, 1, 28, 20, 0); // 28/02/2026 (no bisiesto)
+  check('defaultPaidDate: día 31 en febrero (28) -> último día', ymd(defaultPaidDate(31, hoy28feb)) === '2026-2-28');
+  const hoy15feb = new Date(2026, 1, 15, 8, 0);
+  check('defaultPaidDate: día 31 en febrero y hoy 15 -> hoy', ymd(defaultPaidDate(31, hoy15feb)) === '2026-2-15');
+  check('defaultPaidDate: a las 12:00 locales', defaultPaidDate(1, hoy10).getHours() === 12);
 }
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);

@@ -305,7 +305,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_3', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'checkbox-outline', padding: 8,
                 title: 'Marcar como pagado',
-                description: 'Tocá la casilla de un gasto para marcarlo como pagado. Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcás. Mantené presionada la tarjeta para editarla. VENCIDO indica que pasó su día de pago sin marcarse.',
+                description: 'Tocá la casilla de un gasto para marcarlo como pagado; la app te pregunta en qué fecha se pagó (por defecto, su día de cobro si ya pasó). Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcás. Mantené presionada la tarjeta para editarla. VENCIDO indica que pasó su día de pago sin marcarse.',
                 emptyHint: 'Todavía no tenés gastos fijos. Agregá el primero con el botón + de esta pestaña.',
             },
             {
