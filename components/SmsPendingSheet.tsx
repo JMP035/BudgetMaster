@@ -7,6 +7,7 @@ import type { Account, FixedExpense, Transaction, UserSettings } from "../servic
 import { reviewImportedSms } from "../services/BankSmsParser";
 import type { SmsReviewItem } from "../services/BankSmsParser";
 import type { SyncResult } from "../services/SmsService";
+import { findFixedFusions, matchFixedExpenses } from "../services/FixedExpenseMatcher";
 import type { FixedMatch } from "../services/FixedExpenseMatcher";
 import { findManualSmsDuplicates } from "../services/DuplicateDetector";
 import type { DupPair } from "../services/DuplicateDetector";
@@ -73,8 +74,8 @@ function PendingRow({ icon, title, hint, count, onPress }: RowProps) {
                     <Ionicons name={icon} size={20} color={C.primaryLight} />
                 </View>
                 <View style={s.rowBody}>
-                    <Text style={s.rowTitle} numberOfLines={2}>{title}</Text>
-                    <Text style={s.rowHint} numberOfLines={2}>{hint}</Text>
+                    <Text style={s.rowTitle}>{title}</Text>
+                    <Text style={s.rowHint}>{hint}</Text>
                 </View>
                 <View style={s.countBadge}>
                     <Text style={s.countTxt}>{count}</Text>
@@ -130,17 +131,51 @@ export default function SmsPendingSheet({
 
     const txIds = useMemo(() => new Set(transactions.map(t => t.id)), [transactions]);
 
+    // Gastos fijos por confirmar: pagos que podrían ser un gasto fijo, o el mismo cobro que un registro
+    // manual de "marcar pagado" (con manualId). Con resultado se filtran los vigentes; sin resultado se recalculan.
+    const fixedMatches: FixedMatch[] = useMemo(() => {
+        if (!visible) return [];
+        try {
+            if (result) {
+                return result.fixedProposals.filter(m => {
+                    if (m.manualId) return txIds.has(m.manualId) && txIds.has(m.txId);
+                    const fe = fixedExpenses.find(e => e.id === m.expenseId);
+                    return !!fe && !fe.isPaid && txIds.has(m.txId);
+                });
+            }
+            const ignored = new Set(dupIgnored);
+            const fusions: FixedMatch[] = findFixedFusions(transactions, fixedExpenses, { ignored }).map(f => ({
+                expenseId: f.expenseId, txId: f.smsId, manualId: f.manualId, score: f.score, auto: false, reasons: f.reasons,
+            }));
+            const proposals = matchFixedExpenses(
+                transactions.filter(t => t.source === "sms"), fixedExpenses, transactions, new Date(), { ignored },
+            );
+            return [...fusions, ...proposals];
+        } catch (e) {
+            console.warn("[SmsPendingSheet] gastos fijos:", e);
+            return [];
+        }
+    }, [visible, result, transactions, fixedExpenses, txIds, dupIgnored]);
+
+    // Un registro manual que ya se ofrece unir con su SMS como gasto fijo no se repite como duplicado.
+    const fusedManualIds = useMemo(
+        () => new Set(fixedMatches.filter(m => !!m.manualId).map(m => m.manualId as string)),
+        [fixedMatches],
+    );
+
     // Duplicados: con resultado se filtran los que siguen vigentes; sin resultado se recalculan.
     const dupPairs: DupPair[] = useMemo(() => {
         if (!visible) return [];
         try {
-            if (result) return result.duplicates.filter(p => txIds.has(p.manualId) && txIds.has(p.smsId));
-            return findManualSmsDuplicates(transactions, new Set(dupIgnored));
+            const pairs = result
+                ? result.duplicates.filter(p => txIds.has(p.manualId) && txIds.has(p.smsId))
+                : findManualSmsDuplicates(transactions, new Set(dupIgnored));
+            return pairs.filter(p => !fusedManualIds.has(p.manualId));
         } catch (e) {
             console.warn("[SmsPendingSheet] duplicados:", e);
             return [];
         }
-    }, [visible, result, transactions, txIds, dupIgnored]);
+    }, [visible, result, transactions, txIds, dupIgnored, fusedManualIds]);
 
     const transferPairs: TransferPair[] = useMemo(() => {
         if (!visible) return [];
@@ -170,14 +205,6 @@ export default function SmsPendingSheet({
         () => unassignedGroups.reduce((n, g) => n + g.txIds.length, 0),
         [unassignedGroups],
     );
-
-    const fixedMatches: FixedMatch[] = useMemo(() => {
-        if (!result) return [];
-        return result.fixedProposals.filter(m => {
-            const fe = fixedExpenses.find(e => e.id === m.expenseId);
-            return !!fe && !fe.isPaid && txIds.has(m.txId);
-        });
-    }, [result, fixedExpenses, txIds]);
 
     const [liveReview, setLiveReview] = useState<SmsReviewItem[]>([]);
     useEffect(() => {
@@ -311,6 +338,7 @@ export default function SmsPendingSheet({
                 matches={fixedMatches}
                 transactions={transactions}
                 fixedExpenses={fixedExpenses}
+                settings={settings}
                 onClose={backToSheet}
                 onChanged={childChanged}
             />

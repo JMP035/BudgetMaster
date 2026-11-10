@@ -8,7 +8,7 @@ import type { SmsInboxItem, Transaction, UserSettings } from "../services/storag
 import { buildSmsTransactionId, maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { GlassSheet } from "./GlassSheet";
 import { GlassCard } from "./GlassCard";
-import { GlassButton } from "./GlassButton";
+import { GlassButton, GlassButtonGroup } from "./GlassButton";
 import { GlassSegmented } from "./GlassSegmented";
 import { InlineNotice } from "./InlineNotice";
 import Money from "./Money";
@@ -193,7 +193,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                 maxHeightRatio={0.92}
                 onClose={() => setRegistering(null)}
                 footer={
-                    <View style={s.footerRow}>
+                    <GlassButtonGroup gap={10} style={s.footerRow}>
                         <GlassButton
                             label="Volver"
                             kind="ghost"
@@ -207,9 +207,8 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                             icon="checkmark-outline"
                             onPress={handleSave}
                             loading={saving}
-                            style={{ flex: 1 }}
                         />
-                    </View>
+                    </GlassButtonGroup>
                 }
             >
                 {!!error && <InlineNotice variant="error" text={error} style={{ marginBottom: 12 }} />}
@@ -352,7 +351,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                             </Text>
                         </TouchableOpacity>
 
-                        <View style={s.actionsRow}>
+                        <GlassButtonGroup breakpoint={420}>
                             <GlassButton
                                 label="Registrar"
                                 kind="secondary"
@@ -371,7 +370,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                                 icon="share-outline"
                                 onPress={() => { void handleShareOne(item); }}
                             />
-                        </View>
+                        </GlassButtonGroup>
                     </GlassCard>
                 );
             })}
@@ -391,11 +390,10 @@ const s = StyleSheet.create({
     bankChipTxt: { color: C.primaryLight, fontSize: 11, fontWeight: "800" },
     dateTxt: { color: C.textSub, fontSize: 12, fontWeight: "600" },
     bodyTxt: { color: C.text, fontSize: 13, lineHeight: 19 },
-    actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     empty: { alignItems: "center", gap: 10, paddingVertical: 36 },
     emptyTxt: { color: C.textSub, fontSize: 14, fontWeight: "600", textAlign: "center" },
     footerStack: { paddingTop: 12 },
-    footerRow: { flexDirection: "row", gap: 10, paddingTop: 12, alignItems: "center" },
+    footerRow: { paddingTop: 12 },
     section: { marginTop: 18 },
     sectionLabel: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10 },
     input: {

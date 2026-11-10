@@ -140,7 +140,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
         return rm > 0 ? `${sentence} Los eliminados no volverán a importarse. ¿Continuar?` : `${sentence} ¿Continuar?`;
     })();
 
-    const stacked = width < 360 || fontScale > 1.3;
+    const stacked = width < 400 || fontScale > 1.2;
 
     const cardMaxH = Math.min(height - insets.top - insets.bottom - 32, 720);
 

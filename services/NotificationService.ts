@@ -8,6 +8,7 @@ import {
     StorageService,
 } from './storage';
 import { QUOTES, randomQuote } from './FinancialQuotes';
+import { categoryLabelOf } from '../categories';
 
 // ─────────────────────────────────────────────────────────────
 // CONFIGURACIÓN — tipos correctos para SDK 54
@@ -106,7 +107,7 @@ function buildFinancialContext(
         const spent = monthTx
             .filter(t => t.type === 'expense' && t.category === cb.categoryId && t.currency === 'Q')
             .reduce((s, t) => s + t.amount, 0);
-        return `${cb.categoryId}: gastado Q${spent.toFixed(0)} de Q${cb.limit} (${Math.round((spent / cb.limit) * 100)}%)`;
+        return `${categoryLabelOf(cb.categoryId, settings.customCategories, 'expense')}: gastado Q${spent.toFixed(0)} de Q${cb.limit} (${Math.round((spent / cb.limit) * 100)}%)`;
     }).join(', ');
 
     const unpaidFixed = fixedExpenses.filter(f => f.isActive && !f.isPaid);
@@ -376,12 +377,13 @@ export const NotificationService = {
                 .filter(t => t.category === tx.category)
                 .reduce((s, t) => s + t.amount, 0);
             const catPct = (catSpent / catBudget.limit) * 100;
+            const catLabel = categoryLabelOf(tx.category, settings.customCategories, 'expense');
 
             if (catPct >= 100) {
                 await this.sendSmartAlert(
                     '🔴 Límite de categoría superado',
                     'critical',
-                    `Superaste el presupuesto de ${tx.category}. Gastado: Q${catSpent.toFixed(2)} de Q${catBudget.limit}. Exceso: Q${(catSpent - catBudget.limit).toFixed(2)}.`,
+                    `Superaste el presupuesto de ${catLabel}. Gastado: Q${catSpent.toFixed(2)} de Q${catBudget.limit}. Exceso: Q${(catSpent - catBudget.limit).toFixed(2)}.`,
                     settings, transactions, categoryBudgets, fixedExpenses,
                 );
                 return;
@@ -390,7 +392,7 @@ export const NotificationService = {
                 await this.sendSmartAlert(
                     `⚠️ Categoría al ${Math.round(catPct)}%`,
                     'warning',
-                    `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${tx.category}. Te quedan Q${(catBudget.limit - catSpent).toFixed(2)}.`,
+                    `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${catLabel}. Te quedan Q${(catBudget.limit - catSpent).toFixed(2)}.`,
                     settings, transactions, categoryBudgets, fixedExpenses,
                 );
                 return;

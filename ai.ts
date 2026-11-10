@@ -1,5 +1,5 @@
 import { Transaction, UserSettings } from "./services/storage";
-import { EXPENSE_CATEGORIES } from "./categories";
+import { categoryLabelOf, getAllExpenseCategories } from "./categories";
 import { SUBSCRIPTIONS_MERCHANTS, normalizeText } from "./services/Categorizer";
 
 // ─────────────────────────────────────────────────────────────
@@ -202,8 +202,8 @@ export async function getAIResponse(
     const spent     = monthTx.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
     const income    = monthTx.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
     const budgetLeft= settings.budgetLimit - spent;
-    const topCat    = EXPENSE_CATEGORIES
-        .map(c => ({ label: c.label, total: monthTx.filter(t => t.type === "expense" && t.category === c.id).reduce((s, t) => s + t.amount, 0) }))
+    const topCat    = getAllExpenseCategories(settings.customCategories)
+        .map(c => ({ label: categoryLabelOf(c.id, settings.customCategories, "expense"), total: monthTx.filter(t => t.type === "expense" && t.category === c.id).reduce((s, t) => s + t.amount, 0) }))
         .sort((a, b) => b.total - a.total)[0];
 
     const projection = calcCashFlowProjection(transactions, settings);

@@ -7,7 +7,7 @@ import { groupUnassigned, linkKeyLabel } from "../services/AccountLinking";
 import { formatMoney } from "../services/format";
 import { GlassCard } from "./GlassCard";
 import { GlassSheet } from "./GlassSheet";
-import { GlassButton } from "./GlassButton";
+import { GlassButton, GlassButtonGroup } from "./GlassButton";
 import { InlineNotice } from "./InlineNotice";
 import { Money } from "./Money";
 import { useGlassDialog } from "./GlassDialogProvider";
@@ -392,13 +392,12 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
                                     </>
                                 )}
 
-                                <View style={s.groupBtns}>
+                                <GlassButtonGroup direction="column">
                                     <GlassButton
                                         label={isOpen ? `Ocultar movimientos (${n})` : `Ver movimientos (${n})`}
                                         kind="secondary"
                                         icon={isOpen ? "chevron-up" : "chevron-down"}
                                         onPress={() => toggleExpanded(group.key)}
-                                        style={s.groupBtn}
                                     />
                                     <GlassButton
                                         label="Descartar todo el grupo"
@@ -406,9 +405,8 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
                                         icon="close-circle-outline"
                                         disabled={!!busy}
                                         onPress={() => { void discardGroup(group); }}
-                                        style={s.groupBtn}
                                     />
-                                </View>
+                                </GlassButtonGroup>
 
                                 {isOpen && (
                                     <View style={s.list}>
@@ -503,8 +501,6 @@ const s = StyleSheet.create({
     chipDiscard: { borderStyle: "dashed" },
     chipDim: { opacity: 0.5 },
     chipTxt: { color: C.text, fontSize: 13, fontWeight: "700", flexShrink: 1 },
-    groupBtns: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    groupBtn: { flexGrow: 1, flexBasis: 140 },
     list: { gap: 8, marginTop: 2 },
     selectAll: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
     selectAllTxt: { color: C.text, fontSize: 13, fontWeight: "800", flexShrink: 1 },

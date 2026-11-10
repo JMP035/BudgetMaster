@@ -459,7 +459,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_3', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, su saldo se actualiza solo. Mantené presionada una cuenta para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago y la cuota mensual de sus visacuotas.',
+                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago y la cuota mensual de sus visacuotas.',
                 emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
             },
             {

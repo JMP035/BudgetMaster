@@ -5,7 +5,7 @@ import {
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
     getDaysUntilNextPayment, parseAmount, parseDateOnly, storedDateToDateOnly,
 } from './storage';
-import { getCat, EXPENSE_CATEGORIES } from '../categories';
+import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
 
 // ─────────────────────────────────────────────────────────────
@@ -206,7 +206,7 @@ export function computeLocalMetrics(
     const catTotals = Object.entries(catMap)
         .map(([id, amount]) => ({
             id,
-            label: getCat(id, settings.customCategories ?? [], 'expense').label.replace(/\.$/, ''),
+            label: categoryLabelOf(id, settings.customCategories, 'expense'),
             amount,
         }))
         .sort((a, b) => b.amount - a.amount);
@@ -241,7 +241,7 @@ export function computeLocalMetrics(
         .map(cb => {
             const spent = periodTx.filter(t => t.type === 'expense' && t.category === cb.categoryId && isQ(t)).reduce((s, t) => s + t.amount, 0);
             const pctB = Math.round((spent / cb.limit) * 100);
-            return { id: cb.categoryId, label: getCat(cb.categoryId, settings.customCategories ?? [], 'expense').label.replace(/\.$/, ''), spent, limit: cb.limit, pctB };
+            return { id: cb.categoryId, label: categoryLabelOf(cb.categoryId, settings.customCategories, 'expense'), spent, limit: cb.limit, pctB };
         })
         .filter(b => b.pctB >= 80)
         .sort((a, b) => b.pctB - a.pctB);
@@ -492,7 +492,7 @@ export function getLocalResponse(
         if (catId) {
             const cat = m.catTotals.find(c => c.id === catId);
             const amount = cat?.amount ?? 0;
-            const label = cat?.label ?? getCat(catId, settings.customCategories ?? [], 'expense').label.replace(/\.$/, '');
+            const label = cat?.label ?? categoryLabelOf(catId, settings.customCategories, 'expense');
             const pctOfTotal = m.expenseQ > 0 ? Math.round((amount / m.expenseQ) * 100) : 0;
             const prevAmt = m.prevCatSamePoint[catId] || 0;
 

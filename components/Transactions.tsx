@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     FlatList, KeyboardAvoidingView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
-import { Account, CreditInstallment, Currency, StorageService, Transaction, UserSettings } from "../services/storage";
+import { Account, CreditInstallment, Currency, FixedExpense, StorageService, Transaction, UserSettings } from "../services/storage";
 import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds } from "../services/MerchantRules";
 import { linkKeyLabel } from "../services/AccountLinking";
+import { NotificationService } from "../services/NotificationService";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
 import { C } from "../theme";
 import { isSmsFeatureOn } from "../services/features";
@@ -16,10 +17,11 @@ import { GlassBackground, GlassCard } from "./GlassCard";
 import { useGlassDialog } from "./GlassDialogProvider";
 import { GlassSheet } from "./GlassSheet";
 import { GlassSegmented } from "./GlassSegmented";
-import { GlassButton } from "./GlassButton";
+import { GlassButton, GlassButtonGroup } from "./GlassButton";
 import { ScreenHeader } from "./ScreenHeader";
 import { HelpButton } from "./HelpButton";
 import InstallmentModal from "./InstallmentModal";
+import FixedExpenseLinkSheet from "./FixedExpenseLinkSheet";
 
 const DELETE_CONFIRM = {
     title: "Eliminar movimiento",
@@ -36,14 +38,19 @@ interface DetailModalProps {
     smsOn: boolean;
     transactions: Transaction[];
     accounts: Account[];
+    fixedExpenses: FixedExpense[];
     onClose: () => void;
     onSave: (updated: Transaction) => void;
     onDelete: (id: string) => void;
     onReplaceAll: (txs: Transaction[]) => void;
     onConvertToInstallment: () => void;
+    /** Abre la hoja para elegir a qué gasto fijo pertenece este SMS. */
+    onLinkFixed: () => void;
+    /** Cambios hechos aquí en transacciones y gastos fijos (desvincular). */
+    onFixedChanged: (txs: Transaction[], fes: FixedExpense[]) => void;
 }
 
-function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onSave, onDelete, onReplaceAll, onConvertToInstallment }: DetailModalProps) {
+function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpenses, onClose, onSave, onDelete, onReplaceAll, onConvertToInstallment, onLinkFixed, onFixedChanged }: DetailModalProps) {
     const dialog = useGlassDialog();
     const { width } = useWindowDimensions();
     const cols = width >= 360 ? 4 : 3;
@@ -55,7 +62,6 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
     const [remember, setRemember] = useState(true);
     const [applyPast, setApplyPast] = useState(true);
     const [accountId, setAccountId] = useState<string | null>(tx.accountId ?? null);
-    const [fixedName, setFixedName] = useState<string | null>(null);
 
     // Cuenta: solo se ofrece con SMS activo o si el movimiento ya tiene cuenta
     const showAccount = smsOn || !!tx.accountId;
@@ -63,17 +69,12 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
     const accountChanged = accountId !== (tx.accountId ?? null);
     const hintLabel = smsOn && tx.smsAccountHint ? linkKeyLabel(tx.smsAccountHint) : null;
 
-    // Nombre del gasto fijo que pagó este movimiento (si lo hay)
-    useEffect(() => {
-        if (!smsOn || !tx.fixedExpenseId) return;
-        let alive = true;
-        StorageService.getFixedExpenses()
-            .then(list => {
-                if (alive) setFixedName(list.find(e => e.id === tx.fixedExpenseId)?.name ?? null);
-            })
-            .catch(() => { });
-        return () => { alive = false; };
-    }, [smsOn, tx.fixedExpenseId]);
+    // Gasto fijo al que está vinculado este movimiento (si lo hay)
+    const linkedFe = tx.fixedExpenseId ? fixedExpenses.find(e => e.id === tx.fixedExpenseId) : undefined;
+    const fixedChipLabel = linkedFe
+        ? (linkedFe.paidTxId === tx.id || linkedFe.lastTxId === tx.id ? `Pagó: ${linkedFe.name}` : `Historial de: ${linkedFe.name}`)
+        : null;
+    const canLinkFixed = smsOn && tx.source === 'sms' && tx.type === 'expense' && !tx.transferPairId;
 
     const merchant = merchantOfTransaction(tx);
     const learnable = tx.source === 'sms' && tx.type === 'expense' && merchantKey(merchant) !== null;
@@ -159,6 +160,29 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
             const next = await StorageService.unlinkTransferPair(tx.id);
             onReplaceAll(next);
             onClose();
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleUnlinkFixed = async () => {
+        const name = linkedFe?.name ?? "este gasto fijo";
+        const ok = await dialog.confirm({
+            title: "Desvincular gasto fijo",
+            message: `La app dejará de reconocer «${merchant || tx.description || "este comercio"}» como «${name}».`,
+            confirmLabel: "Desvincular",
+            cancelLabel: "Cancelar",
+            destructive: false,
+            variant: "info",
+        });
+        if (!ok) return;
+        setSaving(true);
+        try {
+            const res = await StorageService.unlinkSmsFromFixed(tx.id);
+            onFixedChanged(res.transactions, res.fixedExpenses);
+        } catch (e) {
+            console.warn("[Transactions] desvincular gasto fijo:", e);
+            await dialog.alert({ title: "No se pudo desvincular", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
         } finally {
             setSaving(false);
         }
@@ -254,7 +278,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
             </View>
 
             {/* ESTADO SMS: transferencia propia, gasto fijo pagado, unión con manual */}
-            {smsOn && (!!tx.transferPairId || (!!tx.fixedExpenseId && !!fixedName) || !!tx.mergedFrom) && (
+            {smsOn && (!!tx.transferPairId || !!fixedChipLabel || !!tx.mergedFrom) && (
                 <View style={m.statusWrap}>
                     {!!tx.transferPairId && (
                         <View style={m.statusChip}>
@@ -262,10 +286,10 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
                             <Text style={m.statusChipTxt} numberOfLines={2}>Transferencia entre tus cuentas</Text>
                         </View>
                     )}
-                    {!!tx.fixedExpenseId && !!fixedName && (
+                    {!!fixedChipLabel && (
                         <View style={m.statusChip}>
                             <Ionicons name="calendar-outline" size={14} color={C.primaryLight} />
-                            <Text style={m.statusChipTxt} numberOfLines={2}>Pagó: {fixedName}</Text>
+                            <Text style={m.statusChipTxt} numberOfLines={2}>{fixedChipLabel}</Text>
                         </View>
                     )}
                     {!!tx.mergedFrom && (
@@ -277,7 +301,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
                 </View>
             )}
             {smsOn && (!!tx.transferPairId || !!tx.mergedFrom) && (
-                <View style={m.smsActions}>
+                <GlassButtonGroup direction="column" style={m.smsActions}>
                     {!!tx.mergedFrom && (
                         <GlassButton
                             kind="ghost"
@@ -285,7 +309,6 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
                             label="Separar movimientos"
                             onPress={handleSplitMerged}
                             disabled={saving}
-                            style={m.smsActionBtn}
                         />
                     )}
                     {!!tx.transferPairId && (
@@ -295,10 +318,9 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
                             label="Separar"
                             onPress={handleUnlinkPair}
                             disabled={saving}
-                            style={m.smsActionBtn}
                         />
                     )}
-                </View>
+                </GlassButtonGroup>
             )}
 
             {/* CATEGORÍA EDITABLE */}
@@ -424,22 +446,20 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
                             <View style={m.smsBox}>
                                 <Text selectable style={m.smsTxt}>{tx.originalSMS}</Text>
                             </View>
-                            <View style={m.smsActions}>
+                            <GlassButtonGroup direction="column" style={m.smsActions}>
                                 <GlassButton
                                     kind="ghost"
                                     icon="share-outline"
                                     label="Compartir SMS"
                                     onPress={handleShareSms}
-                                    style={m.smsActionBtn}
                                 />
                                 <GlassButton
                                     kind="ghost"
                                     icon="flag-outline"
                                     label="Reportar mal clasificado"
                                     onPress={handleReportSms}
-                                    style={m.smsActionBtn}
                                 />
-                            </View>
+                            </GlassButtonGroup>
                             <Text style={m.hint}>Mantené presionado el texto para copiarlo.</Text>
                         </>
                     )}
@@ -450,12 +470,41 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, onClose, onS
             {tx.type === 'expense' && (
                 <View style={m.section}>
                     <Text style={m.sectionLabel}>MÁS ACCIONES</Text>
-                    <GlassButton
-                        kind="secondary"
-                        icon="card-outline"
-                        label="Convertir a Visacuota"
-                        onPress={onConvertToInstallment}
-                    />
+                    <View style={m.moreActions}>
+                        <GlassButton
+                            kind="secondary"
+                            icon="card-outline"
+                            label="Convertir a Visacuota"
+                            onPress={onConvertToInstallment}
+                        />
+                        {canLinkFixed && !tx.fixedExpenseId && (
+                            <GlassButton
+                                kind="secondary"
+                                icon="calendar-outline"
+                                label="Es un gasto fijo"
+                                onPress={onLinkFixed}
+                                disabled={saving}
+                            />
+                        )}
+                        {canLinkFixed && !!tx.fixedExpenseId && (
+                            <GlassButtonGroup direction="column">
+                                <GlassButton
+                                    kind="secondary"
+                                    icon="swap-horizontal-outline"
+                                    label="Cambiar gasto fijo"
+                                    onPress={onLinkFixed}
+                                    disabled={saving}
+                                />
+                                <GlassButton
+                                    kind="ghost"
+                                    icon="unlink-outline"
+                                    label="Desvincular gasto fijo"
+                                    onPress={() => { void handleUnlinkFixed(); }}
+                                    disabled={saving}
+                                />
+                            </GlassButtonGroup>
+                        )}
+                    </View>
                 </View>
             )}
 
@@ -563,6 +612,8 @@ interface Props {
     onReplaceAll: (txs: Transaction[]) => void;
     accounts: Account[];
     onConvertToInstallment: (item: CreditInstallment, originalTxId: string) => void;
+    fixedExpenses: FixedExpense[];
+    onFixedExpensesChanged: (list: FixedExpense[]) => void;
 }
 
 type TypeFilter = "all" | "expense" | "income";
@@ -574,13 +625,18 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
     { value: "income", label: "Ingresos" },
 ];
 
-export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, onReplaceAll, accounts, onConvertToInstallment }: Props) {
+const LINK_SWITCH_DELAY_MS = 250;
+
+export default function TransactionsScreen({ transactions, settings, onDelete, onUpdate, onReplaceAll, accounts, onConvertToInstallment, fixedExpenses, onFixedExpensesChanged }: Props) {
     const smsOn = isSmsFeatureOn(settings);
     const [filter, setFilter] = useState<TypeFilter>("all");
     const [currency, setCurrency] = useState<CurrencyFilter>("all");
     const [search, setSearch] = useState("");
     const [selected, setSelected] = useState<Transaction | null>(null);
     const [convertingTx, setConvertingTx] = useState<Transaction | null>(null);
+    const [linkingTx, setLinkingTx] = useState<Transaction | null>(null);
+    const linkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (linkTimer.current) clearTimeout(linkTimer.current); }, []);
 
     // Tutorial
     const headerRef = useTutorialRef('tx_header');
@@ -731,11 +787,38 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                     smsOn={smsOn}
                     transactions={transactions}
                     accounts={accounts}
+                    fixedExpenses={fixedExpenses}
                     onClose={() => setSelected(null)}
                     onSave={(updated) => { onUpdate(updated); setSelected(null); }}
                     onDelete={(id) => { onDelete(id); setSelected(null); }}
                     onReplaceAll={(txs) => { onReplaceAll(txs); setSelected(null); }}
                     onConvertToInstallment={() => { setConvertingTx(selected); setSelected(null); }}
+                    onLinkFixed={() => {
+                        // Una sola ventana a la vez: cierra el detalle y abre la hoja tras una pausa
+                        const target = selected;
+                        setSelected(null);
+                        if (linkTimer.current) clearTimeout(linkTimer.current);
+                        linkTimer.current = setTimeout(() => { setLinkingTx(target); linkTimer.current = null; }, LINK_SWITCH_DELAY_MS);
+                    }}
+                    onFixedChanged={(txs, fes) => {
+                        onReplaceAll(txs);
+                        onFixedExpensesChanged(fes);
+                        void NotificationService.syncFixedExpenseReminders(fes);
+                        setSelected(null);
+                    }}
+                />
+            )}
+
+            {/* HOJA: A QUÉ GASTO FIJO PERTENECE EL SMS */}
+            {linkingTx && (
+                <FixedExpenseLinkSheet
+                    visible
+                    tx={linkingTx}
+                    transactions={transactions}
+                    fixedExpenses={fixedExpenses}
+                    settings={settings}
+                    onClose={() => setLinkingTx(null)}
+                    onChanged={(txs, fes) => { onReplaceAll(txs); onFixedExpensesChanged(fes); }}
                 />
             )}
 
@@ -802,8 +885,7 @@ const m = StyleSheet.create({
     smsToggleTxt: { color: C.accentLight, fontSize: 13, fontWeight: "700", flex: 1 },
     smsBox: { marginTop: 8, padding: 12, backgroundColor: C.glassInput, borderRadius: 10, borderWidth: 1, borderColor: C.glassInputBorder },
     smsTxt: { color: C.textSub, fontSize: 12, lineHeight: 18 },
-    smsActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-    smsActionBtn: { flexGrow: 1, flexShrink: 1 },
+    smsActions: { marginTop: 8 },
     hint: { color: C.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
     statusWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 12 },
     statusChip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14, borderWidth: 1, borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
@@ -817,5 +899,6 @@ const m = StyleSheet.create({
     switchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     switchLabel: { color: C.text, fontSize: 13, fontWeight: "700" },
     footerRow: { flexDirection: "row", gap: 10, paddingTop: 12, alignItems: "center" },
+    moreActions: { gap: 8 },
     delBtn: { width: 50, height: 50, borderRadius: 14, backgroundColor: C.danger + "11", borderWidth: 1, borderColor: C.danger + "66", alignItems: "center", justifyContent: "center" },
 });

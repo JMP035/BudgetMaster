@@ -447,6 +447,8 @@ function AppContent() {
               onReplaceAll={setTxs}
               accounts={accounts}
               onConvertToInstallment={hConvertToInstallment}
+              fixedExpenses={fixedExpenses}
+              onFixedExpensesChanged={setFixedExpenses}
             />
           )}
           {tab === "add" && !showAI && (

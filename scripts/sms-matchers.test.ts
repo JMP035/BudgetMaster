@@ -5,8 +5,15 @@ process.env.TZ = 'America/Guatemala';
 import {
   dupPairKey, findManualSmsDuplicates, mergeManualIntoSms, splitMerged,
 } from '../services/DuplicateDetector';
-import { FIXED_AUTO_THRESHOLD, FIXED_PROPOSE_THRESHOLD, matchFixedExpenses } from '../services/FixedExpenseMatcher';
-import type { FixedExpense, Transaction } from '../services/storage';
+import {
+  FIXED_AUTO_THRESHOLD, FIXED_PROPOSE_THRESHOLD, matchFixedExpenses,
+  findFixedFusions, findPastSmsForFixed, fixedRejectKey, planFixedFusion, rankFixedForTx, relinkFixedAfterSplit,
+} from '../services/FixedExpenseMatcher';
+import {
+  cycleKeyFromFeTxId, feTxId, fixedIdFromFeTxId, occurrenceKeyFor, planFixedMonthlyReset,
+} from '../services/FixedCycle';
+import { planSmsUndo } from '../services/SmsUndoPlan';
+import type { FixedExpense, SmsBatchRecord, Transaction } from '../services/storage';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { R4_BODY } = require('./sms-corpus') as typeof import('./sms-corpus');
@@ -337,6 +344,280 @@ const none = new Set<string>();
   // Si el usuario cambió la cuenta después de unir, no se pisa al separar.
   const mg7 = { ...mg5, accountId: 'cta-otra' };
   check('separar: cuenta cambiada después de unir se respeta', splitMerged(mg7)?.sms.accountId === 'cta-otra');
+}
+
+// ═════════════ Gasto fijo ↔ SMS (Disney) ═════════════
+console.log('Gasto fijo ↔ SMS (Disney)');
+{
+  const NOW_NOV = new Date(2026, 10, 10, 10);
+  const feDisney = fixed('fe_disney', 'Disney+', 11.49, 1, { currency: 'USD', category: 'streaming', autoRecord: true });
+  const dSms = (id: string, date: Date, extra: Partial<Transaction> = {}) =>
+    sms(id, 11.49, date, 'Disney Plus', { currency: 'USD', description: 'BAC · Compra en Disney Plus', ...extra });
+  const ago = dSms('d-ago', d(2026, 8, 1, 8));
+  const sep = dSms('d-sep', d(2026, 9, 1, 8));
+  const oct = dSms('d-oct', d(2026, 10, 1, 8));
+  const smsNov1 = dSms('d-nov', d(2026, 11, 1, 8));
+  const manualNov = manual('fe_tx_fe_disney_2026-11', 11.49, d(2026, 11, 10, 12), 'Disney+', {
+    currency: 'USD', category: 'streaming', fixedExpenseId: 'fe_disney',
+  });
+  const fePaid: FixedExpense = { ...feDisney, isPaid: true, paidBy: 'manual', lastTxId: manualNov.id, paidDate: manualNov.date };
+  const NOWISO = '2026-11-10T20:00:00.000Z';
+
+  // (1) Ids fe_tx_
+  check('fixedIdFromFeTxId: id con ciclo', fixedIdFromFeTxId('fe_tx_fe_disney_2026-11') === 'fe_disney');
+  check('fixedIdFromFeTxId: id viejo sin ciclo', fixedIdFromFeTxId('fe_tx_luz') === 'luz');
+  check('fixedIdFromFeTxId: ciclo y sufijo numérico', fixedIdFromFeTxId('fe_tx_fe_1_2026-11_1731') === 'fe_1');
+  check('fixedIdFromFeTxId: no es fe_tx_', fixedIdFromFeTxId('abc') === null);
+  check('cycleKeyFromFeTxId: con ciclo', cycleKeyFromFeTxId('fe_tx_fe_disney_2026-11') === '2026-11');
+  check('cycleKeyFromFeTxId: sin ciclo', cycleKeyFromFeTxId('fe_tx_luz') === null);
+  check('cycleKeyFromFeTxId: ciclo y sufijo numérico', cycleKeyFromFeTxId('fe_tx_fe_1_2026-11_1731') === '2026-11');
+  check('cycleKeyFromFeTxId: no es fe_tx_', cycleKeyFromFeTxId('abc') === null);
+  check('feTxId', feTxId('fe_disney', '2026-11') === 'fe_tx_fe_disney_2026-11');
+  check('feTxId <-> fixedIdFromFeTxId', fixedIdFromFeTxId(feTxId('x_y', '2026-02')) === 'x_y');
+
+  // (2) Vencimiento más cercano
+  check('occurrenceKeyFor: día 1 y 30 oct -> noviembre', occurrenceKeyFor(1, d(2026, 10, 30).toISOString()) === '2026-11');
+  check('occurrenceKeyFor: día 28 y 2 nov -> octubre', occurrenceKeyFor(28, d(2026, 11, 2).toISOString()) === '2026-10');
+  check('occurrenceKeyFor: día 1 y 1 oct -> octubre', occurrenceKeyFor(1, d(2026, 10, 1).toISOString()) === '2026-10');
+  check('occurrenceKeyFor: valor solo-fecha', occurrenceKeyFor(1, '2026-11-01') === '2026-11');
+  check('occurrenceKeyFor: medianoche UTC es ese día', occurrenceKeyFor(1, '2026-11-01T00:00:00.000Z') === '2026-11');
+  check('occurrenceKeyFor: día 31 y 28 feb -> febrero', occurrenceKeyFor(31, '2027-02-28') === '2027-02');
+  check('occurrenceKeyFor: fecha inválida', occurrenceKeyFor(1, 'nada') === null);
+
+  // (3) Lo que antes no se unía sigue sin proponerse por las rutas viejas
+  check('matcher: SMS de ago/sep/oct no entran al ciclo de noviembre',
+    matchFixedExpenses([ago, sep, oct], [feDisney], [ago, sep, oct, manualNov], NOW_NOV).length === 0);
+  check('duplicados: manual 10 nov y SMS 1 nov no se proponen (> 1 día)',
+    findManualSmsDuplicates([manualNov, smsNov1], none).length === 0);
+
+  // (4) Fusión
+  const all = [manualNov, smsNov1, ago, sep, oct];
+  const f1 = findFixedFusions(all, [fePaid]);
+  check('fusión: un par', f1.length === 1, JSON.stringify(f1));
+  check('fusión: ids', f1[0]?.manualId === manualNov.id && f1[0]?.smsId === 'd-nov' && f1[0]?.expenseId === 'fe_disney');
+  check('fusión: automática con puntaje 90', f1[0]?.auto === true && f1[0]?.score === 90, JSON.stringify(f1[0]));
+  const fLearn = findFixedFusions(all, [{ ...fePaid, smsMatchKey: 'disney' }]);
+  check('fusión con comercio aprendido: 100', fLearn[0]?.score === 100, JSON.stringify(fLearn[0]));
+  check('fusión: par ignorado', findFixedFusions(all, [fePaid], { ignored: new Set([dupPairKey(manualNov.id, 'd-nov')]) }).length === 0);
+  const sms1399 = dSms('d-nov', d(2026, 11, 1, 8), { amount: 13.99 });
+  check('fusión: monto distinto no se propone', findFixedFusions([manualNov, sms1399], [fePaid]).length === 0);
+  check('fusión: onlySmsIds', findFixedFusions(all, [fePaid], { onlySmsIds: new Set(['d-oct']) }).length === 0
+    && findFixedFusions(all, [fePaid], { onlySmsIds: new Set(['d-nov']) }).length === 1);
+  check('fusión: SMS del 1 oct no se une al manual de noviembre',
+    findFixedFusions([manualNov, oct], [fePaid]).length === 0);
+  check('fusión: SMS con transferPairId excluido',
+    findFixedFusions([manualNov, dSms('d-nov', d(2026, 11, 1, 8), { transferPairId: 'p1' })], [fePaid]).length === 0);
+  check('fusión: SMS vinculado a otro gasto excluido',
+    findFixedFusions([manualNov, dSms('d-nov', d(2026, 11, 1, 8), { fixedExpenseId: 'otro' })], [fePaid]).length === 0);
+  check('fusión: SMS ya vinculado a este mismo gasto sí cuenta',
+    findFixedFusions([manualNov, dSms('d-nov', d(2026, 11, 1, 8), { fixedExpenseId: 'fe_disney' })], [fePaid]).length === 1);
+  check('fusión: otra moneda excluida',
+    findFixedFusions([manualNov, dSms('d-nov', d(2026, 11, 1, 8), { currency: 'Q' })], [fePaid]).length === 0);
+  check('fusión: gasto fijo inexistente', findFixedFusions(all, []).length === 0);
+  // Dos SMS el mismo mes para un manual: un solo par (cada movimiento en un par) y no automático.
+  const smsNov2 = dSms('d-nov2', d(2026, 11, 2, 8));
+  const f2 = findFixedFusions([manualNov, smsNov1, smsNov2], [fePaid]);
+  check('fusión: dos SMS un manual -> un par no automático', f2.length === 1 && f2[0].auto === false, JSON.stringify(f2));
+  check('fusión: gana el SMS más cercano al manual', f2[0]?.smsId === 'd-nov2', JSON.stringify(f2));
+  // Dos manuales y dos SMS: dos pares, ninguno automático.
+  const manualNov2 = manual('otro_manual', 11.49, d(2026, 11, 11, 12), 'Disney+', { currency: 'USD', fixedExpenseId: 'fe_disney' });
+  const f3 = findFixedFusions([manualNov, manualNov2, smsNov1, smsNov2], [fePaid]);
+  check('fusión 2x2: dos pares sin repetir', f3.length === 2
+    && new Set(f3.map(x => x.manualId)).size === 2 && new Set(f3.map(x => x.smsId)).size === 2, JSON.stringify(f3));
+  check('fusión 2x2: ninguno automático', f3.every(x => !x.auto));
+
+  // (5) Plan de fusión y reversa
+  const plan = planFixedFusion(manualNov, smsNov1, fePaid, NOWISO, 'disney');
+  check('plan: el SMS sobrevive con su id', plan.merged.id === 'd-nov');
+  check('plan: monto y fecha del SMS', plan.merged.amount === 11.49 && plan.merged.date === smsNov1.date);
+  check('plan: fixedExpenseId', plan.merged.fixedExpenseId === 'fe_disney');
+  check('plan: mergedFrom del manual', plan.merged.mergedFrom?.id === manualNov.id);
+  check('plan: gasto pagado por SMS', plan.nextFe.isPaid === true && plan.nextFe.paidBy === 'sms'
+    && plan.nextFe.paidTxId === 'd-nov' && plan.nextFe.lastTxId === undefined && plan.nextFe.paidDate === smsNov1.date,
+    JSON.stringify(plan.nextFe));
+  check('plan: paidCycleKey 2026-11', plan.nextFe.paidCycleKey === '2026-11');
+  check('plan: aprende smsMatchKey', plan.nextFe.smsMatchKey === 'disney');
+  check('plan: no muta el gasto original', fePaid.lastTxId === manualNov.id && fePaid.smsMatchKey === undefined);
+  const planKeep = planFixedFusion(manualNov, smsNov1, { ...fePaid, smsMatchKey: 'otra' }, NOWISO, 'disney');
+  check('plan: no pisa un smsMatchKey existente', planKeep.nextFe.smsMatchKey === 'otra');
+  const feMarked = { ...fePaid, paidCycleKey: '2026-12' };
+  check('plan: respeta un paidCycleKey ya guardado', planFixedFusion(manualNov, smsNov1, feMarked, NOWISO).nextFe.paidCycleKey === '2026-12');
+
+  // Manual de un mes pasado: el gasto no cambia (solo aprende la clave).
+  const manualOct = manual('fe_tx_fe_disney_2026-10', 11.49, d(2026, 10, 10, 12), 'Disney+', { currency: 'USD', fixedExpenseId: 'fe_disney' });
+  const planPast = planFixedFusion(manualOct, oct, fePaid, NOWISO);
+  check('plan mes pasado: gasto sin cambios', planPast.nextFe === fePaid);
+  check('plan mes pasado: aun así vincula el SMS', planPast.merged.fixedExpenseId === 'fe_disney' && planPast.merged.mergedFrom?.id === manualOct.id);
+  check('plan mes pasado: aprende la clave sin tocar el pago',
+    planFixedFusion(manualOct, oct, fePaid, NOWISO, 'disney').nextFe.smsMatchKey === 'disney'
+    && planFixedFusion(manualOct, oct, fePaid, NOWISO, 'disney').nextFe.paidTxId === undefined);
+
+  const back = splitMerged(plan.merged);
+  check('separar: vuelve el manual con su vínculo', back?.manual.id === manualNov.id && back.manual.fixedExpenseId === 'fe_disney');
+  check('separar: el SMS queda sin vínculo', back?.sms.fixedExpenseId === undefined);
+  const relinked = relinkFixedAfterSplit([plan.nextFe], 'd-nov', back!.manual);
+  check('relink: pagado a mano de nuevo', relinked[0].isPaid === true && relinked[0].paidBy === 'manual'
+    && relinked[0].lastTxId === manualNov.id && relinked[0].paidTxId === undefined && relinked[0].paidDate === manualNov.date,
+    JSON.stringify(relinked[0]));
+  check('relink: conserva el ciclo', relinked[0].paidCycleKey === '2026-11');
+  check('relink: otro SMS no toca el gasto', relinkFixedAfterSplit([plan.nextFe], 'otro-sms', back!.manual)[0] === plan.nextFe);
+
+  // Regresión del slice: id terminado en _2026-11 da el id real del gasto.
+  check('mergeManualIntoSms: id fe_tx_<id>_<ciclo> -> id real',
+    mergeManualIntoSms(manual('fe_tx_fe_disney_2026-11', 11.49, d(2026, 11, 10), 'Disney+', { currency: 'USD' }), smsNov1, NOWISO).fixedExpenseId === 'fe_disney');
+
+  // (6) Aprendizaje
+  {
+    const NOW_DEC = new Date(2026, 11, 3, 10);
+    const dec1 = dSms('d-dec', d(2026, 12, 1, 8));
+    const feDia10 = fixed('fe_d10', 'Disney+', 11.49, 10, { currency: 'USD', category: 'streaming' });
+    const withKey = matchFixedExpenses([dec1], [{ ...feDia10, smsMatchKey: 'disney' }], [dec1], NOW_DEC);
+    check('aprendizaje: con clave 85 automática', withKey.length === 1 && withKey[0].score === 85 && withKey[0].auto === true, JSON.stringify(withKey));
+    const noKey = matchFixedExpenses([dec1], [feDia10], [dec1], NOW_DEC);
+    check('aprendizaje: sin clave 75 no automática', noKey.length === 1 && noKey[0].score === 75 && noKey[0].auto === false, JSON.stringify(noKey));
+    // Precio distinto (13% > 10%) con clave y dentro de la ventana de pago (8 dic): 50 + 0 + 20.
+    const dec8 = dSms('d-dec8', d(2026, 12, 8, 8), { amount: 12.99 });
+    const price = matchFixedExpenses([dec8], [{ ...feDia10, smsMatchKey: 'disney' }], [dec8], NOW_DEC);
+    check('aprendizaje: precio 12.99 con clave 70 propuesta', price.length === 1 && price[0].score === 70 && price[0].auto === false, JSON.stringify(price));
+    // Rechazo: la clave coincide con la de FixedExpenseMatchModal y se respeta.
+    check('fixedRejectKey', fixedRejectKey('fe_d10', 'd-dec') === 'fx|fe_d10|d-dec');
+    const ign = matchFixedExpenses([dec1], [feDia10], [dec1], NOW_DEC, { ignored: new Set([fixedRejectKey('fe_d10', 'd-dec')]) });
+    check('rechazo: par ignorado no se propone', ign.length === 0);
+  }
+
+  // (7) SMS pasados
+  {
+    const manualOctReal = manual('fe_tx_fe_disney_2026-10', 11.49, d(2026, 10, 10, 12), 'Disney+', { currency: 'USD', fixedExpenseId: 'fe_disney' });
+    const past = findPastSmsForFixed(feDisney, [ago, sep, oct, smsNov1, manualNov, manualOctReal], { key: 'disney', beforeKey: '2026-11' });
+    check('pasados: tres meses', past.length === 3, JSON.stringify(past.map(p => p.cycleKey)));
+    check('pasados: orden reciente primero', past.map(p => p.tx.id).join() === 'd-oct,d-sep,d-ago', past.map(p => p.tx.id).join());
+    check('pasados: ciclos', past.map(p => p.cycleKey).join() === '2026-10,2026-09,2026-08');
+    check('pasados: manualId solo en octubre', past[0].manualId === 'fe_tx_fe_disney_2026-10' && past[1].manualId === undefined && past[2].manualId === undefined);
+    const netflix = sms('nf', 11.49, d(2026, 10, 1, 9), 'Netflix', { currency: 'USD' });
+    const linked = dSms('d-lnk', d(2026, 7, 1, 8), { fixedExpenseId: 'otro' });
+    const merged = dSms('d-mrg', d(2026, 6, 1, 8), { mergedFrom: { id: 'x', description: 'x', category: 'other', date: '', amount: 1, currency: 'USD' } });
+    const usdQ = dSms('d-q', d(2026, 5, 1, 8), { currency: 'Q' });
+    const paired = dSms('d-pair', d(2026, 4, 1, 8), { transferPairId: 'p' });
+    const noise = [netflix, linked, merged, usdQ, paired];
+    check('pasados: excluye otro comercio, vinculados, unidos, otra moneda y transferencias',
+      findPastSmsForFixed(feDisney, [ago, sep, oct, ...noise], { key: 'disney', beforeKey: '2026-11' }).length === 3);
+    check('pasados: excludeTxId', findPastSmsForFixed(feDisney, [ago, sep, oct], { key: 'disney', beforeKey: '2026-11', excludeTxId: 'd-oct' }).length === 2);
+    check('pasados: beforeKey', findPastSmsForFixed(feDisney, [ago, sep, oct], { key: 'disney', beforeKey: '2026-10' }).length === 2);
+    // Dos SMS del mismo mes: uno (el de monto más cercano; con empate, el más antiguo).
+    const octCheap = dSms('d-oct-b', d(2026, 10, 2, 8), { amount: 5 });
+    const one = findPastSmsForFixed(feDisney, [oct, octCheap], { key: 'disney', beforeKey: '2026-11' });
+    check('pasados: un SMS por mes (monto más cercano)', one.length === 1 && one[0].tx.id === 'd-oct', JSON.stringify(one.map(p => p.tx.id)));
+    const octTie = dSms('d-oct-c', d(2026, 10, 2, 8));
+    const tie = findPastSmsForFixed(feDisney, [octTie, oct], { key: 'disney', beforeKey: '2026-11' });
+    check('pasados: empate gana el más antiguo', tie.length === 1 && tie[0].tx.id === 'd-oct', JSON.stringify(tie.map(p => p.tx.id)));
+    const many: Transaction[] = [];
+    for (let i = 0; i < 30; i++) many.push(dSms(`m${i}`, new Date(2024, 0 + i, 1, 8)));
+    check('pasados: tope 24', findPastSmsForFixed(feDisney, many, { key: 'disney', beforeKey: '2027-01' }).length === 24);
+  }
+
+  // (8) Período 27 oct – 26 nov: el SMS pertenece al vencimiento más cercano
+  {
+    const s28 = dSms('p28', d(2026, 10, 28, 8));
+    const m = matchFixedExpenses([s28], [feDisney], [s28], NOW_NOV);
+    check('período: SMS 28 oct con gasto día 1 -> una coincidencia automática', m.length === 1 && m[0].auto === true && m[0].score === 90, JSON.stringify(m));
+    const feDia28 = fixed('fe28', 'Disney+', 11.49, 28, { currency: 'USD', category: 'streaming' });
+    const s27 = dSms('p27', d(2026, 10, 27, 8));
+    check('período: SMS 27 oct con gasto día 28 -> excluido (es de octubre)', matchFixedExpenses([s27], [feDia28], [s27], NOW_NOV).length === 0);
+  }
+
+  // (9) Reinicio mensual
+  {
+    const NOW_NOV1 = new Date(2026, 10, 1, 9);
+    const keep = { ...feDisney, isPaid: true, paidBy: 'sms' as const, paidTxId: 'x', paidCycleKey: '2026-11' };
+    const future = { ...feDisney, id: 'fut', isPaid: true, paidCycleKey: '2026-12' };
+    const old = { ...feDisney, id: 'old', isPaid: true, paidBy: 'manual' as const, lastTxId: 'y', paidDate: '2026-10-10', paidCycleKey: '2026-10' };
+    const noKey = { ...feDisney, id: 'nk', isPaid: true, paidBy: 'manual' as const, lastTxId: 'z', paidDate: '2026-10-10' };
+    const r = planFixedMonthlyReset([keep, future, old, noKey], NOW_NOV1);
+    check('reinicio: ciclo actual se conserva', r.next[0] === keep);
+    check('reinicio: ciclo futuro se conserva', r.next[1] === future);
+    check('reinicio: ciclo anterior se reinicia', r.next[2].isPaid === false && r.next[2].paidCycleKey === undefined
+      && r.next[2].lastTxId === undefined && r.next[2].paidDate === undefined && r.next[2].paidBy === undefined);
+    check('reinicio: sin clave se reinicia', r.next[3].isPaid === false && r.next[3].lastTxId === undefined);
+    check('reinicio: changed', r.changed === true);
+    const r2 = planFixedMonthlyReset([keep, feDisney], NOW_NOV1);
+    check('reinicio: sin cambios -> changed false', r2.changed === false && r2.next[0] === keep && r2.next[1] === feDisney);
+  }
+
+  // (10) Ranking
+  {
+    const netflixFe = fixed('nf', 'Netflix', 15.99, 5, { currency: 'USD', category: 'streaming' });
+    const luzFe = fixed('luz', 'Luz', 650, 28);
+    const rank = rankFixedForTx(smsNov1, [netflixFe, feDisney, luzFe, { ...feDisney, id: 'off', isActive: false }]);
+    check('ranking: Disney primero con >= 45', rank[0].expense.id === 'fe_disney' && rank[0].score >= 45, JSON.stringify(rank.map(r => [r.expense.id, r.score])));
+    check('ranking: solo activos', rank.length === 3);
+    const luzRank = rank.find(r => r.expense.id === 'luz');
+    check('ranking: otra moneda puntúa 0', luzRank?.score === 0 && luzRank.reasons[0] === 'otra moneda');
+  }
+
+  // (11) Pago atrasado: SMS del 1 oct para un gasto del día 30 es de septiembre
+  {
+    const NOW_OCT5 = new Date(2026, 9, 5, 10);
+    const feDia30 = fixed('fe30', 'Disney+', 11.49, 30, { currency: 'USD', category: 'streaming' });
+    check('atrasado: SMS 1 oct con gasto día 30 -> excluido', matchFixedExpenses([oct], [feDia30], [oct], NOW_OCT5).length === 0);
+  }
+}
+
+// ═════════════ Vínculo con gasto fijo: manual NO fe_tx_ y deshacer lote con fusiones ═════════════
+console.log('Fusión gasto fijo: separar y deshacer');
+{
+  const nowIso = new Date(2026, 10, 12, 10).toISOString();
+  const feX = fixed('fe_x', 'Gimnasio', 300, 10, { lastTxId: 'm_gym' });
+  const mGym = manual('m_gym', 300, d(2026, 11, 10), 'Gimnasio', { fixedExpenseId: 'fe_x' });
+  const sGym = sms('s_gym', 300, d(2026, 11, 11, 8), 'Gimnasio Atlas');
+
+  const mg = mergeManualIntoSms(mGym, sGym, nowIso);
+  check('unir manual no fe_tx_: mergedFrom conserva fixedExpenseId', mg.mergedFrom?.fixedExpenseId === 'fe_x' && mg.fixedExpenseId === 'fe_x');
+  const sp = splitMerged(mg);
+  check('separar manual no fe_tx_: el vínculo vuelve al manual', sp?.manual.fixedExpenseId === 'fe_x' && sp.sms.fixedExpenseId === undefined, JSON.stringify(sp));
+  const mgRelinked = { ...mg, fixedExpenseId: 'otro' };
+  check('separar: si el SMS se vinculó a otro gasto, no se mueve',
+    splitMerged(mgRelinked)?.sms.fixedExpenseId === 'otro' && splitMerged(mgRelinked)?.manual.fixedExpenseId === undefined);
+  check('unir manual sin vínculo: mergedFrom sin fixedExpenseId', mergeManualIntoSms(manual('m_z', 300, d(2026, 11, 10), 'x'), sGym, nowIso).mergedFrom?.fixedExpenseId === undefined);
+
+  // planSmsUndo con fixedMerges
+  const plan0 = planFixedFusion(mGym, sGym, feX, nowIso);
+  const batch: SmsBatchRecord = {
+    id: 'b1', at: new Date(2026, 10, 12, 9).toISOString(), mode: 'auto',
+    txIds: ['s_gym'], installmentIds: [],
+    fixedMarks: [{ expenseId: 'fe_x', prev: { isPaid: true, paidDate: mGym.date, paidTxId: undefined, paidBy: 'manual', lastTxId: 'm_gym', paidCycleKey: '2026-11' } }],
+    fixedMerges: [{ smsId: 's_gym', expenseId: 'fe_x', manual: mGym }],
+  };
+  const txsAfter = [plan0.merged];
+  const u = planSmsUndo(batch, txsAfter, [], [plan0.nextFe], false);
+  check('deshacer: el SMS fusionado automáticamente no cuenta como editado', u.removeTxs.length === 1 && u.editedCount === 0, JSON.stringify([u.removeTxs.length, u.editedCount]));
+  check('deshacer: vuelve el manual', u.restoreManuals.length === 1 && u.restoreManuals[0].id === 'm_gym');
+  check('deshacer: gasto restaurado (lastTxId y ciclo)', u.nextExpenses[0].paidTxId === undefined && u.nextExpenses[0].lastTxId === 'm_gym'
+    && u.nextExpenses[0].paidBy === 'manual' && u.nextExpenses[0].paidCycleKey === '2026-11' && u.nextExpenses[0].isPaid === true,
+    JSON.stringify(u.nextExpenses[0]));
+  check('deshacer: cuenta un gasto revertido', u.revertedFixed === 1);
+
+  // Si el manual ya existe (no se duplica)
+  check('deshacer: no duplica un manual existente', planSmsUndo(batch, [plan0.merged, mGym], [], [plan0.nextFe], false).restoreManuals.length === 0);
+
+  // mergedFrom que NO es del lote -> editado
+  const other = { ...plan0.merged, mergedFrom: { ...plan0.merged.mergedFrom!, id: 'otro_manual' } };
+  const uEd = planSmsUndo(batch, [other], [], [plan0.nextFe], false);
+  check('deshacer: mergedFrom distinto al del lote -> editado, se conserva', uEd.removeTxs.length === 0 && uEd.editedCount === 1);
+
+  // Lote viejo (sin fixedMerges): un mergedFrom sigue siendo "editado"
+  const oldBatch: SmsBatchRecord = { ...batch, fixedMerges: undefined, fixedMarks: [] };
+  const uOld = planSmsUndo(oldBatch, txsAfter, [], [plan0.nextFe], false);
+  check('deshacer lote viejo: mergedFrom cuenta como editado', uOld.removeTxs.length === 0 && uOld.editedCount === 1 && uOld.restoreManuals.length === 0);
+
+  // Lote viejo: prev sin lastTxId/paidCycleKey -> esos campos no se tocan
+  const oldMark: SmsBatchRecord = {
+    id: 'b0', at: batch.at, mode: 'auto', txIds: ['s_pay'], installmentIds: [],
+    fixedMarks: [{ expenseId: 'fe_y', prev: { isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined } as any }],
+  };
+  const sPay = sms('s_pay', 100, d(2026, 11, 11, 8), 'Tigo', { fixedExpenseId: 'fe_y' });
+  const feY = fixed('fe_y', 'Internet', 100, 11, { isPaid: true, paidBy: 'sms', paidTxId: 's_pay', lastTxId: 'keep_me' });
+  const uMark = planSmsUndo(oldMark, [sPay], [], [feY], false);
+  check('deshacer lote viejo: lastTxId intacto', uMark.nextExpenses[0].lastTxId === 'keep_me' && uMark.nextExpenses[0].isPaid === false);
 }
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);

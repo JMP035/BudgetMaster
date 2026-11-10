@@ -77,9 +77,20 @@ export const getCat = (id: string, customCategories: CustomCategory[] = [], type
     const custom = customCategories.find(c => c.id === id);
     if (custom) return customToCategory(custom);
 
-    // Fallback
-    return { id, label: id, icon: "ellipsis-horizontal-circle-outline", color: "#95A5A6" };
+    // Fallback: nunca mostrar el id crudo (p. ej. "custom_1712345") como etiqueta
+    const label = /^custom/i.test(id) ? "Categoría eliminada" : "Otra categoría";
+    return { id, label, icon: "ellipsis-horizontal-circle-outline", color: "#95A5A6" };
 };
+
+/** Etiqueta legible de una categoría para texto visible o prompts de IA (nunca el id crudo). */
+export function categoryLabelOf(
+    id: string | null | undefined,
+    customCategories: CustomCategory[] = [],
+    type?: 'income' | 'expense' | 'transfer',
+): string {
+    if (!id) return "Sin categoría";
+    return getCat(id, customCategories, type).label.replace(/\.$/, '');
+}
 
 /** Retorna todas las categorías de gastos incluyendo custom */
 export function getAllExpenseCategories(customCategories: CustomCategory[] = []): Category[] {

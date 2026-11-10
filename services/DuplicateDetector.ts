@@ -9,12 +9,12 @@ import type { Transaction } from './storage';
 import { formatLocalDay } from './BankSmsParser';
 import { flatText } from './Categorizer';
 import { merchantOfTransaction } from './MerchantRules';
+import { fixedIdFromFeTxId } from './FixedCycle';
 
 export interface DupPair { manualId: string; smsId: string; score: number; ambiguous: boolean; reasons: string[]; }
 
 const DUP_PROPOSE_THRESHOLD = 60;
 const AMOUNT_EPS = 0.005;
-const FE_TX_PREFIX = 'fe_tx_';
 
 /** Clave estable de un par: `${manualId}|${smsId}`. */
 export function dupPairKey(manualId: string, smsId: string): string {
@@ -163,8 +163,14 @@ export function mergeManualIntoSms(manual: Transaction, sms: Transaction, nowIso
     merged.accountSource = 'user';
   }
 
-  if (manual.fixedExpenseId) merged.fixedExpenseId = manual.fixedExpenseId;
-  else if (manual.id.startsWith(FE_TX_PREFIX)) merged.fixedExpenseId = manual.id.slice(FE_TX_PREFIX.length);
+  if (manual.fixedExpenseId) {
+    merged.fixedExpenseId = manual.fixedExpenseId;
+    // Se conserva para que "Separar" devuelva el vínculo al manual aunque su id no sea fe_tx_*.
+    merged.mergedFrom.fixedExpenseId = manual.fixedExpenseId;
+  } else {
+    const fid = fixedIdFromFeTxId(manual.id);
+    if (fid) merged.fixedExpenseId = fid;
+  }
 
   return merged;
 }
@@ -203,10 +209,18 @@ export function splitMerged(sms: Transaction): { sms: Transaction; manual: Trans
   if (mf.accountId !== undefined) manual.accountId = mf.accountId;
   if (mf.categoryEditedAt !== undefined) manual.categoryEditedAt = mf.categoryEditedAt;
 
-  // El vínculo con el gasto fijo de un fe_tx_ vuelve al manual.
-  if (mf.id.startsWith(FE_TX_PREFIX) && restored.fixedExpenseId) {
-    manual.fixedExpenseId = restored.fixedExpenseId;
-    delete restored.fixedExpenseId;
+  // El vínculo con el gasto fijo vuelve al manual si era suyo: un fe_tx_ o un manual que ya traía
+  // fixedExpenseId (conservado en mergedFrom).
+  if (restored.fixedExpenseId) {
+    if (mf.fixedExpenseId !== undefined) {
+      if (restored.fixedExpenseId === mf.fixedExpenseId) {
+        manual.fixedExpenseId = mf.fixedExpenseId;
+        delete restored.fixedExpenseId;
+      }
+    } else if (fixedIdFromFeTxId(mf.id) !== null) {
+      manual.fixedExpenseId = restored.fixedExpenseId;
+      delete restored.fixedExpenseId;
+    }
   }
 
   return { sms: restored, manual };

@@ -12,6 +12,7 @@ import {
     getCurrentFinancialPeriod, getDaysUntilNextPayment
 } from "../services/storage";
 import { buildLocalOpening, computeLocalMetrics, getLocalResponse, getQuickReplies } from "../services/LocalAdvisorEngine";
+import { categoryLabelOf } from "../categories";
 import { C } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
 import { GlassBackground, GlassCard } from "./GlassCard";
@@ -67,7 +68,7 @@ function buildFinancialContext(
     const catMap: Record<string, number> = {};
     periodTx.filter(t => t.type === "expense").forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
     const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5)
-        .map(([cat, amt]) => `  · ${cat}: Q${amt.toFixed(0)}`).join("\n");
+        .map(([cat, amt]) => `  · ${categoryLabelOf(cat, settings.customCategories, "expense")}: Q${amt.toFixed(0)}`).join("\n");
 
     // Historial últimos 3 períodos por mes calendario
     const m = now.getMonth(); const y = now.getFullYear();
@@ -122,7 +123,7 @@ function buildFinancialContext(
         .map(b => { 
             const spent = transactions.filter(t => t.category === b.categoryId && t.type === "expense" && new Date(t.date) >= fp.start && new Date(t.date) <= fp.end).reduce((s,t)=>s+t.amount, 0);
             const pctB = b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0;
-            return `  · ${b.categoryId}: Q${spent.toFixed(0)} / Q${b.limit.toFixed(0)} (${pctB}%${pctB >= 100 ? " ⚠️ EXCEDIDO" : ""})`; 
+            return `  · ${categoryLabelOf(b.categoryId, settings.customCategories, "expense")}: Q${spent.toFixed(0)} / Q${b.limit.toFixed(0)} (${pctB}%${pctB >= 100 ? " ⚠️ EXCEDIDO" : ""})`; 
         })
         .join("\n") || "  · Sin límites por categoría";
 

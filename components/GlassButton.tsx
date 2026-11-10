@@ -1,5 +1,5 @@
 import React from "react";
-import { ActivityIndicator, StyleProp, StyleSheet, Text, TouchableOpacity, ViewStyle } from "react-native";
+import { ActivityIndicator, StyleProp, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View, ViewStyle } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { GlassBackground } from "./GlassCard";
@@ -22,7 +22,7 @@ const TEXT_COLOR: Record<GlassButtonKind, string> = {
     primary: C.onPrimary,
     secondary: C.text,
     destructive: C.danger,
-    ghost: C.textSub,
+    ghost: C.textPrimary,
 };
 
 export function GlassButton({
@@ -58,7 +58,7 @@ export function GlassButton({
             ) : (
                 <>
                     {!!icon && <Ionicons name={icon} size={18} color={color} />}
-                    <Text style={[s.label, { color }]} numberOfLines={2}>{label}</Text>
+                    <Text style={[s.label, { color }]}>{label}</Text>
                 </>
             )}
         </TouchableOpacity>
@@ -90,6 +90,46 @@ const s = StyleSheet.create({
     },
     disabled: { opacity: 0.5 },
     label: { fontSize: 15, fontWeight: "900", textAlign: "center", flexShrink: 1 },
+    groupRow: { flexDirection: "row", alignItems: "stretch" },
+    groupColumn: { flexDirection: "column", alignItems: "stretch" },
+    groupItemRow: { flex: 1 },
 });
+
+export interface GlassButtonGroupProps {
+    children: React.ReactNode;
+    /** "auto": fila en pantallas anchas, columna en pantallas angostas o con texto grande. */
+    direction?: "auto" | "row" | "column";
+    breakpoint?: number;
+    gap?: number;
+    /** En columna, el botón primario (o sin kind) va primero. */
+    primaryFirstWhenStacked?: boolean;
+    style?: StyleProp<ViewStyle>;
+}
+
+type GlassButtonElement = React.ReactElement<GlassButtonProps>;
+
+export function GlassButtonGroup({
+    children,
+    direction = "auto",
+    breakpoint = 400,
+    gap = 8,
+    primaryFirstWhenStacked = true,
+    style,
+}: GlassButtonGroupProps) {
+    const { width, fontScale } = useWindowDimensions();
+    const stacked = direction === "column" || (direction === "auto" && (width < breakpoint || fontScale > 1.2));
+    let items = React.Children.toArray(children).filter(React.isValidElement) as GlassButtonElement[];
+    if (stacked && primaryFirstWhenStacked) {
+        const isPrimary = (el: GlassButtonElement) => !el.props.kind || el.props.kind === "primary";
+        items = [...items.filter(isPrimary), ...items.filter(el => !isPrimary(el))];
+    }
+    return (
+        <View style={[stacked ? s.groupColumn : s.groupRow, { gap }, style]}>
+            {items.map(child => (stacked
+                ? child
+                : React.cloneElement(child, { style: [child.props.style, s.groupItemRow] })))}
+        </View>
+    );
+}
 
 export default GlassButton;

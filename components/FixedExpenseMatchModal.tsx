@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
-import { FixedExpense, StorageService, Transaction } from "../services/storage";
+import { FixedExpense, StorageService, Transaction, UserSettings } from "../services/storage";
+import { findPastSmsForFixed } from "../services/FixedExpenseMatcher";
 import type { FixedMatch } from "../services/FixedExpenseMatcher";
+import { dupPairKey } from "../services/DuplicateDetector";
+import { occurrenceKeyFor } from "../services/FixedCycle";
 import { merchantKey, merchantOfTransaction } from "../services/MerchantRules";
 import { formatMoney } from "../services/format";
 import { GlassCard } from "./GlassCard";
@@ -11,15 +14,23 @@ import { GlassSheet } from "./GlassSheet";
 import { GlassButton } from "./GlassButton";
 import { InlineNotice } from "./InlineNotice";
 import Money from "./Money";
+import FixedExpenseLinkSheet from "./FixedExpenseLinkSheet";
 
 export interface FixedExpenseMatchModalProps {
     visible: boolean;
     matches: FixedMatch[];
     transactions: Transaction[];
     fixedExpenses: FixedExpense[];
+    /** Para la hoja de «pagos anteriores». Sin esto no se ofrece vincular historial. */
+    settings?: UserSettings;
     onClose: () => void;
     onChanged: () => void;
 }
+
+const SWITCH_DELAY_MS = 250;
+
+/** Tras confirmar: pagos anteriores del mismo comercio que se pueden vincular como historial. */
+interface HistoryOffer { tx: Transaction; expenseId: string; count: number; }
 
 const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 
@@ -51,6 +62,7 @@ export function FixedExpenseMatchModal({
     matches,
     transactions,
     fixedExpenses,
+    settings,
     onClose,
     onChanged,
 }: FixedExpenseMatchModalProps) {
@@ -58,6 +70,21 @@ export function FixedExpenseMatchModal({
     const [busy, setBusy] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
+    const [offer, setOffer] = useState<HistoryOffer | null>(null);
+    // Datos al día tras confirmar (las props se refrescan recién cuando el padre recarga)
+    const [live, setLive] = useState<{ txs: Transaction[]; fes: FixedExpense[] }>({ txs: transactions, fes: fixedExpenses });
+    // 'none' = pausa entre dos ventanas (Android no maneja dos Modal a la vez)
+    const [view, setView] = useState<"list" | "none" | "history">("list");
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const clearTimer = () => {
+        if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    };
+    const goTo = useCallback((next: "list" | "history") => {
+        clearTimer();
+        setView("none");
+        timerRef.current = setTimeout(() => { setView(next); timerRef.current = null; }, SWITCH_DELAY_MS);
+    }, []);
 
     useEffect(() => {
         if (visible) {
@@ -65,7 +92,12 @@ export function FixedExpenseMatchModal({
             setBusy(null);
             setError(null);
             setSuccess(null);
+            setOffer(null);
+            setView("list");
+            setLive({ txs: transactions, fes: fixedExpenses });
         }
+        return clearTimer;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [visible]);
 
     const groups = useMemo<Group[]>(() => {
@@ -106,20 +138,40 @@ export function FixedExpenseMatchModal({
         setSuccess(null);
         try {
             const learnKey = merchantKey(merchantOfTransaction(tx)) ?? undefined;
-            await StorageService.markFixedPaidBySms(match.expenseId, match.txId, learnKey);
+            let nextTxs = live.txs;
+            let nextFes: FixedExpense[];
+            if (match.manualId) {
+                // Ya estaba pagado a mano: se queda el pago del banco y se borra el registro manual.
+                const res = await StorageService.mergeFixedManualIntoSms(match.expenseId, match.manualId, match.txId, learnKey);
+                nextTxs = res.transactions;
+                nextFes = res.fixedExpenses;
+            } else {
+                nextFes = await StorageService.markFixedPaidBySms(match.expenseId, match.txId, learnKey);
+            }
+            setLive({ txs: nextTxs, fes: nextFes });
             // El gasto ya quedó pagado y el movimiento ya tiene dueño: se van todas las propuestas que los tocan.
             setDone(prev => {
                 const next = new Set(prev);
                 for (const m of matches) {
-                    if (m.expenseId === match.expenseId || m.txId === match.txId) next.add(matchKey(m));
+                    if (m.expenseId === match.expenseId || m.txId === match.txId
+                        || (!!match.manualId && m.manualId === match.manualId)) next.add(matchKey(m));
                 }
                 return next;
             });
             setSuccess(
-                learnKey
-                    ? `«${expense.name}» quedó pagado. La próxima vez se marcará solo.`
-                    : `«${expense.name}» quedó pagado.`,
+                match.manualId
+                    ? `Unido: quedó el pago del banco como pago de «${expense.name}».`
+                    : learnKey
+                        ? `«${expense.name}» quedó pagado. La próxima vez se marcará solo.`
+                        : `«${expense.name}» quedó pagado.`,
             );
+            // ¿Hay pagos anteriores del mismo comercio para guardar como historial?
+            const feAfter = nextFes.find(e => e.id === match.expenseId);
+            const beforeKey = feAfter ? occurrenceKeyFor(feAfter.dayOfMonth, tx.date) : null;
+            const count = feAfter && learnKey && beforeKey && settings
+                ? findPastSmsForFixed(feAfter, nextTxs, { key: learnKey, excludeTxId: tx.id, beforeKey }).length
+                : 0;
+            setOffer(count > 0 ? { tx, expenseId: match.expenseId, count } : null);
             onChanged();
         } catch (e) {
             console.warn("markFixedPaidBySms error:", e);
@@ -136,7 +188,9 @@ export function FixedExpenseMatchModal({
         setError(null);
         setSuccess(null);
         try {
-            await StorageService.addDupIgnored([`fx|${match.expenseId}|${match.txId}`]);
+            await StorageService.addDupIgnored([
+                match.manualId ? dupPairKey(match.manualId, match.txId) : `fx|${match.expenseId}|${match.txId}`,
+            ]);
             setDone(prev => new Set(prev).add(key));
             onChanged();
         } catch (e) {
@@ -147,9 +201,36 @@ export function FixedExpenseMatchModal({
         }
     };
 
+    // Hoja de pagos anteriores (una sola ventana a la vez)
+    if (view === "history" && offer && settings) {
+        return (
+            <FixedExpenseLinkSheet
+                visible
+                tx={offer.tx}
+                transactions={live.txs}
+                fixedExpenses={live.fes}
+                settings={settings}
+                initialMode="history"
+                expenseId={offer.expenseId}
+                onClose={() => { setOffer(null); goTo("list"); }}
+                onChanged={(txs, fes) => { setLive({ txs, fes }); onChanged(); }}
+            />
+        );
+    }
+    if (view !== "list") return null;
+
     return (
         <GlassSheet onClose={onClose} title="Gastos fijos por confirmar" icon="calendar-outline">
             {!!success && <InlineNotice variant="success" text={success} style={s.notice} />}
+            {!!success && !!offer && (
+                <GlassButton
+                    label={`Vincular ${offer.count} ${offer.count === 1 ? "pago anterior" : "pagos anteriores"}`}
+                    icon="time-outline"
+                    kind="secondary"
+                    onPress={() => goTo("history")}
+                    style={s.offerBtn}
+                />
+            )}
             {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
 
             {groups.length === 0 ? (
@@ -196,9 +277,11 @@ export function FixedExpenseMatchModal({
                                                 <Text style={s.candDate}>{fmtDay(tx.date)}</Text>
                                             </View>
                                             <Text style={s.question}>
-                                                {multi
-                                                    ? `Pago de ${merchant} por ${fmtAmount(tx.amount, tx.currency)} (${fmtDay(tx.date)})`
-                                                    : `¿Este pago de ${merchant} de ${fmtAmount(tx.amount, tx.currency)} (${fmtDay(tx.date)}) es tu gasto fijo ${feLabel}?`}
+                                                {match.manualId
+                                                    ? `Ya marcaste «${expense.name}» como pagado a mano. ¿Este pago de ${merchant} de ${fmtAmount(tx.amount, tx.currency)} (${fmtDay(tx.date)}) es el mismo cobro? Se queda el del banco y se borra el registro manual.`
+                                                    : multi
+                                                        ? `Pago de ${merchant} por ${fmtAmount(tx.amount, tx.currency)} (${fmtDay(tx.date)})`
+                                                        : `¿Este pago de ${merchant} de ${fmtAmount(tx.amount, tx.currency)} (${fmtDay(tx.date)}) es tu gasto fijo ${feLabel}?`}
                                             </Text>
                                             {match.reasons.length > 0 && (
                                                 <Text style={s.reasons}>
@@ -207,8 +290,8 @@ export function FixedExpenseMatchModal({
                                             )}
                                             <View style={s.actions}>
                                                 <GlassButton
-                                                    label="Sí, marcar pagado"
-                                                    icon="checkmark-circle-outline"
+                                                    label={match.manualId ? "Sí, unir" : "Sí, marcar pagado"}
+                                                    icon={match.manualId ? "git-merge-outline" : "checkmark-circle-outline"}
                                                     onPress={() => { void confirmMatch(match, tx, expense); }}
                                                     loading={busy === yesKey}
                                                     disabled={!!busy && busy !== yesKey}
@@ -251,6 +334,7 @@ const s = StyleSheet.create({
     emptyTitle: { color: C.textPrimary, fontSize: 18, fontWeight: "900" },
     emptySub: { color: C.textSub, fontSize: 13, textAlign: "center" },
     emptyBtn: { alignSelf: "stretch", marginTop: 8 },
+    offerBtn: { marginBottom: 12 },
 });
 
 export default FixedExpenseMatchModal;

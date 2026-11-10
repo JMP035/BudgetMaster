@@ -6,7 +6,7 @@ import {
 } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
 import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
-import { EXPENSE_CATEGORIES } from "../categories";
+import { getAllExpenseCategories } from "../categories";
 import { C } from "../theme";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassCard } from "./GlassCard";
@@ -289,7 +289,7 @@ export default function StatsScreen({ transactions, settings }: Props) {
     const savingsRate = totalInc > 0 ? (savings / totalInc) * 100 : 0;
 
     // ── Datos para pastel ─────────────────────────────────────
-    const byCat: PieSlice[] = EXPENSE_CATEGORIES
+    const byCat: PieSlice[] = getAllExpenseCategories(settings.customCategories)
         .map(cat => {
             const sum = expensesQ.filter(t => t.category === cat.id).reduce((s, t) => s + t.amount, 0);
             return { id: cat.id, label: cat.label, value: sum, pct: totalExp > 0 ? (sum / totalExp) * 100 : 0, color: cat.color, icon: cat.icon };

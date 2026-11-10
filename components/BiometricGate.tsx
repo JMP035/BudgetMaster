@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
 import React, { useEffect, useRef, useState } from "react";
 import {
-    ActivityIndicator, Animated, AppState, AppStateStatus, Easing, StyleSheet, Text,
+    ActivityIndicator, Animated, AppState, AppStateStatus, Easing, Modal, StyleSheet, Text,
     TouchableOpacity, View
 } from "react-native";
 import { StorageService } from "../services/storage";
@@ -24,6 +24,10 @@ type AuthState = "checking" | "locked" | "unlocked" | "disabled" | "error";
 // justo al cerrar el prompt biométrico; sin este margen eso re-bloqueaba en bucle.
 const AUTH_GRACE_MS = 3000;
 
+// Tiempo máximo fuera de la app antes de volver a pedir biometría. Si el usuario
+// vuelve antes de este tiempo no se le pide nada.
+const RELOCK_AFTER_MS = 30_000;
+
 // ─────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────
@@ -33,12 +37,16 @@ export default function BiometricGate({ children }: Props) {
     const [error, setError] = useState<string>("");
     const [attempts, setAttempts] = useState(0);
     const [isAuthenticating, setIsAuthenticating] = useState(false);
+    // Una vez true, los children quedan montados para siempre (el re-bloqueo se dibuja encima)
+    const [hasUnlockedOnce, setHasUnlockedOnce] = useState(false);
 
     // Refs de estado para usar dentro del listener de AppState sin depender de closures viejas
     const authStateRef = useRef<AuthState>("checking");
+    const hasUnlockedOnceRef = useRef(false);
     const biometricEnabledRef = useRef(false);
     const isAuthenticatingRef = useRef(false);
-    const relockedRef = useRef(false);
+    // Momento en que la app pasó a background estando desbloqueada (ver RELOCK_AFTER_MS)
+    const backgroundedAtRef = useRef<number | null>(null);
     // Marca de tiempo del último inicio/fin de un prompt biométrico (ver AUTH_GRACE_MS)
     const lastAuthEventRef = useRef(0);
 
@@ -67,24 +75,38 @@ export default function BiometricGate({ children }: Props) {
         initAuth();
     }, []);
 
-    // Re-chequea / vuelve a pedir biometría cuando la app vuelve a foreground
-    // después de haber sido re-bloqueada al pasar a background.
+    // Al pasar a background se anota la hora; al volver a foreground, si pasaron más de
+    // RELOCK_AFTER_MS, se bloquea (overlay encima de la app, que sigue montada) y se pide biometría.
     useEffect(() => {
         const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
-            if (
-                next === "background" &&
-                authStateRef.current === "unlocked" &&
-                biometricEnabledRef.current &&
-                !isAuthenticatingRef.current &&
-                Date.now() - lastAuthEventRef.current > AUTH_GRACE_MS
-            ) {
-                relockedRef.current = true;
-                setAttempts(0);
-                setError("");
-                setAuthState("locked");
-            } else if (next === "active" && relockedRef.current && !isAuthenticatingRef.current) {
-                relockedRef.current = false;
-                initAuth();
+            if (next === "background") {
+                if (
+                    backgroundedAtRef.current === null &&
+                    authStateRef.current === "unlocked" &&
+                    biometricEnabledRef.current &&
+                    !isAuthenticatingRef.current &&
+                    Date.now() - lastAuthEventRef.current > AUTH_GRACE_MS
+                ) {
+                    backgroundedAtRef.current = Date.now();
+                }
+            } else if (next === "active") {
+                const backgroundedAt = backgroundedAtRef.current;
+                backgroundedAtRef.current = null;
+                if (
+                    backgroundedAt !== null &&
+                    Date.now() - backgroundedAt > RELOCK_AFTER_MS &&
+                    authStateRef.current === "unlocked" &&
+                    !isAuthenticatingRef.current
+                ) {
+                    // Bloqueo síncrono (antes de cualquier await) para minimizar el parpadeo
+                    authStateRef.current = "locked";
+                    fadeAnim.setValue(0);
+                    scaleAnim.setValue(0.9);
+                    setAttempts(0);
+                    setError("");
+                    setAuthState("locked");
+                    initAuth();
+                }
             }
             // "inactive" se ignora a propósito: en iOS el propio prompt de Face ID
             // y el selector de apps generan "inactive". En Android, el PIN de
@@ -95,26 +117,42 @@ export default function BiometricGate({ children }: Props) {
         return () => sub.remove();
     }, []);
 
+    // Pasa a un estado que deja ver la app ("unlocked" o "disabled"). El primer paso a
+    // uno de ellos monta los children; desde entonces ya no se desmontan nunca.
+    const markUnlocked = (state: "unlocked" | "disabled") => {
+        authStateRef.current = state;
+        hasUnlockedOnceRef.current = true;
+        setHasUnlockedOnce(true);
+        setAuthState(state);
+    };
+
     const initAuth = async () => {
-        setAuthState("checking");
+        if (hasUnlockedOnceRef.current) {
+            // Re-bloqueo: la app sigue montada debajo; NO se usa la pantalla "checking"
+            // (reemplazaría la app). Se mantiene el overlay de bloqueo.
+            authStateRef.current = "locked";
+            setAuthState("locked");
+        } else {
+            setAuthState("checking");
+        }
         setError("");
         try {
             const settings = await StorageService.getSettingsOrThrow();
             biometricEnabledRef.current = settings.biometricEnabled;
             if (!settings.biometricEnabled) {
-                setAuthState("disabled");
+                markUnlocked("disabled");
                 return;
             }
 
             const hasHardware = await LocalAuthentication.hasHardwareAsync();
             if (!hasHardware) {
-                setAuthState("disabled");
+                markUnlocked("disabled");
                 return;
             }
 
             const isEnrolled = await LocalAuthentication.isEnrolledAsync();
             if (!isEnrolled) {
-                setAuthState("disabled");
+                markUnlocked("disabled");
                 return;
             }
 
@@ -159,11 +197,16 @@ export default function BiometricGate({ children }: Props) {
             });
 
             if (result.success) {
-                // Animación de éxito
-                Animated.parallel([
-                    Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
-                    Animated.timing(scaleAnim, { toValue: 1.1, duration: 200, useNativeDriver: true }),
-                ]).start(() => setAuthState("unlocked"));
+                if (hasUnlockedOnceRef.current) {
+                    // Re-bloqueo: se quita el overlay directamente; la app no se remonta
+                    markUnlocked("unlocked");
+                } else {
+                    // Primer desbloqueo: animación de éxito y luego se montan los children
+                    Animated.parallel([
+                        Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+                        Animated.timing(scaleAnim, { toValue: 1.1, duration: 200, useNativeDriver: true }),
+                    ]).start(() => markUnlocked("unlocked"));
+                }
             } else {
                 setAttempts(prev => prev + 1);
                 if (result.error === "user_cancel" || result.error === "system_cancel") {
@@ -192,11 +235,9 @@ export default function BiometricGate({ children }: Props) {
         ]).start();
     };
 
-    // Si no necesita auth o ya fue desbloqueado, mostrar la app directamente
-    if (authState === "disabled" || authState === "unlocked") {
-        return <>{children}</>;
-    }
-
+    // Pantalla de bloqueo (checking / error / locked). Se usa tanto en el arranque en frío
+    // (pantalla completa, sin children) como en el re-bloqueo (dentro de un Modal sobre la app).
+    const renderLockScreen = () => {
     if (authState === "checking") {
         return (
             <View style={s.screen}>
@@ -232,9 +273,10 @@ export default function BiometricGate({ children }: Props) {
     const glowOpacity = glowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.3, 0.8] });
 
     return (
-        <Animated.View style={[s.screen, { opacity: fadeAnim }]}>
-            {/* FONDO DEGRADADO */}
+        <View style={s.screen}>
+            {/* FONDO OPACO (no se anima: en re-bloqueo debe tapar la app desde el primer frame) */}
             <View style={s.bgGradient} />
+          <Animated.View style={[s.fadeLayer, { opacity: fadeAnim }]}>
             <View style={s.bgOrb1} />
             <View style={s.bgOrb2} />
 
@@ -287,7 +329,42 @@ export default function BiometricGate({ children }: Props) {
                 )}
               </GlassCard>
             </Animated.View>
-        </Animated.View>
+          </Animated.View>
+        </View>
+    );
+    };
+
+    // Arranque en frío (antes del primer desbloqueo): solo la pantalla de bloqueo, sin children.
+    if (!hasUnlockedOnce) {
+        return renderLockScreen();
+    }
+
+    // Después del primer desbloqueo los children quedan siempre montados. Si hay que
+    // re-bloquear, la pantalla de bloqueo va en un Modal (renderizado DESPUÉS de los children
+    // para apilarse encima de cualquier otro Modal abierto) y los children se ocultan al
+    // lector de pantalla.
+    const relocked = authState === "locked" || authState === "checking" || authState === "error";
+    return (
+        <>
+            <View
+                style={s.appWrap}
+                importantForAccessibility={relocked ? "no-hide-descendants" : "auto"}
+                accessibilityElementsHidden={relocked}
+            >
+                {children}
+            </View>
+            {relocked && (
+                <Modal
+                    visible
+                    transparent
+                    statusBarTranslucent
+                    animationType="none"
+                    onRequestClose={() => {}}
+                >
+                    {renderLockScreen()}
+                </Modal>
+            )}
+        </>
     );
 }
 
@@ -310,6 +387,11 @@ const s = StyleSheet.create({
     bgOrb2: {
         position: "absolute", width: 200, height: 200, borderRadius: 100,
         backgroundColor: C.accent + "22", bottom: -60, left: -60,
+    },
+    appWrap: { flex: 1 },
+    fadeLayer: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: "center", justifyContent: "center",
     },
     card: { width: "88%" },
     cardContent: { padding: 32, alignItems: "center" },

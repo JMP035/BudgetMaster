@@ -6,14 +6,24 @@
 //           40 = una palabra del nombre (>= 4 letras) aparece en el comercio o la descripción
 //           30 = coincide un grupo de alias (luz, agua, internet, streaming)
 //   monto   30 = diferencia <= 0.01 ; 20 = hasta 10 % ; 10 = hasta 35 % (solo utilities/internet)
-//   ventana 20 = del día de pago -7 al +5 ; 5 = otro día del mes calendario actual
+//   ventana 20 = del día de pago -7 al +5 ; 5 = otro día del ciclo (el movimiento debe pertenecer
+//                al vencimiento del mes actual: ver FixedCycle.occurrenceKeyFor)
 // Solo se marca sola con puntaje >= 80 y único en ambos sentidos; entre 45 y 79
 // (o con varios candidatos) es propuesta.
 import type { FixedExpense, Transaction } from './storage';
 import { flatText } from './Categorizer';
 import { merchantKey, merchantOfTransaction } from './MerchantRules';
+import { dupPairKey, mergeManualIntoSms } from './DuplicateDetector';
+import {
+  cycleKeyFromFeTxId, dueDistanceDays, fixedIdFromFeTxId, monthKey, occurrenceKeyFor, storedDayNumber,
+} from './FixedCycle';
 
-export interface FixedMatch { expenseId: string; txId: string; score: number; auto: boolean; reasons: string[]; }
+export interface FixedMatch { expenseId: string; txId: string; score: number; auto: boolean; reasons: string[]; manualId?: string; }
+
+/** Clave de "No es este" (par gasto fijo + movimiento ignorado). Misma que usa FixedExpenseMatchModal. */
+export function fixedRejectKey(feId: string, txId: string): string {
+  return `fx|${feId}|${txId}`;
+}
 
 export const FIXED_AUTO_THRESHOLD = 80;
 export const FIXED_PROPOSE_THRESHOLD = 45;
@@ -58,11 +68,6 @@ function txText(tx: Transaction): string {
   return flatText(`${merchantOfTransaction(tx) ?? ''} ${tx.description ?? ''}`);
 }
 
-function sameMonth(iso: string, ref: Date): boolean {
-  const d = new Date(iso);
-  return !isNaN(d.getTime()) && d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
-}
-
 function scoreName(fe: FixedExpense, tx: Transaction, text: string): { score: number; reason?: string } {
   const feKey = fe.smsMatchKey ? flatText(fe.smsMatchKey) : null;
   if (feKey && merchantKey(merchantOfTransaction(tx)) === feKey) {
@@ -84,20 +89,25 @@ function scoreName(fe: FixedExpense, tx: Transaction, text: string): { score: nu
   return { score: 0 };
 }
 
-function scoreAmount(fe: FixedExpense, tx: Transaction): { score: number; reason?: string } {
-  const diff = Math.abs(tx.amount - fe.amount);
+/** Puntaje de monto de `amount` contra un monto base (el del gasto fijo o el del manual). */
+function scoreAmountVs(base: number, category: string, amount: number): { score: number; reason?: string } {
+  const diff = Math.abs(amount - base);
   if (diff <= 0.01) return { score: 30, reason: 'monto exacto' };
-  const rel = fe.amount > 0 ? diff / fe.amount : Infinity;
+  const rel = base > 0 ? diff / base : Infinity;
   if (rel <= 0.10) return { score: 20, reason: 'monto similar (<=10%)' };
-  if (rel <= 0.35 && (fe.category === 'utilities' || fe.category === 'internet')) {
+  if (rel <= 0.35 && (category === 'utilities' || category === 'internet')) {
     return { score: 10, reason: 'monto variable (<=35%)' };
   }
   return { score: 0 };
 }
 
+function scoreAmount(fe: FixedExpense, tx: Transaction): { score: number; reason?: string } {
+  return scoreAmountVs(fe.amount, fe.category, tx.amount);
+}
+
 function scoreWindow(fe: FixedExpense, tx: Transaction): { score: number; reason: string } {
-  const delta = new Date(tx.date).getDate() - fe.dayOfMonth;
-  if (delta >= -7 && delta <= 5) return { score: 20, reason: 'cerca del día de pago' };
+  const delta = dueDistanceDays(fe.dayOfMonth, tx.date);
+  if (delta !== null && delta >= -7 && delta <= 5) return { score: 20, reason: 'cerca del día de pago' };
   return { score: 5, reason: 'otro día del mes' };
 }
 
@@ -110,17 +120,24 @@ export function matchFixedExpenses(
   expenses: FixedExpense[],
   allTxs: Transaction[],
   now: Date,
+  opts?: { ignored?: Set<string> },
 ): FixedMatch[] {
-  // Gastos fijos que ya tienen un movimiento (manual) este mes: no se consideran.
+  const cur = monthKey(now);
+  const feById = new Map(expenses.map(fe => [fe.id, fe] as const));
+
+  // Gastos fijos que ya tienen un movimiento (manual) en el ciclo actual: no se consideran.
   const paidThisMonth = new Set<string>();
   for (const t of allTxs) {
-    if (!sameMonth(t.date, now)) continue;
-    if (t.fixedExpenseId) paidThisMonth.add(t.fixedExpenseId);
-    if (t.id.startsWith('fe_tx_')) paidThisMonth.add(t.id.slice('fe_tx_'.length));
+    const fid = t.fixedExpenseId ?? fixedIdFromFeTxId(t.id);
+    if (!fid) continue;
+    const fe = feById.get(fid);
+    const cycle = cycleKeyFromFeTxId(t.id)
+      ?? (fe ? occurrenceKeyFor(fe.dayOfMonth, t.date) : null);
+    if (cycle === cur) paidThisMonth.add(fid);
   }
 
   const cands = candidates.filter(t =>
-    t.type === 'expense' && !t.fixedExpenseId && sameMonth(t.date, now));
+    t.type === 'expense' && !t.fixedExpenseId && !t.transferPairId && !t.mergedFrom);
   const active = expenses.filter(fe =>
     fe.isActive && !fe.isPaid && !paidThisMonth.has(fe.id));
 
@@ -128,6 +145,8 @@ export function matchFixedExpenses(
   for (const fe of active) {
     for (const tx of cands) {
       if (tx.currency !== fe.currency) continue;
+      if (occurrenceKeyFor(fe.dayOfMonth, tx.date) !== cur) continue;
+      if (opts?.ignored?.has(fixedRejectKey(fe.id, tx.id))) continue;
       const text = txText(tx);
       const name = scoreName(fe, tx, text);
       const amount = scoreAmount(fe, tx);
@@ -159,4 +178,223 @@ export function matchFixedExpenses(
       && perTx.get(m.txId) === 1;
   }
   return scored.sort((a, b) => b.score - a.score);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Ranking de gastos fijos para un movimiento (elegir a mano a cuál pertenece)
+// ─────────────────────────────────────────────────────────────
+
+export interface FixedRank { expense: FixedExpense; score: number; reasons: string[]; }
+
+/** Todos los gastos fijos activos puntuados contra `tx` (nombre + monto + ventana), mejor primero. */
+export function rankFixedForTx(tx: Transaction, expenses: FixedExpense[]): FixedRank[] {
+  const text = txText(tx);
+  const out: FixedRank[] = [];
+  for (const fe of expenses) {
+    if (!fe.isActive) continue;
+    if (fe.currency !== tx.currency) {
+      out.push({ expense: fe, score: 0, reasons: ['otra moneda'] });
+      continue;
+    }
+    const name = scoreName(fe, tx, text);
+    const amount = scoreAmount(fe, tx);
+    const win = scoreWindow(fe, tx);
+    out.push({
+      expense: fe,
+      score: name.score + amount.score + win.score,
+      reasons: [name.reason, amount.reason, win.reason].filter((r): r is string => !!r),
+    });
+  }
+  return out.sort((a, b) => b.score - a.score || a.expense.name.localeCompare(b.expense.name));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Fusión: movimiento manual de "marcar pagado" + SMS del mismo pago
+// ─────────────────────────────────────────────────────────────
+
+export interface FixedFusion {
+  expenseId: string; manualId: string; smsId: string; score: number; auto: boolean; reasons: string[];
+}
+
+const FUSION_PROPOSE_THRESHOLD = 60;
+const FUSION_NEAR_DAYS = 10;
+
+/** El manual de un gasto fijo: lleva fixedExpenseId o su id es `fe_tx_*`. */
+function manualFixedId(t: Transaction): string | null {
+  return t.fixedExpenseId ?? fixedIdFromFeTxId(t.id);
+}
+
+/**
+ * Pares (manual de gasto fijo, SMS) que son el mismo pago. Auto con puntaje >= 80 y único por manual
+ * y por SMS; se propone con >= 60. Cada movimiento queda en un solo par (desde el puntaje más alto).
+ */
+export function findFixedFusions(
+  txs: Transaction[],
+  expenses: FixedExpense[],
+  opts?: { ignored?: Set<string>; onlySmsIds?: Set<string> },
+): FixedFusion[] {
+  const feById = new Map(expenses.map(fe => [fe.id, fe] as const));
+  const manuals: Array<{ tx: Transaction; fe: FixedExpense }> = [];
+  const smsList: Transaction[] = [];
+  for (const t of txs) {
+    if (t.type !== 'expense' || t.mergedFrom) continue;
+    if (t.source === 'manual') {
+      const fid = manualFixedId(t);
+      const fe = fid ? feById.get(fid) : undefined;
+      if (fe) manuals.push({ tx: t, fe });
+    } else if (t.source === 'sms') {
+      if (t.transferPairId) continue;
+      if (opts?.onlySmsIds && !opts.onlySmsIds.has(t.id)) continue;
+      smsList.push(t);
+    }
+  }
+
+  interface Cand { manual: Transaction; sms: Transaction; fe: FixedExpense; score: number; gap: number; reasons: string[]; order: number; }
+  const cands: Cand[] = [];
+  let order = 0;
+  for (const { tx: manual, fe } of manuals) {
+    const manualCycle = cycleKeyFromFeTxId(manual.id) ?? occurrenceKeyFor(fe.dayOfMonth, manual.date);
+    const manualDay = storedDayNumber(manual.date);
+    for (const sms of smsList) {
+      if (sms.fixedExpenseId && sms.fixedExpenseId !== fe.id) continue;
+      if (sms.currency !== fe.currency || sms.currency !== manual.currency) continue;
+
+      const smsDay = storedDayNumber(sms.date);
+      const gap = manualDay !== null && smsDay !== null ? Math.abs(manualDay - smsDay) : Infinity;
+      const sameCycle = manualCycle !== null && occurrenceKeyFor(fe.dayOfMonth, sms.date) === manualCycle;
+      if (!sameCycle && gap > FUSION_NEAR_DAYS) continue;
+      if (opts?.ignored?.has(dupPairKey(manual.id, sms.id))) continue;
+
+      const name = scoreName(fe, sms, txText(sms));
+      if (name.score <= 0) continue;
+      const amount = scoreAmountVs(manual.amount, fe.category, sms.amount);
+      if (amount.score <= 0) continue;
+
+      const score = name.score + amount.score + 20;
+      if (score < FUSION_PROPOSE_THRESHOLD) continue;
+      const reasons = [name.reason, amount.reason, 'mismo vencimiento'].filter((r): r is string => !!r);
+      cands.push({ manual, sms, fe, score, gap, reasons, order: order++ });
+    }
+  }
+
+  const perManual = new Map<string, number>();
+  const perSms = new Map<string, number>();
+  for (const c of cands) {
+    perManual.set(c.manual.id, (perManual.get(c.manual.id) ?? 0) + 1);
+    perSms.set(c.sms.id, (perSms.get(c.sms.id) ?? 0) + 1);
+  }
+
+  cands.sort((a, b) => b.score - a.score || a.gap - b.gap || a.order - b.order);
+  const usedManual = new Set<string>();
+  const usedSms = new Set<string>();
+  const out: FixedFusion[] = [];
+  for (const c of cands) {
+    if (usedManual.has(c.manual.id) || usedSms.has(c.sms.id)) continue;
+    usedManual.add(c.manual.id);
+    usedSms.add(c.sms.id);
+    out.push({
+      expenseId: c.fe.id,
+      manualId: c.manual.id,
+      smsId: c.sms.id,
+      score: c.score,
+      auto: c.score >= FIXED_AUTO_THRESHOLD && perManual.get(c.manual.id) === 1 && perSms.get(c.sms.id) === 1,
+      reasons: c.reasons,
+    });
+  }
+  return out;
+}
+
+/**
+ * Une el manual al SMS (sobrevive el SMS, con el gasto fijo vinculado) y devuelve el gasto fijo
+ * actualizado: si el manual era el que lo marcaba pagado, pasa a pagado por el SMS (conservando
+ * el ciclo); un manual de un mes pasado deja el gasto sin cambios. `learnKey` se aprende una vez.
+ */
+export function planFixedFusion(
+  manual: Transaction,
+  sms: Transaction,
+  fe: FixedExpense,
+  nowIso: string,
+  learnKey?: string,
+): { merged: Transaction; nextFe: FixedExpense } {
+  const merged: Transaction = { ...mergeManualIntoSms(manual, sms, nowIso), fixedExpenseId: fe.id };
+
+  let nextFe: FixedExpense = fe;
+  if (fe.lastTxId === manual.id || fe.paidTxId === manual.id) {
+    nextFe = {
+      ...fe,
+      isPaid: true,
+      paidBy: 'sms',
+      paidTxId: sms.id,
+      paidDate: sms.date,
+      lastTxId: undefined,
+      paidCycleKey: fe.paidCycleKey ?? occurrenceKeyFor(fe.dayOfMonth, sms.date) ?? undefined,
+    };
+  }
+  if (learnKey && !nextFe.smsMatchKey) nextFe = { ...nextFe, smsMatchKey: learnKey };
+  return { merged, nextFe };
+}
+
+/** Tras separar un SMS unido: el gasto fijo vuelve a figurar pagado a mano por el manual restaurado. */
+export function relinkFixedAfterSplit(
+  expenses: FixedExpense[],
+  smsId: string,
+  manual: Transaction,
+): FixedExpense[] {
+  const fid = manual.fixedExpenseId ?? fixedIdFromFeTxId(manual.id);
+  if (!fid) return expenses;
+  return expenses.map(e => (e.id === fid && e.paidTxId === smsId
+    ? { ...e, paidTxId: undefined, lastTxId: manual.id, paidBy: 'manual' as const, paidDate: manual.date }
+    : e));
+}
+
+// ─────────────────────────────────────────────────────────────
+// SMS pasados de un gasto fijo (para vincular meses anteriores)
+// ─────────────────────────────────────────────────────────────
+
+export interface PastSmsForFixed { tx: Transaction; cycleKey: string; manualId?: string; }
+
+const PAST_SMS_LIMIT = 24;
+
+/**
+ * SMS de meses anteriores (ciclo < beforeKey) del comercio `key` que pueden ser pagos pasados del
+ * gasto fijo. Uno por mes (monto más cercano al del gasto; empate, el más antiguo). `manualId` es el
+ * registro manual de ese gasto en ese mes, si existe. Más reciente primero, tope 24.
+ */
+export function findPastSmsForFixed(
+  fe: FixedExpense,
+  txs: Transaction[],
+  opts: { key: string; excludeTxId?: string; beforeKey: string },
+): PastSmsForFixed[] {
+  const manualByCycle = new Map<string, string>();
+  for (const t of txs) {
+    if (t.source !== 'manual' || t.type !== 'expense' || t.mergedFrom) continue;
+    if (manualFixedId(t) !== fe.id) continue;
+    const cycle = cycleKeyFromFeTxId(t.id) ?? occurrenceKeyFor(fe.dayOfMonth, t.date);
+    if (cycle && !manualByCycle.has(cycle)) manualByCycle.set(cycle, t.id);
+  }
+
+  const bestByCycle = new Map<string, Transaction>();
+  for (const t of txs) {
+    if (t.source !== 'sms' || t.type !== 'expense') continue;
+    if (t.currency !== fe.currency) continue;
+    if (t.fixedExpenseId || t.transferPairId || t.mergedFrom) continue;
+    if (t.id === opts.excludeTxId) continue;
+    if (merchantKey(merchantOfTransaction(t)) !== opts.key) continue;
+    const cycle = occurrenceKeyFor(fe.dayOfMonth, t.date);
+    if (!cycle || cycle >= opts.beforeKey) continue;
+
+    const prev = bestByCycle.get(cycle);
+    if (!prev) { bestByCycle.set(cycle, t); continue; }
+    const dNew = Math.abs(t.amount - fe.amount);
+    const dPrev = Math.abs(prev.amount - fe.amount);
+    if (dNew < dPrev || (dNew === dPrev && t.date < prev.date)) bestByCycle.set(cycle, t);
+  }
+
+  const out: PastSmsForFixed[] = [];
+  for (const [cycleKey, tx] of bestByCycle) {
+    const manualId = manualByCycle.get(cycleKey);
+    out.push(manualId ? { tx, cycleKey, manualId } : { tx, cycleKey });
+  }
+  out.sort((a, b) => (a.tx.date < b.tx.date ? 1 : a.tx.date > b.tx.date ? -1 : 0));
+  return out.slice(0, PAST_SMS_LIMIT);
 }

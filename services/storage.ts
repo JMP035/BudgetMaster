@@ -3,7 +3,12 @@ import { buildSmsFingerprint } from './BankSmsParser';
 import { assignAccountsToTransactions } from './AccountLinking';
 import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
 import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPairKey } from './TransferPairs';
-import { merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
+import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
+import { planSmsUndo } from './SmsUndoPlan';
+import {
+  cycleKeyFromFeTxId, fixedIdFromFeTxId, monthKey, occurrenceKeyFor, planFixedMonthlyReset, storedToLocalDate,
+} from './FixedCycle';
+import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS BASE
@@ -42,6 +47,7 @@ export interface Transaction {
   /** Copia del movimiento manual que se unió a este SMS (permite "Separar"). */
   mergedFrom?: {
     id: string; description: string; category: string; date: string; amount: number; currency: Currency;
+    fixedExpenseId?: string;   // gasto fijo que traía el manual (el vínculo vuelve al manual al separar)
     accountId?: string;        // cuenta del manual (para devolverla al separar)
     categoryEditedAt?: string; // categoryEditedAt del manual (para devolverlo al separar)
     smsPrev?: {
@@ -141,6 +147,7 @@ export interface FixedExpense {
   paidTxId?: string;         // Movimiento SMS que lo pagó (NUNCA se borra al desmarcar)
   paidBy?: 'manual' | 'sms';
   smsMatchKey?: string;      // merchantKey aprendido para emparejar SMS
+  paidCycleKey?: string;     // Ciclo (YYYY-MM) del vencimiento que cubre el pago; puede ser un mes futuro
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -219,7 +226,9 @@ export interface SmsSyncState { lastSyncAt?: string; lastFullSyncAt?: string; la
 export interface SmsBatchRecord {
   id: string; at: string; mode: 'auto' | 'manual' | 'full';
   txIds: string[]; installmentIds: string[];
-  fixedMarks: Array<{ expenseId: string; prev: Pick<FixedExpense, 'isPaid' | 'paidDate' | 'paidTxId' | 'paidBy'> }>;
+  fixedMarks: Array<{ expenseId: string; prev: Pick<FixedExpense, 'isPaid' | 'paidDate' | 'paidTxId' | 'paidBy' | 'lastTxId' | 'paidCycleKey'> }>;
+  /** Uniones gasto fijo <-> SMS hechas en este lote (para deshacer: se restaura el manual). */
+  fixedMerges?: Array<{ smsId: string; expenseId: string; manual: Transaction }>;
 }
 
 export interface SmsLinkSeen { key: string; count: number; lastAt: string; }
@@ -720,61 +729,6 @@ function smsTombstoneKeys(tx: Transaction): string[] {
   return [tx.id, fp].filter(Boolean);
 }
 
-/** Plan (sin escribir nada) para deshacer un lote de sincronización. Criterio de "editado": D6. */
-function planSmsUndo(
-  batch: SmsBatchRecord,
-  txs: Transaction[],
-  insts: CreditInstallment[],
-  expenses: FixedExpense[],
-  includeEdited: boolean,
-) {
-  const batchAt = Date.parse(batch.at);
-  const autoFixedIds = new Set((batch.fixedMarks ?? []).map(m => m.expenseId));
-  const txIdSet = new Set(batch.txIds ?? []);
-  const instIdSet = new Set(batch.installmentIds ?? []);
-
-  const isTxEdited = (t: Transaction): boolean => {
-    const edited = t.categoryEditedAt ? Date.parse(t.categoryEditedAt) : NaN;
-    if (!isNaN(edited) && !isNaN(batchAt) && edited > batchAt) return true;
-    if (t.accountSource === 'user') return true;
-    if (t.mergedFrom) return true;
-    // fixedExpenseId que no puso el lote (lo puso el usuario después)
-    if (t.fixedExpenseId && !autoFixedIds.has(t.fixedExpenseId)) return true;
-    return false;
-  };
-  // Sin instantánea de la visacuota solo se detectan las claras: con cuotas pagadas, cerrada
-  // (inactiva) o con notas del usuario.
-  const isInstEdited = (i: CreditInstallment): boolean =>
-    (i.paidInstallments ?? 0) > 0 || !i.isActive || !!(i.notes && i.notes.trim());
-
-  const batchTxs = txs.filter(t => txIdSet.has(t.id));
-  const batchInsts = insts.filter(i => instIdSet.has(i.id));
-  const editedTxs = batchTxs.filter(isTxEdited);
-  const editedInsts = batchInsts.filter(isInstEdited);
-  const removeTxs = includeEdited ? batchTxs : batchTxs.filter(t => !isTxEdited(t));
-  const removeInsts = includeEdited ? batchInsts : batchInsts.filter(i => !isInstEdited(i));
-  const removedTxIds = new Set(removeTxs.map(t => t.id));
-
-  // Gastos fijos: solo se tocan si siguen vinculados (paidTxId) a un movimiento que se elimina.
-  const prevByExpense = new Map((batch.fixedMarks ?? []).map(m => [m.expenseId, m.prev]));
-  let revertedFixed = 0;
-  const nextExpenses = expenses.map(e => {
-    if (!e.paidTxId || !removedTxIds.has(e.paidTxId)) return e;
-    revertedFixed++;
-    const prev = prevByExpense.get(e.id);
-    if (prev) {
-      return { ...e, isPaid: prev.isPaid, paidDate: prev.paidDate, paidTxId: prev.paidTxId, paidBy: prev.paidBy };
-    }
-    return { ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined };
-  });
-
-  return {
-    removeTxs, removeInsts, removedTxIds, nextExpenses, revertedFixed,
-    editedCount: editedTxs.length + editedInsts.length,
-    keptEdited: includeEdited ? 0 : editedTxs.length + editedInsts.length,
-  };
-}
-
 // ─────────────────────────────────────────────────────────────
 // STORAGE SERVICE
 // ─────────────────────────────────────────────────────────────
@@ -824,6 +778,7 @@ export const StorageService = {
           changed = true;
           return {
             ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined,
+            paidCycleKey: undefined,
             lastTxId: e.lastTxId === id ? undefined : e.lastTxId,
           };
         });
@@ -1134,7 +1089,11 @@ export const StorageService = {
 
     if (plan.removeTxs.length > 0) {
       // saveTransactions es el punto por donde se revertirán los saldos cuando exista el saldo automático.
-      await this.saveTransactions(txs.filter(t => !plan.removedTxIds.has(t.id)));
+      // Los registros manuales que el lote había unido a un SMS vuelven (no reciben lápida: no son SMS).
+      await this.saveTransactions([
+        ...txs.filter(t => !plan.removedTxIds.has(t.id)),
+        ...plan.restoreManuals,
+      ]);
     }
     if (plan.removeInsts.length > 0) {
       const instIds = new Set(plan.removeInsts.map(i => i.id));
@@ -1171,6 +1130,7 @@ export const StorageService = {
     if (!tx || !expenses.some(e => e.id === expenseId)) return expenses;
     const nextExpenses = expenses.map(e => e.id !== expenseId ? e : {
       ...e, isPaid: true, paidDate: tx.date, paidTxId: txId, paidBy: 'sms' as const,
+      paidCycleKey: occurrenceKeyFor(e.dayOfMonth, tx.date) ?? monthKey(new Date()),
       ...(learnKey ? { smsMatchKey: learnKey } : {}),
     });
     await this.saveFixedExpenses(nextExpenses);
@@ -1190,9 +1150,10 @@ export const StorageService = {
       const txs = await this.getTransactions();
       await this.saveTransactions(txs.map(t => t.id === exp.paidTxId ? { ...t, fixedExpenseId: undefined } : t));
     }
-    if (exp.lastTxId && exp.lastTxId.startsWith('fe_tx_')) await this.deleteTransaction(exp.lastTxId);
+    if (exp.lastTxId && fixedIdFromFeTxId(exp.lastTxId) !== null) await this.deleteTransaction(exp.lastTxId);
     const next = expenses.map(e => e.id !== expenseId ? e : {
       ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined, lastTxId: undefined,
+      paidCycleKey: undefined,
     });
     await this.saveFixedExpenses(next);
     return next;
@@ -1235,8 +1196,12 @@ export const StorageService = {
     const nextExpenses = safeExpenses.map(e => {
       if (e.lastTxId !== manualId && e.paidTxId !== manualId) return e;
       expensesChanged = true;
-      if (!merged.fixedExpenseId) merged = { ...merged, fixedExpenseId: e.id };
-      return { ...e, paidTxId: smsId, paidBy: 'sms' as const, lastTxId: undefined };
+      // El vínculo del manual con el gasto fijo manda sobre cualquier otro que traiga el SMS.
+      merged = { ...merged, fixedExpenseId: e.id };
+      return {
+        ...e, paidTxId: smsId, paidBy: 'sms' as const, lastTxId: undefined, paidDate: sms.date,
+        paidCycleKey: e.paidCycleKey ?? occurrenceKeyFor(e.dayOfMonth, sms.date) ?? undefined,
+      };
     });
 
     const next = txs.filter(t => t.id !== manualId).map(t => t.id === smsId ? merged : t);
@@ -1261,7 +1226,230 @@ export const StorageService = {
       } else next.push(t);
     }
     await this.saveTransactions(next);
+    // El gasto fijo que el SMS unido pagaba vuelve a figurar pagado a mano por el manual restaurado.
+    try {
+      const expenses = await this.getFixedExpenses();
+      const relinked = relinkFixedAfterSplit(expenses, smsId, res.manual);
+      if (relinked.some((e, i) => e !== expenses[i])) await this.saveFixedExpenses(relinked);
+    } catch { }
     return next;
+  },
+
+  // ── Gastos fijos <-> movimientos SMS ──────────────────────
+  /**
+   * Une el registro manual de "marcar pagado" con el SMS del mismo pago (planFixedFusion): el manual
+   * se quita (sin lápida: no es SMS) y el SMS sobrevive con el gasto fijo vinculado; si el manual era
+   * el que pagaba el gasto, ahora lo paga el SMS. Sin cambios si algo no existe, el manual no es manual,
+   * el SMS no es SMS o el SMS ya está unido. Una lectura y una escritura por colección.
+   */
+  async mergeFixedManualIntoSms(
+    expenseId: string, manualId: string, smsId: string, learnKey?: string,
+  ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[] }> {
+    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
+    const manual = txs.find(t => t.id === manualId);
+    const sms = txs.find(t => t.id === smsId);
+    const fe = expenses.find(e => e.id === expenseId);
+    if (!manual || !sms || !fe || manualId === smsId
+      || manual.source !== 'manual' || sms.source !== 'sms' || sms.mergedFrom) {
+      return { transactions: txs, fixedExpenses: expenses };
+    }
+    const { merged, nextFe } = planFixedFusion(manual, sms, fe, new Date().toISOString(), learnKey);
+    const nextTxs = txs.filter(t => t.id !== manualId).map(t => t.id === smsId ? merged : t);
+    const nextExpenses = expenses.map(e => e.id === expenseId ? nextFe : e);
+    await this.saveTransactions(nextTxs);
+    await this.saveFixedExpenses(nextExpenses);
+    return { transactions: nextTxs, fixedExpenses: nextExpenses };
+  },
+
+  /**
+   * Vincula un movimiento SMS a un gasto fijo (elegido a mano). Resultado:
+   *  - 'paid'    el vencimiento es el del mes actual (o futuro) y el gasto estaba impago: queda pagado por el SMS.
+   *  - 'merged'  el gasto ya estaba pagado por un registro manual: se une al SMS (el manual desaparece).
+   *  - 'history' el SMS queda vinculado como historial (mes pasado, o gasto ya pagado por otro SMS).
+   *  - 'already' el SMS ya era el pago vigente (o la entrada no es válida: no cambia nada).
+   * Si el SMS apuntaba a OTRO gasto fijo, suelta ese vínculo (y el otro queda impago si lo pagaba este SMS).
+   * opts.learn guarda el comercio en smsMatchKey; opts.updateDay mueve dayOfMonth al día local del SMS
+   * (antes de calcular el vencimiento). Una lectura y una escritura por colección.
+   */
+  async linkSmsToFixed(
+    txId: string, expenseId: string, opts: { learn: boolean; updateDay?: boolean },
+  ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[]; outcome: 'paid' | 'merged' | 'history' | 'already' }> {
+    const now = new Date();
+    const cur = monthKey(now);
+    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
+    const tx = txs.find(t => t.id === txId);
+    const fe0 = expenses.find(e => e.id === expenseId);
+    if (!tx || !fe0) return { transactions: txs, fixedExpenses: expenses, outcome: 'already' };
+
+    const learnKey = merchantKey(merchantOfTransaction(tx));
+    let fe: FixedExpense = { ...fe0 };
+    if (opts.learn && learnKey) fe.smsMatchKey = learnKey;
+    if (opts.updateDay) {
+      const local = storedToLocalDate(tx.date);
+      if (local) fe.dayOfMonth = local.getDate();
+    }
+    const key = occurrenceKeyFor(fe.dayOfMonth, tx.date) ?? cur;
+
+    // Suelta el vínculo con otro gasto fijo.
+    const otherId = tx.fixedExpenseId && tx.fixedExpenseId !== expenseId ? tx.fixedExpenseId : null;
+
+    let nextTxs = txs;
+    let outcome: 'paid' | 'merged' | 'history' | 'already';
+    const linkedTx: Transaction = { ...tx, fixedExpenseId: expenseId };
+    const justLink = () => { nextTxs = txs.map(t => t.id === txId ? linkedTx : t); };
+
+    // Registro manual de este gasto: el que lo paga hoy, o el de ese mes (historial).
+    const isOwnManual = (t: Transaction) =>
+      t.source === 'manual' && t.type === 'expense' && !t.mergedFrom
+      && (t.fixedExpenseId === fe.id || fixedIdFromFeTxId(t.id) === fe.id);
+    const canFuse = tx.source === 'sms' && !tx.mergedFrom;
+    const fuse = (manual: Transaction) => {
+      const { merged, nextFe } = planFixedFusion(manual, tx, fe, now.toISOString());
+      fe = nextFe;
+      nextTxs = txs.filter(t => t.id !== manual.id).map(t => t.id === txId ? merged : t);
+    };
+
+    if (key >= cur) {
+      if (fe.paidTxId === txId) {
+        outcome = 'already';
+        justLink();
+      } else {
+        const payingManual = fe.isPaid
+          ? txs.find(t => (t.id === fe.lastTxId || t.id === fe.paidTxId) && isOwnManual(t))
+          : undefined;
+        if (payingManual && canFuse) {
+          fuse(payingManual);
+          outcome = 'merged';
+        } else if (fe.isPaid && fe.paidBy === 'sms' && fe.paidTxId && fe.paidTxId !== txId) {
+          outcome = 'history';
+          justLink();
+        } else {
+          fe = { ...fe, isPaid: true, paidBy: 'sms', paidTxId: txId, paidDate: tx.date, paidCycleKey: cur };
+          outcome = 'paid';
+          justLink();
+        }
+      }
+    } else {
+      outcome = 'history';
+      const monthManual = txs.find(t =>
+        isOwnManual(t) && (cycleKeyFromFeTxId(t.id) ?? occurrenceKeyFor(fe.dayOfMonth, t.date)) === key);
+      if (monthManual && canFuse) fuse(monthManual);
+      else justLink();
+    }
+
+    const finalExpenses = expenses.map(e => {
+      if (e.id === expenseId) return fe;
+      if (otherId && e.id === otherId && e.paidTxId === txId) {
+        return {
+          ...e, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined, paidCycleKey: undefined,
+        };
+      }
+      return e;
+    });
+    await this.saveTransactions(nextTxs);
+    await this.saveFixedExpenses(finalExpenses);
+    return { transactions: nextTxs, fixedExpenses: finalExpenses, outcome };
+  },
+
+  /** Crea el gasto fijo y le vincula el SMS (linkSmsToFixed con learn: true). */
+  async createFixedFromSms(
+    txId: string, expense: FixedExpense,
+  ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[]; outcome: 'paid' | 'merged' | 'history' | 'already' }> {
+    await this.addFixedExpense(expense);
+    return this.linkSmsToFixed(txId, expense.id, { learn: true });
+  },
+
+  /**
+   * Vincula SMS de meses pasados a un gasto fijo (historial). Cada ítem pone fixedExpenseId en el SMS
+   * y, con `manualId`, une el registro manual de ese mes al SMS. No toca el gasto fijo (nunca cambia
+   * isPaid del mes en curso): se omiten los SMS ya vinculados a otro gasto y los manuales que pagan
+   * el gasto hoy. `linked` cuenta los SMS vinculados (fusionados incluidos); `merged`, las fusiones.
+   */
+  async linkFixedHistory(
+    expenseId: string, items: Array<{ txId: string; manualId?: string }>,
+  ): Promise<{ transactions: Transaction[]; linked: number; merged: number }> {
+    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const fe = (Array.isArray(rawExpenses) ? rawExpenses : []).find(e => e.id === expenseId);
+    if (!fe) return { transactions: txs, linked: 0, merged: 0 };
+
+    const nowIso = new Date().toISOString();
+    let next = txs;
+    let linked = 0;
+    let merged = 0;
+    for (const item of items) {
+      const tx = next.find(t => t.id === item.txId);
+      if (!tx || (tx.fixedExpenseId && tx.fixedExpenseId !== expenseId)) continue;
+      const manual = item.manualId ? next.find(t => t.id === item.manualId) : undefined;
+      if (manual && manual.source === 'manual' && tx.source === 'sms' && !tx.mergedFrom
+        && !manual.mergedFrom && manual.id !== fe.lastTxId && manual.id !== fe.paidTxId) {
+        const res = planFixedFusion(manual, tx, fe, nowIso);
+        next = next.filter(t => t.id !== manual.id).map(t => t.id === tx.id ? res.merged : t);
+        merged++;
+      } else {
+        next = next.map(t => t.id === tx.id ? { ...t, fixedExpenseId: expenseId } : t);
+      }
+      linked++;
+    }
+    if (linked > 0) await this.saveTransactions(next);
+    return { transactions: next, linked, merged };
+  },
+
+  /**
+   * Desvincula un SMS de su gasto fijo. Si estaba unido a un registro manual del gasto (mergedFrom de un
+   * fe_tx_), lo separa: vuelve el manual y el gasto queda pagado a mano. Si no, solo quita
+   * fixedExpenseId; si el SMS era el pago vigente (paidTxId) el gasto queda impago, y si el comercio
+   * coincide con smsMatchKey, este se borra.
+   */
+  async unlinkSmsFromFixed(
+    txId: string,
+  ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[] }> {
+    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
+    const tx = txs.find(t => t.id === txId);
+    if (!tx) return { transactions: txs, fixedExpenses: expenses };
+
+    const mf = tx.mergedFrom;
+    if (mf && (fixedIdFromFeTxId(mf.id) !== null || mf.fixedExpenseId !== undefined)) {
+      const res = splitMerged(tx);
+      if (res) {
+        const hasManual = txs.some(t => t.id === res.manual.id);
+        const nextTxs: Transaction[] = [];
+        for (const t of txs) {
+          if (t.id === txId) {
+            nextTxs.push(res.sms);
+            if (!hasManual) nextTxs.push(res.manual);
+          } else nextTxs.push(t);
+        }
+        const relinked = relinkFixedAfterSplit(expenses, txId, res.manual);
+        const changed = relinked.some((e, i) => e !== expenses[i]);
+        await this.saveTransactions(nextTxs);
+        if (changed) await this.saveFixedExpenses(relinked);
+        return { transactions: nextTxs, fixedExpenses: changed ? relinked : expenses };
+      }
+    }
+
+    const fid = tx.fixedExpenseId ?? expenses.find(e => e.paidTxId === txId)?.id;
+    if (!fid) return { transactions: txs, fixedExpenses: expenses };
+    const key = merchantKey(merchantOfTransaction(tx));
+    const nextExpenses = expenses.map(e => {
+      if (e.id !== fid) return e;
+      let out = e;
+      if (e.paidTxId === txId) {
+        out = { ...out, isPaid: false, paidDate: undefined, paidTxId: undefined, paidBy: undefined, paidCycleKey: undefined };
+      }
+      if (key && e.smsMatchKey === key) out = { ...out, smsMatchKey: undefined };
+      return out;
+    });
+    const nextTxs = txs.map(t => {
+      if (t.id !== txId) return t;
+      const { fixedExpenseId: _removed, ...rest } = t;
+      return rest as Transaction;
+    });
+    await this.saveTransactions(nextTxs);
+    await this.saveFixedExpenses(nextExpenses);
+    return { transactions: nextTxs, fixedExpenses: nextExpenses };
   },
 
   // ── Pares de transferencia entre cuentas propias (neutros; no mueven saldos) ──
@@ -1439,14 +1627,15 @@ export const StorageService = {
     return updated;
   },
 
-  async resetFixedExpensesForNewMonth(): Promise<void> {
+  /**
+   * Reinicio mensual (planFixedMonthlyReset): un gasto sigue pagado si su paidCycleKey cubre el mes
+   * actual o uno futuro (pago adelantado); el resto se limpia, vínculos incluidos (no se borra ningún
+   * movimiento: quedan como historial). Solo escribe si algo cambió. Idempotente.
+   */
+  async resetFixedExpensesForNewMonth(now: Date = new Date()): Promise<void> {
     const all = await this.getFixedExpenses();
-    // Limpia también los vínculos con el movimiento del mes anterior (no se borra ningún
-    // movimiento: quedan como historial). Evita ids repetidos entre meses al desmarcar.
-    const reset = all.map(e => ({
-      ...e, isPaid: false, paidDate: undefined, lastTxId: undefined, paidTxId: undefined, paidBy: undefined,
-    }));
-    await this.saveFixedExpenses(reset);
+    const { next, changed } = planFixedMonthlyReset(all, now);
+    if (changed) await this.saveFixedExpenses(next);
   },
 
   // ── Presupuestos por Categoría ────────────────────────────
@@ -1674,7 +1863,7 @@ export const StorageService = {
     const match = lastReset ? /^(\d{4})-(\d{1,2})$/.exec(lastReset) : null;
     if (!match) {
       // Sin registro previo o con formato inválido: un solo ciclo, como antes.
-      await this.resetFixedExpensesForNewMonth();
+      await this.resetFixedExpensesForNewMonth(now);
       await this.processMonthlyInstallments();
       await this.saveLastResetDate(currentMonth);
       return true;
@@ -1692,8 +1881,10 @@ export const StorageService = {
     // Tope de 120 meses (10 años) solo como protección ante un lastReset
     // corrupto o absurdamente viejo; no es un límite funcional esperado.
     const cycles = Math.min(elapsed, 120);
+    // El reinicio de gastos fijos es idempotente (depende solo del mes actual): una sola vez.
+    // processMonthlyInstallments sí avanza una cuota por ciclo y no depende de los gastos fijos.
+    await this.resetFixedExpensesForNewMonth(now);
     for (let i = 0; i < cycles; i++) {
-      await this.resetFixedExpensesForNewMonth();
       await this.processMonthlyInstallments();
     }
     await this.saveLastResetDate(currentMonth);

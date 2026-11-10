@@ -897,14 +897,26 @@ export default function AccountsScreen({
                         ) : (
                           <Money amount={acc.balance} currency={acc.currency} size="md" tone="auto" align="right" containerStyle={s.accMoney} />
                         )}
-                        <TouchableOpacity
-                          onPress={() => handleDeleteAccount(acc.id)}
-                          style={s.deleteBtn}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Eliminar cuenta ${acc.name}`}
-                        >
-                          <Ionicons name="trash-outline" size={14} color={C.danger} />
-                        </TouchableOpacity>
+                        <View style={s.accActions}>
+                          <TouchableOpacity
+                            onPress={() => { setEditingAcc(acc); setShowAccModal(true); }}
+                            style={s.editBtn}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Editar cuenta ${acc.name}`}
+                          >
+                            <Ionicons name="pencil-outline" size={16} color={C.primaryLight} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => handleDeleteAccount(acc.id)}
+                            style={s.deleteBtn}
+                            hitSlop={8}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Eliminar cuenta ${acc.name}`}
+                          >
+                            <Ionicons name="trash-outline" size={16} color={C.danger} />
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </GlassCard>
                   </TouchableOpacity>
@@ -964,7 +976,8 @@ export default function AccountsScreen({
                       <View style={s.instActions}>
                         <TouchableOpacity
                           onPress={() => { setEditingInst(item); setShowInstModal(true); }}
-                          style={s.deleteBtn}
+                          style={s.editBtn}
+                          hitSlop={8}
                           accessibilityRole="button"
                           accessibilityLabel={`Editar visacuota ${item.name}`}
                         >
@@ -973,6 +986,7 @@ export default function AccountsScreen({
                         <TouchableOpacity
                           onPress={() => handleDeleteInstallment(item.id)}
                           style={s.deleteBtn}
+                          hitSlop={8}
                           accessibilityRole="button"
                           accessibilityLabel={`Eliminar visacuota ${item.name}`}
                         >
@@ -1059,7 +1073,9 @@ const s = StyleSheet.create({
   accMoney: { alignSelf: 'stretch', marginBottom: 4 },
   bankBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   bankBadgeTxt: { fontSize: 9, fontWeight: '800' },
-  deleteBtn: { padding: 6, borderRadius: 8, backgroundColor: C.danger + '11' },
+  accActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  editBtn: { padding: 8, borderRadius: 8, backgroundColor: C.glassActive, borderWidth: 1, borderColor: C.glassActiveBorder },
+  deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: C.danger + '11' },
   linkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.accent + '55', backgroundColor: C.accent + '22' },
   linkBadgeTxt: { color: C.accent, fontSize: 9, fontWeight: '800', flexShrink: 1 },
 

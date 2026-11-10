@@ -13,7 +13,8 @@ import type { DupPair } from './DuplicateDetector';
 import type { TransferPair } from './TransferPairs';
 import type { SmsBatchRecord } from './storage';
 import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, isPendingUnassigned, matchAccountForSms } from './AccountLinking';
-import { matchFixedExpenses } from './FixedExpenseMatcher';
+import { findFixedFusions, matchFixedExpenses } from './FixedExpenseMatcher';
+import { merchantKey, merchantOfTransaction } from './MerchantRules';
 import { findManualSmsDuplicates } from './DuplicateDetector';
 import { findTransferPairs } from './TransferPairs';
 
@@ -263,17 +264,21 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (d) Gastos fijos: los `auto` se marcan ya (guardando el estado previo para Deshacer); el resto se propone.
     const fixedMarks: SmsBatchRecord['fixedMarks'] = [];
+    const fixedMerges: NonNullable<SmsBatchRecord['fixedMerges']> = [];
     const fixedAutoMarked: FixedMatch[] = [];
     let fixedProposals: FixedMatch[] = [];
     try {
-      const matches = matchFixedExpenses(newTxs, fixedBefore, allTxs, now);
+      const matches = matchFixedExpenses(newTxs, fixedBefore, allTxs, now, { ignored: new Set(dupIgnoredList) });
       fixedProposals = matches.filter(m => !m.auto);
       for (const m of matches.filter(x => x.auto)) {
         const fe = fixedBefore.find(e => e.id === m.expenseId);
         if (!fe) continue;
         fixedMarks.push({
           expenseId: fe.id,
-          prev: { isPaid: fe.isPaid, paidDate: fe.paidDate, paidTxId: fe.paidTxId, paidBy: fe.paidBy },
+          prev: {
+            isPaid: fe.isPaid, paidDate: fe.paidDate, paidTxId: fe.paidTxId, paidBy: fe.paidBy,
+            lastTxId: fe.lastTxId, paidCycleKey: fe.paidCycleKey,
+          },
         });
         await StorageService.markFixedPaidBySms(m.expenseId, m.txId);
         fixedAutoMarked.push(m);
@@ -283,10 +288,53 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       console.warn('SMS sync (gastos fijos) error:', e instanceof Error ? e.message : 'desconocido');
     }
 
+    // (d2) Registro manual de "marcar pagado" + SMS nuevo del mismo pago: los `auto` se unen ya
+    // (guardando el manual para Deshacer); el resto se propone con `manualId`.
+    const fusionManualIds = new Set<string>();
+    const fusionSmsIds = new Set<string>();
+    try {
+      const txsNow = mutated ? await StorageService.getTransactions() : allTxs;
+      const fixedNow = mutated ? await StorageService.getFixedExpenses() : fixedBefore;
+      const marked = new Set(fixedMarks.map(m => m.expenseId));
+      const markedSms = new Set(fixedAutoMarked.map(m => m.txId));
+      const fusions = findFixedFusions(txsNow, fixedNow, { ignored: new Set(dupIgnoredList), onlySmsIds: newIds })
+        .filter(f => !markedSms.has(f.smsId) && !marked.has(f.expenseId));
+      for (const f of fusions) {
+        if (!f.auto) {
+          fixedProposals.push({
+            expenseId: f.expenseId, txId: f.smsId, manualId: f.manualId, score: f.score, auto: false, reasons: f.reasons,
+          });
+          continue;
+        }
+        const fe = fixedNow.find(e => e.id === f.expenseId);
+        const manual = txsNow.find(t => t.id === f.manualId);
+        const sms = txsNow.find(t => t.id === f.smsId);
+        if (!fe || !manual || !sms) continue;
+        fixedMarks.push({
+          expenseId: fe.id,
+          prev: {
+            isPaid: fe.isPaid, paidDate: fe.paidDate, paidTxId: fe.paidTxId, paidBy: fe.paidBy,
+            lastTxId: fe.lastTxId, paidCycleKey: fe.paidCycleKey,
+          },
+        });
+        fixedMerges.push({ smsId: sms.id, expenseId: fe.id, manual: { ...manual } });
+        await StorageService.mergeFixedManualIntoSms(fe.id, manual.id, sms.id, merchantKey(merchantOfTransaction(sms)) ?? undefined);
+        fixedAutoMarked.push({
+          expenseId: fe.id, txId: sms.id, manualId: manual.id, score: f.score, auto: true, reasons: f.reasons,
+        });
+        fusionManualIds.add(manual.id);
+        fusionSmsIds.add(sms.id);
+        mutated = true;
+      }
+    } catch (e) {
+      console.warn('SMS sync (fusión de gastos fijos) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
     // (e) Duplicados manual/SMS entre los movimientos nuevos y los manuales existentes.
     let duplicates: DupPair[] = [];
     try {
-      duplicates = findManualSmsDuplicates(allTxs, new Set(dupIgnoredList), { onlySmsIds: newIds });
+      duplicates = findManualSmsDuplicates(allTxs, new Set(dupIgnoredList), { onlySmsIds: newIds })
+        .filter(p => !fusionManualIds.has(p.manualId) && !fusionSmsIds.has(p.smsId));
     } catch (e) {
       console.warn('SMS sync (duplicados) error:', e instanceof Error ? e.message : 'desconocido');
     }
@@ -308,7 +356,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (f) Lote para "Deshacer".
     let batchId: string | null = null;
-    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0) {
+    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0) {
       batchId = `smsb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       await StorageService.recordSmsBatch({
         id: batchId,
@@ -317,6 +365,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
         txIds: newTxs.map(t => t.id),
         installmentIds: newInsts.map(i => i.id),
         fixedMarks,
+        ...(fixedMerges.length > 0 ? { fixedMerges } : {}),
       });
     }
 
