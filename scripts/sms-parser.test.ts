@@ -11,6 +11,9 @@ import {
 } from '../services/BankSmsParser';
 import { categorizeExpense, categorizeIncome, extractMerchantAndLocation } from '../services/Categorizer';
 import { findMerchantRule, merchantKey, upsertMerchantRule } from '../services/MerchantRules';
+import { findBrand, GT_BRANDS, GT_GATEWAYS, GT_PLACES, splitLocation, stripGateway } from '../services/GuatemalaBrands';
+import { GT_AMBIGUOUS_PLACES } from '../services/GuatemalaBrands.data';
+import { EXPENSE_CATEGORIES } from '../categories';
 import type { Transaction } from '../services/storage';
 import type { SmsCase } from './sms-corpus';
 
@@ -38,6 +41,11 @@ function check(name: string, cond: boolean, detail?: string): void {
 
 function hhmm(d: Date): string {
   return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+/** Cuerpo BAC mínimo con el comercio dado (el campo del comercio va antes de la ciudad). */
+function visaBody(merchantField: string): string {
+  return `PRF protege tu BAC VISA: compra Aprobada por Q 10.00 en ${merchantField}    GUATE el 01/10/26 10:00 +Info:https://g.bac.gt/SMS`;
 }
 
 function byId(id: string): SmsCase {
@@ -69,6 +77,7 @@ function runCorpus(label: string, print: boolean): void {
     cmp('txType', e.txType, r.txType);
     cmp('category', e.category, r.category);
     cmp('merchant', e.merchant, r.merchant);
+    cmp('location', e.location, r.location);
     cmp('bank', e.bank, r.bank);
     cmp('bankRef', e.bankRef, r.bankRef);
     cmp('dateSource', e.dateSource, r.dateSource);
@@ -98,7 +107,7 @@ console.log('\n=== (b) planSmsImport: REF repetido ===');
   check('(b) R4a+R4b+R4c+S47 → 3 importados', plan.stats.imported === 3, JSON.stringify(plan.stats));
   check('(b) R4a+R4b+R4c+S47 → 1 duplicado', plan.stats.duplicates === 1, JSON.stringify(plan.stats));
   check('(b) R4c (mismo REF, otro mes) NO es duplicado de R4a',
-    plan.transactions.filter(t => t.description.includes('Eegsa')).length === 2);
+    plan.transactions.filter(t => t.description.includes('EEGSA')).length === 2);
 
   const plan2 = planSmsImport([s47a, s47b].map(c => ({ body: c.body, receivedAt: c.receivedAt })),
     buildExistingSmsIndex([], [], []), []);
@@ -304,9 +313,9 @@ console.log('\n=== (h) Aprendizaje por comercio ===');
     String(merchantKey('Paggo App Ferreteria El')));
   check('(h) merchantKey("Pago") === null', merchantKey('Pago') === null);
   check('(h) merchantKey(null) === null', merchantKey(null) === null);
-  check('(h) merchantKey("Super 24 #12 Mixco") → null (queda "super", genérica)', merchantKey('Super 24 #12 Mixco') === null,
+  check('(h) merchantKey("Super 24 #12 Mixco") === super 24 (marca del catálogo: el 24 ya no se pierde)', merchantKey('Super 24 #12 Mixco') === 'super 24',
     String(merchantKey('Super 24 #12 Mixco')));
-  check('(h) merchantKey quita ciudad final', merchantKey('Pollo Campero Majadas Guatemala') === 'pollo campero majadas', String(merchantKey('Pollo Campero Majadas Guatemala')));
+  check('(h) merchantKey usa el nombre canónico de la marca (sin lugar ni ciudad)', merchantKey('Pollo Campero Majadas Guatemala') === 'pollo campero', String(merchantKey('Pollo Campero Majadas Guatemala')));
 
   const iso = new Date(2026, 10, 5, 12, 0).toISOString();
   const rules = upsertMerchantRule([], 'La Trama', 'entertainment', iso);
@@ -321,9 +330,9 @@ console.log('\n=== (h) Aprendizaje por comercio ===');
   check('(h) con regla aprendida M1 → entertainment', plan.transactions[0]?.category === 'entertainment', String(plan.transactions[0]?.category));
   check('(h) M1 guarda merchant "La Trama"', plan.transactions[0]?.merchant === 'La Trama', String(plan.transactions[0]?.merchant));
   const planNo = planSmsImport([msgOf(m1)], buildExistingSmsIndex([], [], []), []);
-  check('(h) sin regla aprendida M1 sigue en food', planNo.transactions[0]?.category === 'food');
+  check('(h) sin regla aprendida M1 sigue en su categoría de marca (restaurant)', planNo.transactions[0]?.category === 'restaurant');
   const plan2 = planSmsImport([msgOf(m2)], buildExistingSmsIndex([], [], []), [], { merchantRules: rules });
-  check('(h) la regla de La Trama no afecta a M2 (Gourmelt)', plan2.transactions[0]?.category === 'food', String(plan2.transactions[0]?.category));
+  check('(h) la regla de La Trama no afecta a M2 (Gourmelt)', plan2.transactions[0]?.category === 'restaurant', String(plan2.transactions[0]?.category));
 
   const cM1 = classify(m1);
   check('(h) applyLearnedRule marca la razón |learned', applyLearnedRule(cM1, rules).reason.endsWith('|learned'));
@@ -369,10 +378,10 @@ console.log('\n=== (f2) Revisión de categorías ===');
   check('(f2) M1 con shopping (no es other) → sin propuesta',
     reviewImportedSms([m1tx({ category: 'shopping' })], new Set()).length === 0);
   const iM1 = reviewImportedSms([m1tx()], new Set());
-  check('(f2) M1 con other → propuesta food', iM1.length === 1 && iM1[0].proposed?.category === 'food', JSON.stringify(iM1[0]?.proposed));
+  check('(f2) M1 con other → propuesta restaurant', iM1.length === 1 && iM1[0].proposed?.category === 'restaurant', JSON.stringify(iM1[0]?.proposed));
   check('(f2) M1 → etiqueta "Categoría sugerida"', iM1[0]?.reasonLabel === 'Categoría sugerida', String(iM1[0]?.reasonLabel));
-  check('(f2) M1 ya en food → sin propuesta (sin cambios cosméticos)',
-    reviewImportedSms([m1tx({ category: 'food', description: 'otra descripcion' })], new Set()).length === 0);
+  check('(f2) M1 ya en restaurant → sin propuesta (sin cambios cosméticos)',
+    reviewImportedSms([m1tx({ category: 'restaurant', description: 'otra descripcion' })], new Set()).length === 0);
 
   const pair = reviewImportedSms([b1tx(), b5tx()], new Set());
   const iB5 = pair.find(i => i.txId === 'sms_h_b5');
@@ -452,14 +461,14 @@ console.log('\n=== Categorizer ===');
   check('Categorizer "Delta Airlines" no es fuel', categorizeExpense('Delta Airlines', null, '') !== 'fuel');
   check('Categorizer "Total Play" no es fuel', categorizeExpense('Total Play', null, '') !== 'fuel');
   check('Categorizer "Parqueos" → transport', categorizeExpense('Parqueos', null, '') === 'transport');
-  check('Categorizer "Paggo App Restauran" → food', categorizeExpense('Paggo App Restauran', null, '') === 'food');
+  check('Categorizer "Paggo App Restauran" → restaurant', categorizeExpense('Paggo App Restauran', null, '') === 'restaurant');
   check('Categorizer "Soluciones Tecnologica" → tech', categorizeExpense('Soluciones Tecnologica', 'Guatemala', '') === 'tech');
   check('Categorizer "Suma" (inicio del comercio) → groceries', categorizeExpense('Suma', 'Guatemala', '') === 'groceries');
   check('Categorizer "Pacaya Tours" → other (no es paca)', categorizeExpense('Pacaya Tours', 'Escuintla', '') === 'other');
   check('Categorizer "Farmacia Batres" + ciudad San Martin → pharmacy (merchantStart no mira la ubicación)',
     categorizeExpense('Farmacia Batres', 'San Martin', '') === 'pharmacy');
   check('Categorizer "Hotel San Martin" → travel', categorizeExpense('Hotel San Martin', 'Antigua', '') === 'travel');
-  check('Categorizer "San Martin" solo → food', categorizeExpense('San Martin', 'Guatemala', '') === 'food');
+  check('Categorizer "San Martin" solo → restaurant (decisión del usuario)', categorizeExpense('San Martin', 'Guatemala', '') === 'restaurant');
   check('Categorizer "Consumax Tienda" → shopping', categorizeExpense('Consumax Tienda', 'Guatemala', '') === 'shopping');
   check('Categorizer "Apple Store Oakland" → other', categorizeExpense('Apple Store Oakland', null, '') === 'other');
   check('Categorizer "Anthropic Claude Sub" → subscriptions', categorizeExpense('Anthropic Claude Sub', 'San Francisco', '') === 'subscriptions');
@@ -470,11 +479,13 @@ console.log('\n=== Categorizer ===');
   const mB2 = extractMerchantAndLocation(byId('B2').body);
   check('extract: coma final fuera ("Plaza Atanasio Tzul")', mB2.merchant === 'Plaza Atanasio Tzul', String(mB2.merchant));
   const mM5 = extractMerchantAndLocation(byId('M5').body);
-  check('extract: conectores en minúscula ("Estacion de Servicio J")', mM5.merchant === 'Estacion de Servicio J', String(mM5.merchant));
+  check('extract: marca canónica sin la inicial truncada ("Estación de Servicio")', mM5.merchant === 'Estación de Servicio', String(mM5.merchant));
+  check('extract: conectores en minúscula ("Tienda de la Esquina")',
+    extractMerchantAndLocation(visaBody('TIENDA DE LA ESQUINA')).merchant === 'Tienda de la Esquina');
   const mM1 = extractMerchantAndLocation(M1_BODY);
   check('extract: el primer token conserva mayúscula ("La Trama")', mM1.merchant === 'La Trama' && mM1.location === 'Guatemala', `${mM1.merchant} / ${mM1.location}`);
-  check('extract: "El Marinero Miraflores" empieza en mayúscula',
-    extractMerchantAndLocation(byId('M3').body).merchant === 'El Marinero Miraflores');
+  check('extract: "El Marinero Miraflores" → nombre con mayúscula inicial y lugar aparte',
+    extractMerchantAndLocation(byId('M3').body).merchant === 'El Marinero' && extractMerchantAndLocation(byId('M3').body).location === 'Miraflores');
   check('extract: ubicación sin puntuación final',
     extractMerchantAndLocation('PRF protege tu BAC VISA: compra Aprobada por Q 5.00 en TIENDA X    ZONA 1, el 01/10/26 10:00').location === 'Zona 1');
   const m = extractMerchantAndLocation(R1_BODY);
@@ -484,6 +495,192 @@ console.log('\n=== Categorizer ===');
   check('categorizeIncome planilla → salary', categorizeIncome('pago de planilla', 'payroll') === 'salary');
   check('categorizeExpense "uno" solo en comercio', categorizeExpense(null, null, 'compra uno cualquiera') === 'other');
   check('categorizeExpense banca por internet no es internet', categorizeExpense(null, null, 'pago por internet') === 'other');
+}
+
+// ─────────────────────────────────────────────────────────────
+// GuatemalaBrands + nombre sin ubicación + categorías de comida
+// ─────────────────────────────────────────────────────────────
+console.log('\n=== GuatemalaBrands ===');
+{
+  // findBrand: prefijo de palabras completas, abreviaturas, "'s" y espacios
+  check('findBrand "san martin majadas" → San Martín', findBrand('san martin majadas')?.name === 'San Martín');
+  check('findBrand "mcdonalds utatlan" → McDonald\'s', findBrand('mcdonalds utatlan')?.name === "McDonald's");
+  check('findBrand "mcdonald\'s" y "mc donalds" → McDonald\'s',
+    findBrand("mcdonald's")?.name === "McDonald's" && findBrand('mc donalds')?.name === "McDonald's");
+  check('findBrand "carl\'s jr" y "carls jr" → Carl\'s Jr', findBrand("carl's jr")?.name === "Carl's Jr" && findBrand('carls jr')?.name === "Carl's Jr");
+  check('findBrand "super24" y "super 24 #12" → Súper 24', findBrand('super24')?.name === 'Súper 24' && findBrand('super 24 #12 mixco')?.name === 'Súper 24');
+  check('findBrand "est. de serv. majadas" → Estación de Servicio', findBrand('est. de serv. majadas')?.name === 'Estación de Servicio');
+  check('findBrand el alias más largo gana ("uber eats" no es Uber)', findBrand('uber eats')?.name === 'Uber Eats' && findBrand('uber trip')?.name === 'Uber');
+  check('findBrand solo por PREFIJO ("hotel san martin" no es San Martín)', findBrand('hotel san martin') === null);
+  check('findBrand palabras completas ("pacaya", "unos tacos" no coinciden)', findBrand('pacaya tours') === null && findBrand('unos tacos') === null);
+  check('findBrand marca ambigua con nombre distinto no se traga el nombre ("Parma Pizzeria Italiana")', findBrand('parma pizzeria italiana') === null);
+  check('findBrand desconocido → null', findBrand('tienda dona marta') === null);
+  check('findBrand "apple store oakland" → null (Apple no es una marca del catálogo)', findBrand('apple store oakland') === null);
+
+  // splitLocation
+  const sl = (s: string) => JSON.stringify(splitLocation(s));
+  check('splitLocation "Tienda Doña Marta Zona 7"', sl('Tienda Doña Marta Zona 7') === '{"name":"Tienda Doña Marta","location":"Zona 7"}', sl('Tienda Doña Marta Zona 7'));
+  check('splitLocation "Ferreteria El Sol Z10" → Zona 10', sl('Ferreteria El Sol Z10') === '{"name":"Ferreteria El Sol","location":"Zona 10"}', sl('Ferreteria El Sol Z10'));
+  check('splitLocation lugar al final ("Libreria Nueva Miraflores")', sl('Libreria Nueva Miraflores') === '{"name":"Libreria Nueva","location":"Miraflores"}', sl('Libreria Nueva Miraflores'));
+  check('splitLocation lugar de varias palabras ("Ferreteria Lopez Villa Nueva")', sl('Ferreteria Lopez Villa Nueva') === '{"name":"Ferreteria Lopez","location":"Villa Nueva"}', sl('Ferreteria Lopez Villa Nueva'));
+  check('splitLocation sin ubicación no cambia nada', sl("Castor's Pizza Kalu") === '{"name":"Castor\'s Pizza Kalu","location":null}', sl("Castor's Pizza Kalu"));
+  check('splitLocation nunca vacía el nombre ("Zona 7", "Majadas")', splitLocation('Zona 7').name === 'Zona 7' && splitLocation('Majadas').name === 'Majadas');
+  check('splitLocation no deja el nombre en 1 letra ("X Majadas")', splitLocation('X Majadas').name === 'X Majadas' && splitLocation('X Majadas').location === null);
+  check('splitLocation lugar ambiguo solo ("Aranda") no se vacía', splitLocation('Aranda').name === 'Aranda' && splitLocation('Aranda').location === null);
+  check('splitLocation ambiguo sin token de marca antes ("Tienda Aranda", "Majadas Aranda") se queda',
+    splitLocation('Tienda Aranda').location === null && splitLocation('Majadas Aranda').location === null);
+  check('splitLocation ambiguo con marca antes ("Ferreteria Lopez Aranda") sí es lugar', splitLocation('Ferreteria Lopez Aranda').location === 'Aranda');
+  check('splitLocation "Plaza Atanasio Tzul" se queda entero (el lugar ES el nombre)', splitLocation('Plaza Atanasio Tzul').location === null);
+
+  // stripGateway
+  check('stripGateway "Paggo App Restauran" → Restauran', stripGateway('Paggo App Restauran').name === 'Restauran' && stripGateway('Paggo App Restauran').gateway === 'Paggo App');
+  check('stripGateway "PayPal Spotify" → Spotify', stripGateway('PayPal Spotify').name === 'Spotify');
+  check('stripGateway solo la pasarela no se vacía', stripGateway('Paggo').name === 'Paggo' && stripGateway('Paggo').gateway === null);
+  check('stripGateway sin pasarela no cambia', stripGateway('Pizza Hut').name === 'Pizza Hut' && stripGateway('Pizza Hut').gateway === null);
+  check('GT_GATEWAYS incluye Paggo, PayPal, Stripe y Square', ['Paggo', 'PayPal', 'Stripe', 'Square'].every(g => GT_GATEWAYS.includes(g)));
+  check('GT_PLACES incluye Majadas, Aranda y Atanasio Tzul', ['Majadas', 'Aranda', 'Atanasio Tzul'].every(p => GT_PLACES.includes(p)));
+
+  // Comercios del corpus: mismo comercio en distintas sucursales → misma clave de aprendizaje
+  const cM23 = classify(byId('M23')), cM24 = classify(byId('M24'));
+  check('San Martín Majadas / Aranda → mismo merchant', cM23.merchant === 'San Martín' && cM24.merchant === 'San Martín');
+  check('San Martín Majadas / Aranda → misma merchantKey "san martin"',
+    merchantKey(cM23.merchant) === 'san martin' && merchantKey(cM24.merchant) === 'san martin',
+    `${merchantKey(cM23.merchant)} / ${merchantKey(cM24.merchant)}`);
+  check('merchantKey también iguala el nombre crudo ("San Martin Majadas" === "San Martin Aranda")',
+    merchantKey('San Martin Majadas') === merchantKey('San Martin Aranda') && merchantKey('San Martin Aranda') === 'san martin');
+  check('descripción sin ubicación ("BAC · Compra en San Martín")', cM23.description === 'BAC · Compra en San Martín', String(cM23.description));
+  const cM25 = classify(byId('M25'));
+  check('descripción "BAC · Compra en McDonald\'s"', cM25.description === "BAC · Compra en McDonald's", String(cM25.description));
+  const cM15 = classify(byId('M15'));
+  check('Paggo App Restauran: comercio sin "Paggo" y categoría restaurant', !/paggo/i.test(cM15.merchant ?? '') && cM15.category === 'restaurant', `${cM15.merchant} / ${cM15.category}`);
+  const cF5 = classify(byId('F5'));
+  check('Paggo App Ferreteria El: comercio sin "Paggo"', cF5.merchant === 'Ferreteria el', String(cF5.merchant));
+  const cM30 = classify(byId('M30'));
+  check('Tienda Doña Marta Zona 7 (desconocido): nombre sin "Zona 7"', cM30.merchant === 'Tienda Doña Marta' && cM30.location === 'Zona 7' && !/zona/i.test(cM30.description ?? ''),
+    `${cM30.merchant} / ${cM30.location} / ${cM30.description}`);
+
+  // El motor guarda merchant y location por separado en la Transaction
+  const planBrands = planSmsImport([msgOf(byId('M14')), msgOf(byId('M23'))], buildExistingSmsIndex([], [], []), []);
+  const txCarls = planBrands.transactions.find(t => t.merchant === "Carl's Jr");
+  check('Transaction: merchant "Carl\'s Jr" y location "Zona 10"', txCarls?.location === 'Zona 10' && txCarls?.description === "BAC · Compra en Carl's Jr",
+    JSON.stringify(txCarls && { m: txCarls.merchant, l: txCarls.location, d: txCarls.description }));
+
+  // La regla aprendida del usuario sigue ganando sobre la categoría de la marca
+  const learnedSm = upsertMerchantRule([], 'San Martin Aranda', 'shopping', new Date(2026, 10, 5).toISOString());
+  check('regla aprendida gana sobre la marca (San Martín → shopping)',
+    applyLearnedRule(cM23, learnedSm).category === 'shopping' && applyLearnedRule(cM24, learnedSm).category === 'shopping');
+}
+
+console.log('\n=== Categorías de comida (Restaurantes / Supermercado / Comida) ===');
+{
+  const cat = (m: string) => categorizeExpense(m, 'Guatemala', '');
+  for (const n of ['Pollo Campero', "McDonald's", 'Burger King', "Carl's Jr", 'Starbucks', 'Cafeteria X', 'Restaurante El Sol', 'Pupuseria Doña Ana',
+    'Uber Eats', 'Pedidos Ya', 'Rappi', 'Pizza Hut', 'Sushi Itto', 'La Trama', 'Parma', 'San Martin']) {
+    check(`categoría "${n}" → restaurant`, cat(n) === 'restaurant', cat(n));
+  }
+  for (const n of ['Panaderia La Espiga', 'Pasteleria Suiza', 'Mercado Central', 'Tienda Doña Marta', 'Tiendita La Esquina']) {
+    check(`categoría "${n}" → food`, cat(n) === 'food', cat(n));
+  }
+  for (const n of ['Super 24 #12 Mixco', 'Walmart', 'Paiz', 'La Torre', 'Maxi Despensa', 'Suma']) {
+    check(`categoría "${n}" → groceries`, cat(n) === 'groceries', cat(n));
+  }
+  check('categoría "Mercado Libre" → shopping (no es un mercado)', cat('Mercado Libre') === 'shopping', cat('Mercado Libre'));
+  check('categoría "Hotel San Martin" sigue en travel', cat('Hotel San Martin') === 'travel');
+  check('Tienda genérica sigue en shopping ("Consumax Tienda")', cat('Consumax Tienda') === 'shopping');
+  check('combustible y transporte no se mezclan ("Shell" fuel, "Uber" transport)', cat('Shell') === 'fuel' && cat('Uber') === 'transport');
+  // Categoría de la marca (no solo reglas): vía classifyBankSms
+  check('SMS "Pollo Campero Z10" → restaurant por marca', classify(byId('M26')).category === 'restaurant');
+  check('SMS "Super 24 #12 Mixco" → groceries por marca', classify(byId('S2')).category === 'groceries');
+  check('SMS "Panaderia La Espiga" → food', classify(byId('M28')).category === 'food');
+  check('SMS "Cafeteria X" → restaurant', classify(byId('M29')).category === 'restaurant');
+  check('SMS "PayPal *Spotify" → streaming sin "PayPal" en el comercio', classify(byId('M27')).merchant === 'Spotify');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catálogo completo de marcas (GuatemalaBrands.data): integridad, ambiguos, rendimiento
+// ─────────────────────────────────────────────────────────────
+console.log('\n=== Catálogo completo de marcas ===');
+{
+  // Integridad: categorías válidas y ningún alias que resuelva a otra marca/categoría (alias duplicados contradictorios).
+  const validCats = new Set(EXPENSE_CATEGORIES.map(c => c.id));
+  check('catálogo: más de 250 marcas', new Set(GT_BRANDS.map(b => b.name)).size > 250, String(GT_BRANDS.length));
+  const badCat = GT_BRANDS.filter(b => !validCats.has(b.category)).map(b => b.name);
+  check('catálogo: todas las categorías existen en categories.ts', badCat.length === 0, badCat.join(', '));
+  const contradictions: string[] = [];
+  for (const b of GT_BRANDS) {
+    for (const alias of [b.name, ...b.aliases]) {
+      const hit = findBrand(alias);
+      if (!hit || hit.category !== b.category) contradictions.push(`"${alias}" (${b.name}/${b.category}) → ${hit ? hit.name + '/' + hit.category : 'null'}`);
+      else if (hit.name !== b.name) contradictions.push(`"${alias}" lo reclaman ${b.name} y ${hit.name}`);
+    }
+  }
+  check('catálogo: ningún alias duplicado entre marcas con categorías distintas', contradictions.length === 0, contradictions.slice(0, 5).join(' | '));
+  check('catálogo: confidence solo high/medium/low', GT_BRANDS.every(b => !b.confidence || ['high', 'medium', 'low'].includes(b.confidence)));
+  check('catálogo: lugares ambiguos también están en GT_PLACES', GT_AMBIGUOUS_PLACES.every(p => GT_PLACES.includes(p)));
+
+  // Marcas nuevas por categoría
+  const catOf = (n: string) => { const h = findBrand(n); return h ? h.category : null; };
+  check('marca "Pollo Campero Z10" → restaurant', catOf('pollo campero z10') === 'restaurant');
+  check('marca Pizza Hut / Burger King / Taco Bell → restaurant', ['pizza hut', 'burger king', 'taco bell'].every(n => catOf(n) === 'restaurant'));
+  check('marca "Dollar City" y "DollarCity Mixco" → groceries', catOf('dollar city') === 'groceries' && catOf('dollarcity mixco') === 'groceries');
+  check('marca Maxi Despensa / Despensa Familiar → groceries', catOf('maxi despensa') === 'groceries' && catOf('despensa familiar') === 'groceries');
+  check('marca Meykos / Cruz Verde → pharmacy', catOf('meykos') === 'pharmacy' && catOf('cruz verde') === 'pharmacy');
+  check('marca Texaco / Puma Energy → fuel', catOf('texaco') === 'fuel' && catOf('puma energy') === 'fuel');
+  check('marca Cemaco / Siman / Max → shopping', ['cemaco', 'siman', 'max'].every(n => catOf(n) === 'shopping'));
+  check('marca Tigo / Claro → internet; EEGSA / Energuate / Empagua → utilities',
+    catOf('tigo') === 'internet' && catOf('claro') === 'internet' && ['eegsa', 'energuate', 'empagua'].every(n => catOf(n) === 'utilities'));
+  check('delivery (Uber Eats, PedidosYa, Hugo, Rappi) → restaurant', ['uber eats', 'pedidosya', 'hugo', 'rappi'].every(n => catOf(n) === 'restaurant'));
+  check('IRTRA / Xetulul / Xocomil → entertainment', ['irtra', 'xetulul', 'xocomil'].every(n => catOf(n) === 'entertainment'));
+  check('San Martín → restaurant (decisión del usuario)', catOf('san martin') === 'restaurant');
+  check('gasolineras = fuel y parqueos/Uber/transportes = transport (separados)',
+    catOf('shell') === 'fuel' && catOf('uber') === 'transport' && catOf('transmetro') === 'transport');
+  check('canon: "EEGSA WEB REF.:0000544" → merchant "EEGSA" (clave aprendida "eegsa")',
+    extractMerchantAndLocation('PRF protege tu BAC VISA: compra Aprobada por Q 687.20 en EEGSA WEB REF.:0000544 GUATE el 29/07/26 07:42').merchant === 'EEGSA'
+    && merchantKey('EEGSA WEB') === 'eegsa');
+
+  // Ambiguos: solo si el comercio es la marca exacta o lo que sobra es una ubicación
+  check('ambiguo: "PUMA STORE" NO es combustible (ropa deportiva)', findBrand('puma store')?.category === 'clothes' && findBrand('puma store')?.name === 'Puma Store');
+  check('ambiguo: "Puma" suelto o con zona → Puma Energy (fuel)', findBrand('puma')?.name === 'Puma Energy' && findBrand('puma z10')?.category === 'fuel');
+  check('ambiguo: "Puma Shoes" no es la gasolinera', findBrand('puma shoes') === null);
+  check('ambiguo: "DELTA AIR LINES" → viajes, "Delta" suelto → fuel',
+    findBrand('delta air lines')?.category === 'travel' && findBrand('delta airlines')?.name === 'Delta Air Lines' && findBrand('delta')?.category === 'fuel');
+  check('ambiguo: "Total Play" no es combustible', findBrand('total play') === null && findBrand('total')?.category === 'fuel');
+  check('ambiguo: "CLARO" solo es la marca; "claro que si" no', findBrand('claro')?.name === 'Claro' && findBrand('claro que si') === null);
+  check('ambiguo: "Claro" con zona sí es la marca', findBrand('claro z10')?.name === 'Claro');
+  check('ambiguo: "SUMA" sí; "Sumatoria" y "Suma de todo" no', findBrand('suma')?.category === 'groceries' && findBrand('sumatoria') === null && findBrand('suma de todo') === null);
+  check('ambiguo: "Uno" solo es la gasolinera; "Uno de Mayo" no', findBrand('uno')?.category === 'fuel' && findBrand('uno de mayo') === null);
+  check('ambiguo: "Max" solo; "Maxi Despensa" no es Max', findBrand('max')?.name === 'Max' && findBrand('maxi despensa')?.name === 'Maxi Despensa' && findBrand('maxwell') === null);
+  check('ambiguo: "United" y "SAT" solo exactos', findBrand('united')?.category === 'travel' && findBrand('united states mall') === null
+    && findBrand('sat')?.name === 'SAT' && findBrand('satelite') === null && findBrand('sat tienda') === null);
+  check('ambiguo: "Click" / "Cuadra" / "Copa" exactos sí, con otro nombre no',
+    findBrand('click')?.category === 'tech' && findBrand('click burger') === null && findBrand('cuadra')?.category === 'clothes'
+    && findBrand('tienda cuadra') === null && findBrand('copa')?.category === 'travel' && findBrand('copa de oro') === null);
+  check('ambiguo: ubicación pegada a la marca ambigua la acepta ("Suma Mixco", "Max Zona 10")',
+    findBrand('suma mixco')?.name === 'Suma' && findBrand('max zona 10')?.name === 'Max');
+  check('apple store sigue sin ser marca; "Apple.com/bill" → suscripciones', findBrand('apple store oakland') === null && findBrand('apple com bill')?.category === 'subscriptions');
+
+  // Lugares: nuevos y ambiguos sin vaciar el nombre
+  check('splitLocation lugar nuevo al final ("Ferreteria Lopez Metronorte")', splitLocation('Ferreteria Lopez Metronorte').location === 'Metronorte');
+  check('splitLocation "Cafe Cayala" separa Cayala y "Cayala" solo no se vacía',
+    splitLocation('Cafe Cayala').location === 'Cayala' && splitLocation('Cayala').location === null);
+  check('splitLocation "Libreria Nueva Zona 14" por patrón', splitLocation('Libreria Nueva Zona 14').location === 'Zona 14');
+  check('splitLocation ambiguos nuevos ("La Florida", "Santa Rosa") solos no se vacían',
+    splitLocation('La Florida').location === null && splitLocation('Santa Rosa').location === null);
+
+  // Rendimiento: el índice se construye una vez; clasificar 2000 SMS sintéticos tarda poco
+  const brandNames = GT_BRANDS.map(b => b.name.toUpperCase());
+  const places = ['ZONA 10', 'MIRAFLORES', 'MIXCO', '#12', 'PRADERA', 'CAYALA', ''];
+  const t0 = Date.now();
+  let classified = 0;
+  for (let i = 0; i < 2000; i++) {
+    const m = `${brandNames[i % brandNames.length]} ${places[i % places.length]}`.trim();
+    const r = classifyBankSms({ body: visaBody(m), receivedAt: new Date(2026, 9, 1, 10, 0).getTime() });
+    if (r.accepted) classified++;
+  }
+  const elapsed = Date.now() - t0;
+  check('rendimiento: 2000 SMS clasificados en menos de 3 s', elapsed < 3000, elapsed + ' ms');
+  check('rendimiento: los 2000 SMS sintéticos se aceptan', classified === 2000, String(classified));
+  console.log(`  (2000 SMS en ${elapsed} ms)`);
 }
 
 // ─────────────────────────────────────────────────────────────

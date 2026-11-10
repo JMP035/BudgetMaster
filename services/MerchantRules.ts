@@ -11,6 +11,7 @@
 
 import type { MerchantRule, Transaction } from './storage';
 import { extractMerchantAndLocation, flatText } from './Categorizer';
+import { findBrand, stripGateway } from './GuatemalaBrands';
 
 /** Tope de reglas aprendidas; al excederlo se descartan las de updatedAt más viejo. */
 const MAX_MERCHANT_RULES = 500;
@@ -27,18 +28,31 @@ const GENERIC_KEYS = [
 /** Ciudades que el SMS agrega al final del comercio. */
 const TRAILING_CITY_RE = /(?:^|\s+)(?:guatemala|guate|gt|gua|mixco|villa nueva)$/;
 
+function keyText(s: string): string {
+  return flatText(s)
+    .replace(/[^a-z0-9& ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Normaliza un comercio a su clave de aprendizaje. Devuelve null si no hay una
- * clave utilizable (vacía, de menos de 3 caracteres o genérica).
+ * clave utilizable (vacía, de menos de 3 caracteres o genérica). Si el comercio
+ * pertenece a una marca del catálogo (GuatemalaBrands) la clave sale del nombre
+ * canónico: "San Martin Majadas" y "San Martin Aranda" dan la misma clave 'san martin'.
  */
 export function merchantKey(merchant: string | null | undefined): string | null {
   if (!merchant) return null;
 
-  let s = flatText(merchant)
-    .replace(/[^a-z0-9& ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  s = s.replace(/^(?:paggo app|paggo|pg)\s+/, '');
+  // Sin pasarela de pago (Paggo App, PayPal...) y, si hay marca, con su nombre canónico.
+  const base = stripGateway(merchant).name;
+  const brand = findBrand(base);
+  if (brand) {
+    const bk = keyText(brand.name).split(' ').filter(Boolean).slice(0, MAX_KEY_TOKENS).join(' ');
+    return bk.length < 3 ? null : bk;
+  }
+
+  const s = keyText(base);
 
   // Quita tokens de sucursal: números, #N, zN y "zona N" (ambos tokens).
   const raw = s.split(' ').filter(Boolean);

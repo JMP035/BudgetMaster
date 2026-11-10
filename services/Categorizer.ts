@@ -5,6 +5,11 @@
 // detección de categorías y limpieza de descripciones para
 // consumo manual, SMS y asesoría conversacional.
 //
+// Categorías de comida: "restaurant" (Restaurantes) = TODA la comida ya preparada
+// (restaurantes, comida rápida, cafeterías, delivery, antojitos); "groceries" (Supermercado)
+// = supermercados y tiendas de conveniencia; "food" (Comida) = el resto (panaderías,
+// pastelerías, mercados, tiendas de barrio, snacks).
+//
 // Módulo PURO: sin imports de React Native ni de storage. Lo usa el motor de
 // parseo de SMS (BankSmsParser) que se prueba con `npm run test:sms`.
 //
@@ -12,6 +17,8 @@
 // banco (BAC ~22 caracteres: "SOLUCIONES TECNOLOGICA", "PAGGO APP RESTAURAN").
 // Este módulo NO trunca nada; por eso las reglas de EXPENSE_RULES coinciden por
 // prefijo (restaura\w*, tecnolog\w*, serv\w*).
+
+import { splitBrand, splitLocation, stripGateway } from "./GuatemalaBrands";
 
 export interface CategorizationResult {
   category: string;
@@ -84,16 +91,24 @@ const rule = (category: string, src: string, opts: { merchantOnly?: boolean; mer
 // Ojo: BAC corta el campo del comercio en ~22 caracteres ("ESTACION DE SERVICIO J",
 // "PAGGO APP RESTAURAN"), por eso varias reglas coinciden por prefijo (\w*).
 const EXPENSE_RULES: ExpenseRule[] = [
-  rule("food", "uber\\s*eats|pedidos\\s*ya|hugo app|hugo|rappi"),
-  rule("food", "pizz\\w*|mcdon\\w*|burger\\w*|hamburgues\\w*|campero|pollo\\w*|granjero|kfc|subway|domino\\w*|wendy\\w*|little caesars|taco bell|papa john\\w*|carl s jr|carls jr|carl s|starbucks|barista|dunkin\\w*|sushi|tacos?|taqueri\\w*|restaura\\w*|cafe|cafeteri\\w*|coffee|comedor\\w*|panaderi\\w*|pasteleri\\w*|reposteri\\w*|parrilla\\w*|churrasc\\w*|pupuseri\\w*|marisqueri\\w*|cevicheri\\w*|marinero|antojito\\w*|gourmelt|anfora|bistro|grill|wings|irtra|los cebollines|go green|sarita|pinulito|china wok"),
-  rule("food", "san martin|la trama|parma|el portal|la cocina", { merchantStart: true }),
-  rule("groceries", "walmart|despensa\\w*|paiz|la torre|pricesmart|super ?24|supermercado\\w*|maxi despensa|econosuper|super del barrio|unisuper|la bodegona|bodegona|super selectos"),
+  // Delivery = comida preparada.
+  rule("restaurant", "uber\\s*eats|pedidos\\s*ya|hugo app|hugo|rappi"),
+  // Panaderías, pastelerías, mercados y tiendas de barrio = Comida. Van ANTES que restaurantes
+  // ("Panadería y Cafetería" es una panadería). "mercado libre" es compras, no un mercado.
+  rule("food", "panaderi\\w*|pasteleri\\w*|reposteri\\w*|mercado(?!\\s*libre)|tiendita\\w*|abarroteri\\w*|carniceri\\w*|verduleri\\w*|tortiller\\w*|dulceri\\w*|heladeri\\w*|tienda dona?"),
+  // Comida ya preparada = Restaurantes.
+  rule("restaurant", "pizz\\w*|mcdon\\w*|burger\\w*|hamburgues\\w*|campero|pollo\\w*|granjero|kfc|subway|domino\\w*|wendy\\w*|little caesars|taco bell|papa john\\w*|carl s jr|carls jr|carl s|starbucks|barista|dunkin\\w*|sushi|tacos?|taqueri\\w*|restaura\\w*|cafe|cafeteri\\w*|coffee|comedor\\w*|parrilla\\w*|churrasc\\w*|pupuseri\\w*|marisqueri\\w*|cevicheri\\w*|marinero|antojito\\w*|gourmelt|anfora|bistro|grill|wings|los cebollines|go green|sarita|pinulito|china wok"),
+  // Nombres cortos o comunes: restaurantes solo al inicio del comercio. "San Martín" también es restaurante
+  // (decisión del usuario; "Hotel San Martín" no empieza con el nombre y cae en viajes).
+  rule("restaurant", "san martin|la trama|parma|el portal|la cocina", { merchantStart: true }),
+  // Supermercados y tiendas de conveniencia (Súper 24).
+  rule("groceries", "walmart|despensa\\w*|paiz|la torre|pricesmart|super ?24|tiendas? de conveniencia|mini ?super\\w*|supermercado\\w*|maxi despensa|econosuper|super del barrio|unisuper|la bodegona|bodegona|super selectos|dollar ?city"),
   rule("groceries", "suma|la barata", { merchantStart: true }),
   // Estaciones de servicio = gasolineras. ruleText conserva los puntos ("est. de serv."),
   // por eso `est\.?` y `\s+` en vez de un espacio literal. `estacion(?:es)?` (no `estacion\w*`)
   // para no capturar "estacionamiento"; "Estacion Central Mall" no lleva "serv" y no coincide.
   // "E/S Shell" llega como "e s shell" (la barra se vuelve espacio).
-  rule("fuel", "gasolinera\\w*|estacion(?:es)?\\s+(?:de\\s+)?serv\\w*|est\\.?\\s+(?:de\\s+)?serv\\w*|e s shell|servicentro\\w*|shell|texaco|puma|esso|chevron|petrolera\\w*|redipsa|zeta gas|gas station|combustible\\w*"),
+  rule("fuel", "gasolinera\\w*|estacion(?:es)?\\s+(?:de\\s+)?serv\\w*|est\\.?\\s+(?:de\\s+)?serv\\w*|e s shell|servicentro\\w*|shell|texaco|puma(?!\\s+(?:store|sport|outlet|tienda|ropa))|esso|chevron|petrolera\\w*|redipsa|zeta gas|gas station|combustible\\w*"),
   // Marcas cortas/comunes: solo al inicio del nombre del comercio ("Delta Airlines" y "Total Play" quedan fuera).
   rule("fuel", "delta(?!\\s+air)|total(?!\\s*play)", { merchantStart: true }),
   rule("fuel", "uno", { merchantOnly: true }),
@@ -104,7 +119,7 @@ const EXPENSE_RULES: ExpenseRule[] = [
   rule("internet", "internet", { merchantOnly: true }),
   rule("tech", "soluciones tecnolog\\w*|tecnolog\\w*|tecno\\w*|computacion|computadora\\w*|compu\\w*|electronica\\w*|intelaf|macrosistemas|spirit|celulares|repuestos? de comput\\w*"),
   rule("tech", "click", { merchantStart: true }),
-  rule("entertainment", "steam|playstation|xbox|nintendo|cine|cinepolis|cinemark|games?"),
+  rule("entertainment", "irtra|xetulul|xocomil|steam|playstation|xbox|nintendo|cine|cinepolis|cinemark|games?"),
   rule("pharmacy", "farmacia|galeno|meykos|cruz verde|batres|kielsa|carolina|similares?"),
   rule("health", "hospital|medico|doctor|clinica|laboratorio|radiologia|sanatorio|dental"),
   // Ropa ANTES que compras: "La Megapaca" no debe caer en "tienda"/"max".
@@ -168,8 +183,12 @@ export function detectCategory(body: string, type: 'income' | 'expense'): string
 // ─────────────────────────────────────────────────────────────
 
 export interface MerchantInfo {
+  /** Solo el nombre principal de la marca ("San Martín", "McDonald's"), sin ubicación ni pasarela. */
   merchant: string | null;
+  /** Ubicación aparte ("Majadas", "Zona 10") o, si no hay, la ciudad del SMS. */
   location: string | null;
+  /** Categoría que fija la marca del catálogo (GuatemalaBrands); null si no hay marca. Gana sobre EXPENSE_RULES. */
+  brandCategory: string | null;
   /** Segmento crudo entre "en" y la fecha (conserva "10 PAG"), para detectar cuotas. */
   segment: string | null;
 }
@@ -224,32 +243,49 @@ function matchSegment(raw: string): string | null {
   return null;
 }
 
+/**
+ * Del nombre crudo del comercio saca SOLO el nombre principal: quita la pasarela de pago
+ * (Paggo App, PayPal...), busca la marca del catálogo (nombre canónico + su categoría) y
+ * separa la ubicación pegada al final. Sin marca conocida, separa la ubicación de forma
+ * conservadora (zona N, lugares de GT_PLACES) sobre el nombre en TitleCase.
+ */
+function resolveMerchant(rawName: string): { merchant: string; location: string | null; brandCategory: string | null } {
+  const name = stripGateway(rawName).name;
+  const hit = splitBrand(name);
+  if (hit) return { merchant: hit.brand.name, location: hit.location, brandCategory: hit.brand.category };
+  const split = splitLocation(toTitleCase(name));
+  return { merchant: split.name, location: split.location, brandCategory: null };
+}
+
 /** Extrae comercio, ubicación y segmento crudo de un SMS (plantillas BAC, BANRURAL, GTC y BI). */
 export function extractMerchantAndLocation(raw: string): MerchantInfo {
   const segment = matchSegment(raw);
-  if (segment === null) return { merchant: null, location: null, segment: null };
+  if (segment === null) return { merchant: null, location: null, brandCategory: null, segment: null };
 
   const cleaned = segment
     .replace(INSTALLMENT_SUFFIX_RE, "")
     .replace(REF_RE, "  ")
+    // "GOOGLE *Google One": el procesador repite el nombre antes del asterisco.
+    .replace(/(\S+)\s*\*\s*\1(?=\s|$)/gi, "$1")
     .replace(/\s*\*\s*/g, " ")
     .trim();
   const parts = cleaned
     .split(/\s{2,}/)
     .map(p => p.replace(INSTALLMENT_SUFFIX_RE, "").replace(/\s+/g, " ").replace(TRAILING_PUNCT_RE, "").trim())
     .filter(p => p.length > 0);
-  if (parts.length === 0) return { merchant: null, location: null, segment };
+  if (parts.length === 0) return { merchant: null, location: null, brandCategory: null, segment };
 
-  const merchant = toTitleCase(parts[0]);
-  let location: string | null = null;
+  const resolved = resolveMerchant(parts[0]);
+  let city: string | null = null;
   if (parts.length > 1) {
     const last = parts[parts.length - 1];
     // Un teléfono (solo dígitos/guiones) no es una ubicación.
     if (/[A-Za-z]/.test(last)) {
-      location = LOCATION_ALIASES[last.toLowerCase()] ?? toTitleCase(last);
+      city = LOCATION_ALIASES[last.toLowerCase()] ?? toTitleCase(last);
     }
   }
-  return { merchant, location, segment };
+  // La ubicación que venía pegada al nombre es más específica que la ciudad del SMS.
+  return { merchant: resolved.merchant, location: resolved.location ?? city, brandCategory: resolved.brandCategory, segment };
 }
 
 const KNOWN_PLACES: [RegExp, string][] = [

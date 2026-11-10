@@ -193,6 +193,12 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, ver el SMS original si vino del banco, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
                 noSmsDescription: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
             },
+            {
+                id: 'mov_7', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
+                title: 'Clasificá bien tus movimientos',
+                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez.',
+                noSmsDescription: 'Elegí la categoría según el tipo de gasto: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si te equivocaste, cambiala en el detalle del movimiento.',
+            },
         ],
     },
 
@@ -271,6 +277,11 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'sms_4', position: 'center', icon: 'settings-outline',
                 title: 'Configurar en Ajustes',
                 description: 'En Ajustes → Sincronización SMS Automática podés activarla o desactivarla. Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Si un SMS no se detecta, pegalo a mano en Agregar → "Leer SMS".',
+            },
+            {
+                id: 'sms_5', position: 'center', icon: 'pricetag-outline',
+                title: 'Clasificación automática',
+                description: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría: Restaurantes para comida preparada, Supermercado para la despensa y Comida para el resto. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio.',
             },
         ],
     },

@@ -681,7 +681,9 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   const merchantTemplate = PURCHASE_WORD_RE.test(flat) && info.segment !== null;
   if (approvedTemplate || isDebit || merchantTemplate) {
     const isPurchase = approvedTemplate || merchantTemplate;
-    const category = categorizeExpense(info.merchant, info.location, stripBoilerplate(flat));
+    // Orden: la categoría de la marca del catálogo gana; EXPENSE_RULES por patrón es el respaldo.
+    // (La regla aprendida del usuario se aplica después, en applyLearnedRule, y gana sobre ambas.)
+    const category = info.brandCategory ?? categorizeExpense(info.merchant, info.location, stripBoilerplate(flat));
     // BANRURAL: "en: X" es la agencia o el canal, no un comercio. Sin comercio es una
     // transferencia enviada; con monto de comisión conocido y sin comercio reconocible es la comisión.
     if (!isPurchase && bank === 'BANRURAL') {

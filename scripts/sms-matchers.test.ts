@@ -59,8 +59,9 @@ check('umbrales', FIXED_AUTO_THRESHOLD === 80 && FIXED_PROPOSE_THRESHOLD === 45)
   check('Luz+R4: NO automática', m[0]?.auto === false);
   check('Luz+R4: ids', m[0]?.expenseId === 'luz' && m[0]?.txId === 'r4');
 
-  // Con el comercio aprendido: 50 + 20 + 20 = 90, automática.
-  const learned = fixed('luz', 'Luz', 650, 28, { smsMatchKey: 'eegsa web' });
+  // Con el comercio aprendido: 50 + 20 + 20 = 90, automática. Desde el catálogo de marcas (GuatemalaBrands)
+  // el comercio "EEGSA WEB" se normaliza a la marca "EEGSA", así que la clave aprendida es 'eegsa' (antes 'eegsa web').
+  const learned = fixed('luz', 'Luz', 650, 28, { smsMatchKey: 'eegsa' });
   const m2 = matchFixedExpenses([r4], [learned], [r4], NOW);
   check('Luz aprendida: 90', m2[0]?.score === 90, String(m2[0]?.score));
   check('Luz aprendida: automática', m2[0]?.auto === true);
@@ -111,6 +112,24 @@ check('umbrales', FIXED_AUTO_THRESHOLD === 80 && FIXED_PROPOSE_THRESHOLD === 45)
   const e2 = fixed('eegsa2', 'EEGSA casa 2', 687.2, 28);
   const m2 = matchFixedExpenses([a], [eegsa, e2], [a], NOW);
   check('2 gastos para 1 SMS: ninguna automática', m2.length === 2 && m2.every(x => !x.auto));
+}
+
+{
+  // Nombres canónicos del catálogo de marcas (GuatemalaBrands): los alias de luz / agua / internet siguen funcionando.
+  const luzCanon = fixed('luz', 'Luz', 650, 28);
+  for (const brand of ['EEGSA', 'Energuate', 'Deocsa']) {
+    const t = sms('c-' + brand, 650, d(2026, 7, 29), brand);
+    const r = matchFixedExpenses([t], [luzCanon], [t], NOW);
+    check(`Luz + marca canónica "${brand}": una coincidencia`, r.length === 1 && r[0].expenseId === 'luz', JSON.stringify(r));
+  }
+  const aguaT = sms('c-empagua', 120, d(2026, 7, 29), 'Empagua');
+  check('Gasto "Empagua" + marca canónica "Empagua"', matchFixedExpenses([aguaT], [fixed('agua', 'Empagua', 120, 28)], [aguaT], NOW).length === 1);
+  const netT = sms('c-claro', 299, d(2026, 7, 29), 'Claro');
+  check('Internet + marca canónica "Claro"', matchFixedExpenses([netT], [fixed('net', 'Internet', 299, 28, { category: 'internet' })], [netT], NOW).length === 1);
+  const telgua = sms('c-telgua', 299, d(2026, 7, 29), 'Telgua');
+  check('Internet + marca canónica "Telgua"', matchFixedExpenses([telgua], [fixed('net2', 'Internet', 299, 28, { category: 'internet' })], [telgua], NOW).length === 1);
+  const strT = sms('c-disney', 59, d(2026, 7, 29), 'Disney+');
+  check('Streaming + marca canónica "Disney+"', matchFixedExpenses([strT], [fixed('st', 'Streaming', 59, 28, { category: 'streaming' })], [strT], NOW).length === 1);
 }
 
 {

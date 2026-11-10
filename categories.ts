@@ -27,7 +27,7 @@ export const EXPENSE_CATEGORIES: Category[] = [
     { id: "internet", label: "Internet/Tel.", icon: "wifi-outline", color: "#20C997" },
     { id: "rent", label: "Renta/Casa", icon: "home-outline", color: "#2ECC71" },
     { id: "travel", label: "Viajes", icon: "airplane-outline", color: "#0EA5E9" },
-    { id: "restaurant", label: "Restaurante", icon: "restaurant-outline", color: "#FB923C" },
+    { id: "restaurant", label: "Restaurantes", icon: "restaurant-outline", color: "#FB923C" },
     { id: "atm", label: "Retiro ATM", icon: "cash-outline", color: "#84CC16" },
     { id: "transfer", label: "Transferencia", icon: "swap-horizontal-outline", color: "#8B5CF6" },
     { id: "subscriptions", label: "Suscripciones", icon: "repeat-outline", color: "#06B6D4" },
