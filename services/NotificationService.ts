@@ -3,10 +3,11 @@ import { Platform } from 'react-native';
 import {
     CategoryBudget, FixedExpense, SavingsGoal,
     Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, getEffectivePaymentDay,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment,
     parseDateOnly, storedDateToDateOnly,
     StorageService,
 } from './storage';
+import { FixedCycleConfig, nextFixedReminder } from './FixedCycle';
 import { QUOTES, randomQuote } from './FinancialQuotes';
 import { categoryLabelOf } from '../categories';
 
@@ -256,21 +257,6 @@ async function scheduleWithId(
     }
 }
 
-/** Calcula la próxima fecha de recordatorio (3 días antes del pago) de un gasto fijo, probando hasta 3 meses hacia adelante */
-function computeFixedExpenseReminder(expense: FixedExpense, now: Date): { date: Date; payDay: number } | null {
-    const startOffset = expense.isPaid ? 1 : 0;
-    for (let offset = startOffset; offset <= startOffset + 2; offset++) {
-        const y = now.getFullYear();
-        const m = now.getMonth() + offset;
-        const payDay = getEffectivePaymentDay(expense.dayOfMonth, y, m);
-        const date = new Date(y, m, payDay - 3, 9, 0, 0);
-        if (date.getTime() - now.getTime() > 60_000) {
-            return { date, payDay: new Date(y, m, payDay).getDate() };
-        }
-    }
-    return null;
-}
-
 /** Une una lista de strings en español: "a", "a y b", "a, b y c" */
 function joinEs(items: string[]): string {
     if (items.length <= 1) return items.join('');
@@ -468,12 +454,17 @@ Responde SOLO el texto, sin encabezados ni formato.
     },
 
     // ── Recordatorio de gasto fijo — identificador fijo por gasto ───
-    async scheduleFixedExpenseReminder(expense: FixedExpense, now: Date = new Date()): Promise<void> {
+    async scheduleFixedExpenseReminder(
+        expense: FixedExpense,
+        now: Date = new Date(),
+        cycle?: FixedCycleConfig,
+    ): Promise<void> {
         const id = ID_FIXED_PREFIX + expense.id;
         await safeCancel(id);
         if (!expense.isActive) return;
 
-        const r = computeFixedExpenseReminder(expense, now);
+        const cfg = cycle ?? await StorageService.getFixedCycleConfig();
+        const r = nextFixedReminder(expense, cfg, now);
         if (!r) return;
 
         await scheduleWithId(
@@ -502,7 +493,8 @@ Responde SOLO el texto, sin encabezados ni formato.
                 if (isOrphan || isLegacy) await safeCancel(n.identifier);
             }
 
-            for (const e of expenses) await this.scheduleFixedExpenseReminder(e);
+            const cycle = await StorageService.getFixedCycleConfig();
+            for (const e of expenses) await this.scheduleFixedExpenseReminder(e, new Date(), cycle);
         } catch (e) {
             console.warn('syncFixedExpenseReminders error:', e);
         }

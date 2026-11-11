@@ -9,6 +9,7 @@ import type { SmsReviewItem } from "../services/BankSmsParser";
 import type { SyncResult } from "../services/SmsService";
 import { findFixedFusions, matchFixedExpenses } from "../services/FixedExpenseMatcher";
 import type { FixedMatch } from "../services/FixedExpenseMatcher";
+import { fixedCycleConfig } from "../services/FixedCycle";
 import { findManualSmsDuplicates } from "../services/DuplicateDetector";
 import type { DupPair } from "../services/DuplicateDetector";
 import { findTransferPairs } from "../services/TransferPairs";
@@ -144,18 +145,19 @@ export default function SmsPendingSheet({
                 });
             }
             const ignored = new Set(dupIgnored);
-            const fusions: FixedMatch[] = findFixedFusions(transactions, fixedExpenses, { ignored }).map(f => ({
+            const cycle = fixedCycleConfig(settings);
+            const fusions: FixedMatch[] = findFixedFusions(transactions, fixedExpenses, { cycle, ignored }).map(f => ({
                 expenseId: f.expenseId, txId: f.smsId, manualId: f.manualId, score: f.score, auto: false, reasons: f.reasons,
             }));
             const proposals = matchFixedExpenses(
-                transactions.filter(t => t.source === "sms"), fixedExpenses, transactions, new Date(), { ignored },
+                transactions.filter(t => t.source === "sms"), fixedExpenses, transactions, new Date(), { cycle, ignored },
             );
             return [...fusions, ...proposals];
         } catch (e) {
             console.warn("[SmsPendingSheet] gastos fijos:", e);
             return [];
         }
-    }, [visible, result, transactions, fixedExpenses, txIds, dupIgnored]);
+    }, [visible, result, transactions, fixedExpenses, txIds, dupIgnored, settings]);
 
     // Un registro manual que ya se ofrece unir con su SMS como gasto fijo no se repite como duplicado.
     const fusedManualIds = useMemo(

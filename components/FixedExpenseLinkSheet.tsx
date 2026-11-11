@@ -6,7 +6,7 @@ import { StorageService } from "../services/storage";
 import type { FixedExpense, Transaction, UserSettings } from "../services/storage";
 import { findPastSmsForFixed, rankFixedForTx } from "../services/FixedExpenseMatcher";
 import type { PastSmsForFixed } from "../services/FixedExpenseMatcher";
-import { FE_TX_PREFIX, monthKey, occurrenceKeyFor, storedToLocalDate } from "../services/FixedCycle";
+import { FE_TX_PREFIX, cycleKeyFor, fixedCycleConfig, isPaidForPeriod, periodFor, storedToLocalDate } from "../services/FixedCycle";
 import { merchantKey, merchantOfTransaction } from "../services/MerchantRules";
 import { findBrand } from "../services/GuatemalaBrands";
 import { NotificationService } from "../services/NotificationService";
@@ -65,6 +65,7 @@ export default function FixedExpenseLinkSheet({
 }: FixedExpenseLinkSheetProps) {
     const dialog = useGlassDialog();
     const smsOn = isSmsFeatureOn(settings);
+    const cycle = fixedCycleConfig(settings);
     const [stage, setStage] = useState<Stage>(initialMode);
     const [data, setData] = useState({ txs: transactions, fes: fixedExpenses });
     const [busy, setBusy] = useState(false);
@@ -94,11 +95,11 @@ export default function FixedExpenseLinkSheet({
 
     const buildPast = useCallback((fe: FixedExpense, txs: Transaction[]): PastSmsForFixed[] => {
         if (!learnKey) return [];
-        const beforeKey = occurrenceKeyFor(fe.dayOfMonth, tx.date);
+        const beforeKey = cycleKeyFor(cycle, tx.date);
         if (!beforeKey) return [];
-        // Solo duplicados reales (registro manual + SMS del mismo ciclo): un SMS de otro mes es el pago de ese mes.
-        return findPastSmsForFixed(fe, txs, { key: learnKey, excludeTxId: tx.id, beforeKey }).filter(p => !!p.manualId);
-    }, [learnKey, tx.id, tx.date]);
+        // Solo duplicados reales (registro manual + SMS del mismo período): un SMS de otro período es el pago de ese período.
+        return findPastSmsForFixed(fe, txs, { key: learnKey, excludeTxId: tx.id, beforeKey, cycle }).filter(p => !!p.manualId);
+    }, [learnKey, tx.id, tx.date, cycle.anchorDay]);
 
     const enterHistory = useCallback((fe: FixedExpense, found: PastSmsForFixed[]) => {
         setHistoryFe(fe);
@@ -174,10 +175,10 @@ export default function FixedExpenseLinkSheet({
     const handlePick = async (fe: FixedExpense) => {
         if (busy) return;
         const now = new Date();
-        const cur = monthKey(now);
-        const key = occurrenceKeyFor(fe.dayOfMonth, tx.date) ?? cur;
+        const cur = periodFor(cycle, now).key;
+        const key = cycleKeyFor(cycle, tx.date) ?? cur;
 
-        // (a) El gasto ya figura pagado a mano este mes: se une con ese registro.
+        // (a) El gasto ya figura pagado a mano en este período: se une con ese registro.
         if (fe.isPaid && key >= cur && fe.paidTxId !== tx.id) {
             const manual = data.txs.find(t =>
                 t.source === "manual" && !t.mergedFrom
@@ -196,7 +197,7 @@ export default function FixedExpenseLinkSheet({
                 // (b) Ya lo pagó otro SMS: este queda como pago adicional (historial).
                 const ok = await dialog.confirm({
                     title: "Guardar como pago adicional",
-                    message: `«${fe.name}» ya figura pagado este mes por otro mensaje del banco. Este pago se guarda como historial de «${fe.name}», sin cambiar su estado.`,
+                    message: `«${fe.name}» ya figura pagado en este período por otro mensaje del banco. Este pago se guarda como historial de «${fe.name}», sin cambiar su estado.`,
                     confirmLabel: "Guardar",
                     cancelLabel: "Cancelar",
                     destructive: false,
@@ -320,7 +321,7 @@ export default function FixedExpenseLinkSheet({
                 {notices.map((nt, i) => <InlineNotice key={i} variant={nt.variant} text={nt.text} style={s.notice} />)}
                 {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
                 <Text style={s.intro}>
-                    {`Encontramos ${past.length} ${past.length === 1 ? "cobro" : "cobros"} de «${merchantLabel}» de meses anteriores que tienes dos veces (registro manual + SMS). ¿Unirlos? Se queda el pago del banco y se borra el registro manual.`}
+                    {`Encontramos ${past.length} ${past.length === 1 ? "cobro" : "cobros"} de «${merchantLabel}» de períodos anteriores que tienes dos veces (registro manual + SMS). ¿Unirlos? Se queda el pago del banco y se borra el registro manual.`}
                 </Text>
                 {past.map(p => {
                     const on = checked.has(p.tx.id);
@@ -382,8 +383,8 @@ export default function FixedExpenseLinkSheet({
     }
 
     // ── Elegir el gasto fijo ──
-    const ranked = rankFixedForTx(tx, data.fes);
-    const cur = monthKey(new Date());
+    const ranked = rankFixedForTx(tx, data.fes, cycle);
+    const pickNow = new Date();
     return (
         <GlassSheet onClose={onClose} title="¿Qué gasto fijo es?" icon="calendar-outline">
             {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
@@ -402,7 +403,7 @@ export default function FixedExpenseLinkSheet({
             )}
             {ranked.map(({ expense, score, reasons }) => {
                 const suggested = score >= SUGGEST_SCORE;
-                const paidNow = expense.isPaid && expense.paidCycleKey === cur;
+                const paidNow = isPaidForPeriod(expense, cycle, pickNow);
                 return (
                     <TouchableOpacity
                         key={expense.id}
@@ -426,7 +427,7 @@ export default function FixedExpenseLinkSheet({
                                         {paidNow && (
                                             <View style={s.chip}>
                                                 <Ionicons name="checkmark-circle-outline" size={11} color={C.success} />
-                                                <Text style={s.chipTxt}>Pagado este mes</Text>
+                                                <Text style={s.chipTxt}>Pagado este período</Text>
                                             </View>
                                         )}
                                     </View>

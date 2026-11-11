@@ -1,18 +1,32 @@
-// Ciclo mensual de los gastos fijos (módulo PURO). Sin react-native ni AsyncStorage:
-// de ./storage solo `import type`.
+// Ciclo de los gastos fijos = PERÍODO DE PRESUPUESTO (módulo PURO). Sin react-native ni
+// AsyncStorage: de ./storage solo `import type`.
 //
-// El ciclo sigue siendo el mes calendario ('YYYY-MM'), pero cada movimiento se asigna al
-// vencimiento MÁS CERCANO (mes anterior / mismo mes / mes siguiente). Así un SMS del 28 de
-// octubre pertenece al vencimiento del 1 de noviembre, y uno del 1 de octubre a un gasto del
-// día 30 pertenece al vencimiento de septiembre (pago atrasado).
-import type { FixedExpense } from './storage';
+// Un período es una ventana mensual anclada al día de pago (con paymentDay = 27: del 27 de octubre
+// al 26 de noviembre). Cada gasto fijo vence UNA vez por período y cada movimiento pertenece al
+// período de SU fecha. Así el SMS del 28 de octubre y el registro manual del 10 de noviembre de un
+// gasto del día 28 caen en el mismo período y se fusionan.
+//
+// La clave de un período es la fecha de inicio ('YYYY-MM-DD', hora local). Los datos de formato
+// viejo ('YYYY-MM', mes calendario) se toleran y se convierten con `normalizeCycleKey`.
+import type { FixedExpense, UserSettings } from './storage';
 
-/** Prefijo del id del movimiento manual que crea "marcar pagado": `fe_tx_<gastoId>_<YYYY-MM>`. */
+/** Prefijo del id del movimiento manual que crea "marcar pagado": `fe_tx_<gastoId>_<clave del período>`. */
 export const FE_TX_PREFIX = 'fe_tx_';
 
-const FE_TX_ID_RE = /^fe_tx_(.+?)(?:_\d{4}-\d{2}(?:_\d+)?)?$/;
-const FE_TX_CYCLE_RE = /^fe_tx_.+?_(\d{4}-\d{2})(?:_\d+)?$/;
+const FE_TX_ID_RE = /^fe_tx_(.+?)(?:_\d{4}-\d{2}(?:-\d{2})?(?:_\d+)?)?$/;
+const FE_TX_CYCLE_RE = /^fe_tx_.+?_(\d{4}-\d{2}(?:-\d{2})?)(?:_\d+)?$/;
 const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}(T00:00:00(\.000)?Z)?$/;
+const KEY_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const KEY_MONTH_RE = /^\d{4}-\d{2}$/;
+
+/** Configuración del período: día (1..31) en que arranca; se recorta al largo de cada mes. */
+export interface FixedCycleConfig { anchorDay: number; }
+
+/** Mes calendario (período que arranca el día 1). */
+export const CALENDAR_CYCLE: FixedCycleConfig = { anchorDay: 1 };
+
+/** Período de presupuesto: `start` 00:00:00.000 local; `end` 23:59:59.999 del día anterior al próximo inicio. */
+export interface FixedPeriod { key: string; start: Date; end: Date; }
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -21,6 +35,10 @@ function pad2(n: number): string {
 /** 'YYYY-MM' en hora local. */
 export function monthKey(d: Date): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+function ymdKey(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
 /**
@@ -53,57 +71,181 @@ function dayNum(year: number, month: number, day: number): number {
   return Math.round(Date.UTC(year, month, day) / 86400000);
 }
 
+function dayNumOf(d: Date): number {
+  return dayNum(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 /** Número de día calendario local de un valor guardado; null si es inválido. */
 export function storedDayNumber(stored: string): number | null {
   const dt = storedToLocalDate(stored);
-  return dt ? dayNum(dt.getFullYear(), dt.getMonth(), dt.getDate()) : null;
+  return dt ? dayNumOf(dt) : null;
 }
 
-interface Occurrence { key: string; distance: number; }
+// ─────────────────────────────────────────────────────────────
+// Configuración y períodos
+// ─────────────────────────────────────────────────────────────
 
-/** Vencimiento más cercano (mes anterior / mismo / siguiente). Empate: el mes del propio movimiento. */
-function nearestOccurrence(dayOfMonth: number, stored: string): Occurrence | null {
-  const dt = storedToLocalDate(stored);
-  if (!dt) return null;
-  const y = dt.getFullYear();
-  const m = dt.getMonth();
-  const txNum = dayNum(y, m, dt.getDate());
-
-  let best: Occurrence | null = null;
-  // Primero el mes propio: con el `<` estricto, un empate se queda con él.
-  for (const off of [0, -1, 1]) {
-    const ref = new Date(y, m + off, 1);
-    const yy = ref.getFullYear();
-    const mm = ref.getMonth();
-    const distance = txNum - dayNum(yy, mm, effectiveDay(dayOfMonth, yy, mm));
-    if (!best || Math.abs(distance) < Math.abs(best.distance)) {
-      best = { key: `${yy}-${pad2(mm + 1)}`, distance };
-    }
+/**
+ * Ancla del período según los ajustes: mensual = día de pago; quincenal = primer día de pago;
+ * semanal / irregular = mes calendario (ancla 1).
+ */
+export function fixedCycleConfig(
+  s: Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'>,
+): FixedCycleConfig {
+  const clamp = (n: number): number => Math.min(31, Math.max(1, Math.round(n)));
+  if (s.paymentCycle === 'monthly') {
+    const n = Number(s.paymentDay);
+    return { anchorDay: Number.isFinite(n) ? clamp(n) : 1 };
   }
-  return best;
+  if (s.paymentCycle === 'biweekly') {
+    const days = (Array.isArray(s.paymentDays) ? s.paymentDays : [])
+      .map(Number).filter(n => Number.isFinite(n) && n >= 1 && n <= 31);
+    return { anchorDay: days.length > 0 ? Math.round(Math.min(...days)) : 1 };
+  }
+  return { anchorDay: 1 };
 }
 
-/** monthKey del vencimiento más cercano al movimiento; null si la fecha es inválida. */
-export function occurrenceKeyFor(dayOfMonth: number, stored: string): string | null {
-  return nearestOccurrence(dayOfMonth, stored)?.key ?? null;
+/** Inicio (año, mes normalizados, día efectivo) del período que arranca en el mes `year`/`month`. */
+function startIn(cfg: FixedCycleConfig, year: number, month: number): Date {
+  const ref = new Date(year, month, 1);
+  const y = ref.getFullYear();
+  const m = ref.getMonth();
+  return new Date(y, m, effectiveDay(cfg.anchorDay, y, m), 0, 0, 0, 0);
 }
 
-/** Días entre el vencimiento más cercano y el movimiento (positivo = después del vencimiento). */
-export function dueDistanceDays(dayOfMonth: number, stored: string): number | null {
-  return nearestOccurrence(dayOfMonth, stored)?.distance ?? null;
+/** Período de presupuesto que contiene a `date`. */
+export function periodFor(cfg: FixedCycleConfig, date: Date): FixedPeriod {
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const start = d >= effectiveDay(cfg.anchorDay, y, m) ? startIn(cfg, y, m) : startIn(cfg, y, m - 1);
+  const nextStart = startIn(cfg, start.getFullYear(), start.getMonth() + 1);
+  const end = new Date(nextStart.getFullYear(), nextStart.getMonth(), nextStart.getDate() - 1, 23, 59, 59, 999);
+  return { key: ymdKey(start), start, end };
+}
+
+/** Período de un valor guardado (la fecha de un movimiento); null si es inválido. */
+export function periodForStored(cfg: FixedCycleConfig, stored: string): FixedPeriod | null {
+  const dt = storedToLocalDate(stored);
+  return dt ? periodFor(cfg, dt) : null;
+}
+
+/** Período siguiente a `p`. */
+export function nextPeriod(cfg: FixedCycleConfig, p: FixedPeriod): FixedPeriod {
+  return periodFor(cfg, new Date(p.end.getFullYear(), p.end.getMonth(), p.end.getDate() + 1, 12, 0, 0, 0));
+}
+
+/** Clave del período de un movimiento (depende SOLO de su fecha); null si la fecha es inválida. */
+export function cycleKeyFor(cfg: FixedCycleConfig, stored: string): string | null {
+  return periodForStored(cfg, stored)?.key ?? null;
 }
 
 /**
- * Fecha por defecto al marcar pagado a mano: el día de cobro (recortado al largo del mes) del mes de
- * `now` si ya pasó o es hoy; si todavía no llega, hoy. Siempre a las 12:00 locales (sin desfase de zona).
+ * Vencimiento (12:00 locales) de un gasto fijo dentro del período `p`: exactamente uno por período.
+ * Si el día de cobro es >= el ancla vence en el mes de inicio; si no, en el mes siguiente. Se recorta
+ * a [p.start, p.end] (meses cortos).
  */
-export function defaultPaidDate(dayOfMonth: number, now: Date): Date {
-  const y = now.getFullYear();
-  const m = now.getMonth();
-  const due = effectiveDay(dayOfMonth, y, m);
-  const day = due <= now.getDate() ? due : now.getDate();
-  return new Date(y, m, day, 12, 0, 0, 0);
+export function dueDateInPeriod(dayOfMonth: number, p: FixedPeriod, cfg: FixedCycleConfig): Date {
+  const M = p.start.getMonth();
+  const Y = p.start.getFullYear();
+  const day = Math.round(dayOfMonth);
+  const ref = new Date(Y, day >= cfg.anchorDay ? M : M + 1, 1);
+  const yy = ref.getFullYear();
+  const mm = ref.getMonth();
+  const dd = effectiveDay(dayOfMonth, yy, mm);
+  const n = dayNum(yy, mm, dd);
+  const lo = dayNumOf(p.start);
+  const hi = dayNumOf(p.end);
+  if (n < lo) return new Date(p.start.getFullYear(), p.start.getMonth(), p.start.getDate(), 12, 0, 0, 0);
+  if (n > hi) return new Date(p.end.getFullYear(), p.end.getMonth(), p.end.getDate(), 12, 0, 0, 0);
+  return new Date(yy, mm, dd, 12, 0, 0, 0);
 }
+
+/** Días entre el movimiento y el vencimiento de SU período (positivo = después); null si la fecha es inválida. */
+export function dueDistanceInPeriod(dayOfMonth: number, cfg: FixedCycleConfig, stored: string): number | null {
+  const dt = storedToLocalDate(stored);
+  if (!dt) return null;
+  const due = dueDateInPeriod(dayOfMonth, periodFor(cfg, dt), cfg);
+  return dayNumOf(dt) - dayNumOf(due);
+}
+
+/**
+ * Clave de período vigente para una clave guardada. Acepta 'YYYY-MM-DD' (si cambió el día de pago se
+ * reubica por el vencimiento del pago) y 'YYYY-MM' (formato viejo: vencimiento de ese mes calendario).
+ * Cualquier otro formato da null.
+ */
+export function normalizeCycleKey(key: string, dayOfMonth: number, cfg: FixedCycleConfig): string | null {
+  if (KEY_DAY_RE.test(key)) {
+    const y = Number(key.slice(0, 4));
+    const m = Number(key.slice(5, 7));
+    const d = Number(key.slice(8, 10));
+    const at = new Date(y, m - 1, d, 12, 0, 0, 0);
+    if (isNaN(at.getTime())) return null;
+    if (periodFor(cfg, at).key === key) return key;
+    const old: FixedCycleConfig = { anchorDay: d };
+    const pOld = periodFor(old, at);
+    return periodFor(cfg, dueDateInPeriod(dayOfMonth, pOld, old)).key;
+  }
+  if (KEY_MONTH_RE.test(key)) {
+    const y = Number(key.slice(0, 4));
+    const m = Number(key.slice(5, 7));
+    if (m < 1 || m > 12) return null;
+    const due = new Date(y, m - 1, effectiveDay(dayOfMonth, y, m - 1), 12, 0, 0, 0);
+    return periodFor(cfg, due).key;
+  }
+  return null;
+}
+
+/**
+ * Fecha por defecto al marcar pagado a mano: el vencimiento del período actual si ya pasó o es hoy;
+ * si todavía no llega, hoy. Siempre a las 12:00 locales (sin desfase de zona).
+ */
+export function defaultPaidDate(dayOfMonth: number, now: Date, cycle: FixedCycleConfig): Date {
+  const due = dueDateInPeriod(dayOfMonth, periodFor(cycle, now), cycle);
+  const base = dayNumOf(due) <= dayNumOf(now) ? due : now;
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate(), 12, 0, 0, 0);
+}
+
+/** ¿El gasto figura pagado para el período de `now` (o uno futuro)? */
+export function isPaidForPeriod(fe: FixedExpense, cycle: FixedCycleConfig, now: Date): boolean {
+  if (!fe.isPaid) return false;
+  const eff = normalizeCycleKey(fe.paidCycleKey ?? '', fe.dayOfMonth, cycle) ?? '';
+  return eff >= periodFor(cycle, now).key;
+}
+
+export interface FixedDueInfo { period: FixedPeriod; due: Date; nextDue: Date; overdue: boolean; }
+
+/** Vencimiento del período actual, el del siguiente y si el gasto está atrasado (no pagado y ya pasó). */
+export function fixedDueInfo(fe: FixedExpense, cycle: FixedCycleConfig, now: Date): FixedDueInfo {
+  const period = periodFor(cycle, now);
+  const due = dueDateInPeriod(fe.dayOfMonth, period, cycle);
+  const nextDue = dueDateInPeriod(fe.dayOfMonth, nextPeriod(cycle, period), cycle);
+  return { period, due, nextDue, overdue: !fe.isPaid && dayNumOf(now) > dayNumOf(due) };
+}
+
+/**
+ * Próximo recordatorio (3 días antes del vencimiento, 9:00): del período actual, o del siguiente si ya
+ * está pagado o el recordatorio ya pasó. `payDay` es el día del mes del vencimiento. null si no hay.
+ */
+export function nextFixedReminder(
+  fe: FixedExpense,
+  cycle: FixedCycleConfig,
+  now: Date,
+): { date: Date; payDay: number } | null {
+  let p = periodFor(cycle, now);
+  if (isPaidForPeriod(fe, cycle, now)) p = nextPeriod(cycle, p);
+  for (let i = 0; i < 3; i++) {
+    const due = dueDateInPeriod(fe.dayOfMonth, p, cycle);
+    const date = new Date(due.getFullYear(), due.getMonth(), due.getDate() - 3, 9, 0, 0, 0);
+    if (date.getTime() - now.getTime() > 60000) return { date, payDay: due.getDate() };
+    p = nextPeriod(cycle, p);
+  }
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Ids de los movimientos manuales de "marcar pagado"
+// ─────────────────────────────────────────────────────────────
 
 /** Id del movimiento manual de "marcar pagado". */
 export function feTxId(expenseId: string, key: string): string {
@@ -116,24 +258,29 @@ export function fixedIdFromFeTxId(id: string): string | null {
   return m ? m[1] : null;
 }
 
-/** Ciclo ('YYYY-MM') del sufijo de un id `fe_tx_*`; null si no lo trae. */
+/** Clave cruda ('YYYY-MM-DD' o 'YYYY-MM' viejo) del sufijo de un id `fe_tx_*`; null si no la trae. */
 export function cycleKeyFromFeTxId(id: string): string | null {
   const m = FE_TX_CYCLE_RE.exec(id);
   return m ? m[1] : null;
 }
 
 /**
- * Reinicio mensual: un gasto se conserva pagado si su paidCycleKey cubre el mes actual (o uno
- * futuro); si no, se limpian los campos de pago (igual que resetFixedExpensesForNewMonth).
+ * Reinicio por período: un gasto se conserva pagado si su clave de pago (normalizada) cubre el período
+ * actual o uno futuro; si no, se limpian los campos de pago. Idempotente: un gasto que se conserva se
+ * devuelve intacto (misma referencia).
  */
-export function planFixedMonthlyReset(
+export function planFixedPeriodReset(
   expenses: FixedExpense[],
   now: Date,
+  cycle: FixedCycleConfig,
 ): { next: FixedExpense[]; changed: boolean } {
-  const cur = monthKey(now);
+  const cur = periodFor(cycle, now).key;
   let changed = false;
   const next = expenses.map(e => {
-    if (e.paidCycleKey && e.paidCycleKey >= cur) return e;
+    let eff: string | null = null;
+    if (e.paidCycleKey) eff = normalizeCycleKey(e.paidCycleKey, e.dayOfMonth, cycle);
+    else if (e.paidDate) eff = cycleKeyFor(cycle, e.paidDate);
+    if (eff && eff >= cur) return e;
     const dirty = e.isPaid || e.paidDate !== undefined || e.lastTxId !== undefined
       || e.paidTxId !== undefined || e.paidBy !== undefined || e.paidCycleKey !== undefined;
     if (!dirty) return e;

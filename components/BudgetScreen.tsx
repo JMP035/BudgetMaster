@@ -15,7 +15,7 @@ import {
 import { isSmsFeatureOn } from "../services/features";
 import { merchantOfTransaction } from "../services/MerchantRules";
 import { matchFixedExpenses } from "../services/FixedExpenseMatcher";
-import { defaultPaidDate, feTxId, monthKey, occurrenceKeyFor } from "../services/FixedCycle";
+import { cycleKeyFor, defaultPaidDate, feTxId, fixedCycleConfig, fixedDueInfo, periodFor } from "../services/FixedCycle";
 import { getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
@@ -297,9 +297,16 @@ function SavingsGoalModal({ onSave, onClose, existing, defaultCurrency }: {
 // ─────────────────────────────────────────────────────────────
 // HOJA "¿CUÁNDO SE PAGÓ?" (marcar un gasto fijo como pagado a mano)
 // ─────────────────────────────────────────────────────────────
-function PaidDateSheet({ expenseName, initial, onConfirm, onCancel }: {
+const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+/** «28 oct» (mes abreviado fijo: no depende del locale del dispositivo). */
+function formatShortDay(d: Date): string {
+    return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
+}
+
+function PaidDateSheet({ expenseName, initial, minDate, onConfirm, onCancel }: {
     expenseName: string;
     initial: Date;
+    minDate: Date;
     onConfirm: (picked: Date) => void;
     onCancel: () => void;
 }) {
@@ -339,12 +346,13 @@ function PaidDateSheet({ expenseName, initial, onConfirm, onCancel }: {
                 <Text style={[md.dateTxt, { textTransform: "capitalize" }]}>{dateLabel}</Text>
                 <Ionicons name="chevron-down" size={16} color={C.textSub} />
             </TouchableOpacity>
-            <Text style={md.hint}>No se pueden elegir fechas futuras.</Text>
+            <Text style={md.hint}>Solo fechas de este período (desde el {formatShortDay(minDate)}) y nunca futuras.</Text>
             {showPicker && Platform.OS === "android" && (
                 <DateTimePicker
                     value={picked}
                     mode="date"
                     display="default"
+                    minimumDate={minDate}
                     maximumDate={maxDate}
                     onChange={(event, selected) => {
                         setShowPicker(false);
@@ -359,6 +367,7 @@ function PaidDateSheet({ expenseName, initial, onConfirm, onCancel }: {
                         mode="date"
                         display="inline"
                         themeVariant="dark"
+                        minimumDate={minDate}
                         maximumDate={maxDate}
                         accentColor={C.primary}
                         onChange={(_e, selected) => { if (selected) setPicked(toNoon(selected)); }}
@@ -388,9 +397,10 @@ function FixedExpensesTab({
 }) {
     const [showModal, setShowModal] = useState(false);
     const [editing, setEditing] = useState<FixedExpense | undefined>();
-    const [paidPrompt, setPaidPrompt] = useState<{ expense: FixedExpense; initial: Date; resolve: (d: Date | null) => void } | null>(null);
+    const [paidPrompt, setPaidPrompt] = useState<{ expense: FixedExpense; initial: Date; minDate: Date; resolve: (d: Date | null) => void } | null>(null);
     const dialog = useGlassDialog();
     const smsOn = isSmsFeatureOn(settings);
+    const cycle = fixedCycleConfig(settings);
     const tutScroll = useTutorialScroll('budget_fixed');
     const summaryRef = useTutorialRef('budget_fixed_summary');
     const listRef = useTutorialRef('budget_fixed_list');
@@ -402,8 +412,8 @@ function FixedExpensesTab({
     const paidQ = active.filter(e => e.isPaid && e.currency === 'Q').reduce((s, e) => s + e.amount, 0);
 
     /** Abre la hoja "¿Cuándo se pagó?"; resuelve con la fecha elegida o null si se cancela. */
-    const askPaidDate = (expense: FixedExpense, initial: Date) =>
-        new Promise<Date | null>(resolve => setPaidPrompt({ expense, initial, resolve }));
+    const askPaidDate = (expense: FixedExpense, initial: Date, minDate: Date) =>
+        new Promise<Date | null>(resolve => setPaidPrompt({ expense, initial, minDate, resolve }));
 
     const closePaidPrompt = (result: Date | null) => {
         paidPrompt?.resolve(result);
@@ -433,7 +443,7 @@ function FixedExpensesTab({
             try {
                 const ign = new Set(await StorageService.getDupIgnored());
                 const m = matchFixedExpenses(
-                    transactions.filter(t => t.source === 'sms'), [expense], transactions, new Date(), { ignored: ign },
+                    transactions.filter(t => t.source === 'sms'), [expense], transactions, new Date(), { cycle, ignored: ign },
                 )[0];
                 const smsTx = m ? transactions.find(t => t.id === m.txId) : undefined;
                 if (m && smsTx) {
@@ -465,15 +475,16 @@ function FixedExpensesTab({
 
         // Pago a mano: se pregunta la fecha (por defecto, el día de cobro si ya pasó; si no, hoy).
         const now = new Date();
-        const pickedDay = await askPaidDate(expense, defaultPaidDate(expense.dayOfMonth, now));
+        const period = periodFor(cycle, now);
+        const pickedDay = await askPaidDate(expense, defaultPaidDate(expense.dayOfMonth, now, cycle), period.start);
         if (!pickedDay) return;
         // Día elegido + hora actual (conserva el orden dentro del día; mismo criterio que AddScreen).
         const paidAt = new Date(pickedDay.getFullYear(), pickedDay.getMonth(), pickedDay.getDate(),
             now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
-        const cycle = occurrenceKeyFor(expense.dayOfMonth, formatDateOnly(pickedDay)) ?? monthKey(pickedDay);
+        const cycleKey = cycleKeyFor(cycle, formatDateOnly(pickedDay)) ?? period.key;
         if (expense.autoRecord) {
-            // Al marcar como pagado con auto-registro: id determinístico, reversible y único por mes
-            let txId = feTxId(expense.id, cycle);
+            // Al marcar como pagado con auto-registro: id determinístico, reversible y único por período
+            let txId = feTxId(expense.id, cycleKey);
             if (transactions.some(t => t.id === txId)) txId = `${txId}_${Date.now()}`;
             const tx: Transaction = {
                 id: txId,
@@ -496,7 +507,7 @@ function FixedExpensesTab({
             paidDate: paidAt.toISOString(),
             lastTxId,
             paidBy: 'manual',
-            paidCycleKey: cycle,
+            paidCycleKey: cycleKey,
         };
         const all = await StorageService.updateFixedExpense(updated);
         setFixedExpenses(all);
@@ -529,6 +540,7 @@ function FixedExpensesTab({
     };
 
     const daysLeft = getDaysUntilNextPayment(settings);
+    const listNow = new Date();
 
     return (
         <View style={{ flex: 1 }}>
@@ -559,7 +571,7 @@ function FixedExpensesTab({
                     </GlassCard>
 
                     <AnimatedBar pct={active.length > 0 ? (paid / active.length) * 100 : 0} color={C.income} height={6} />
-                    <Text style={s.barLabel}>{Math.round(active.length > 0 ? (paid / active.length) * 100 : 0)}% de gastos fijos cubiertos este mes</Text>
+                    <Text style={s.barLabel}>{Math.round(active.length > 0 ? (paid / active.length) * 100 : 0)}% de gastos fijos cubiertos este período</Text>
                 </View>
 
                 <View ref={listRef} collapsable={false} style={{ marginTop: 16 }}>
@@ -570,11 +582,12 @@ function FixedExpensesTab({
                             <Text style={s.emptyDesc}>Agrega tus compromisos mensuales: renta, internet, tarjetas, etc.</Text>
                         </View>
                     ) : (
-                        [...active]
-                            .sort((a, b) => a.dayOfMonth - b.dayOfMonth)
-                            .map(expense => {
+                        active
+                            .map(expense => ({ expense, info: fixedDueInfo(expense, cycle, listNow) }))
+                            .sort((a, b) => a.info.due.getTime() - b.info.due.getTime())
+                            .map(({ expense, info }) => {
                                 const cat = getCat(expense.category, settings.customCategories);
-                                const isOverdue = isFixedExpenseOverdue(expense);
+                                const isOverdue = isFixedExpenseOverdue(expense, cycle, listNow);
                                 return (
                                     <GlassCard
                                         key={expense.id}
@@ -607,7 +620,12 @@ function FixedExpensesTab({
                                                     {expense.name}
                                                 </Text>
                                                 <View style={s.fixedMeta}>
-                                                    <Text style={s.fixedDay}>Día {expense.dayOfMonth}</Text>
+                                                    <Text style={s.fixedDay}>
+                                                        Día {expense.dayOfMonth}
+                                                        {expense.isPaid
+                                                            ? ` · próximo ${formatShortDay(info.nextDue)}`
+                                                            : ` · ${isOverdue ? "venció" : "vence"} ${formatShortDay(info.due)}`}
+                                                    </Text>
                                                     {isOverdue && <View style={s.overdueBadge}><Text style={s.overdueTxt}>VENCIDO</Text></View>}
                                                     {expense.autoRecord && <View style={s.autoBadge}><Text style={s.autoTxt}>AUTO</Text></View>}
                                                     {smsOn && expense.isPaid && expense.paidBy === 'sms' && <View style={s.autoBadge}><Text style={s.autoTxt}>SMS</Text></View>}
@@ -650,6 +668,7 @@ function FixedExpensesTab({
                 <PaidDateSheet
                     expenseName={paidPrompt.expense.name}
                     initial={paidPrompt.initial}
+                    minDate={paidPrompt.minDate}
                     onConfirm={d => closePaidPrompt(d)}
                     onCancel={() => closePaidPrompt(null)}
                 />

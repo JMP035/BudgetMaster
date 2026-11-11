@@ -7,6 +7,14 @@ import {
 } from './storage';
 import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
+import { fixedCycleConfig, fixedDueInfo } from './FixedCycle';
+
+const MONTHS_SHORT_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/** "28 oct" */
+function fmtShortDate(d: Date): string {
+    return `${d.getDate()} ${MONTHS_SHORT_ES[d.getMonth()]}`;
+}
 
 // ─────────────────────────────────────────────────────────────
 // 4a. HELPERS DE TEXTO
@@ -219,7 +227,12 @@ export function computeLocalMetrics(
     const prevCatSamePoint = prevCatMap;
 
     const fixedActive = fixedExpenses.filter(f => f.isActive);
-    const fixedPendingList = fixedActive.filter(f => !f.isPaid).sort((a, b) => a.dayOfMonth - b.dayOfMonth);
+    const fixedCycle = fixedCycleConfig(settings);
+    const fixedPendingList = fixedActive
+        .filter(f => !f.isPaid)
+        .map(f => ({ f, due: fixedDueInfo(f, fixedCycle, now).due.getTime() }))
+        .sort((a, b) => a.due - b.due)
+        .map(x => x.f);
     const fixedTotalQ = fixedActive.reduce((s, f) => s + convertAmount(f.amount, f.currency, 'Q', settings.exchangeRate), 0);
     const fixedPendingQ = fixedPendingList.reduce((s, f) => s + convertAmount(f.amount, f.currency, 'Q', settings.exchangeRate), 0);
 
@@ -673,7 +686,12 @@ export function getLocalResponse(
         if (m.fixedActive.length === 0) {
             return 'No tenés gastos fijos registrados. Agregalos en Presupuesto → Gastos Fijos para que te avise antes de cada pago.';
         }
-        const next3 = m.fixedPendingList.slice(0, 3).map(f => `${f.name} día ${f.dayOfMonth} — ${fmtMoney(f.amount, f.currency)}`).join(', ');
+        const fixedCycle = fixedCycleConfig(m.settings);
+        const nowFixed = new Date();
+        const next3 = m.fixedPendingList.slice(0, 3).map(f => {
+            const due = fixedDueInfo(f, fixedCycle, nowFixed).due;
+            return `${f.name} vence ${fmtShortDate(due)} — ${fmtMoney(f.amount, f.currency)}`;
+        }).join(', ');
         const variants10 = [
             () => `Gastos fijos activos: ${fmtQ(m.fixedTotalQ)}/período. Pendientes: ${fmtQ(m.fixedPendingQ)}.${next3 ? ` Próximos: ${next3}.` : ''}`,
             () => `Tenés ${fmtQ(m.fixedTotalQ)} en gastos fijos este período, de los cuales ${fmtQ(m.fixedPendingQ)} siguen pendientes.${next3 ? ` Los próximos son: ${next3}.` : ''}`,

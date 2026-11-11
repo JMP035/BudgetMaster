@@ -6,8 +6,10 @@ import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPa
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 import { planSmsUndo } from './SmsUndoPlan';
 import {
-  cycleKeyFromFeTxId, fixedIdFromFeTxId, monthKey, occurrenceKeyFor, planFixedMonthlyReset, storedToLocalDate,
+  cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
+  periodFor, planFixedPeriodReset, storedToLocalDate,
 } from './FixedCycle';
+import type { FixedCycleConfig } from './FixedCycle';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 
 // ─────────────────────────────────────────────────────────────
@@ -147,7 +149,7 @@ export interface FixedExpense {
   paidTxId?: string;         // Movimiento SMS que lo pagó (NUNCA se borra al desmarcar)
   paidBy?: 'manual' | 'sms';
   smsMatchKey?: string;      // merchantKey aprendido para emparejar SMS
-  paidCycleKey?: string;     // Ciclo (YYYY-MM) del vencimiento que cubre el pago; puede ser un mes futuro
+  paidCycleKey?: string;     // Inicio ('YYYY-MM-DD') del período de presupuesto que cubre el pago; datos viejos pueden traer 'YYYY-MM'
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -348,9 +350,11 @@ export function getEffectivePaymentDay(paymentDay: number, year: number, month: 
   return Math.min(Math.max(1, Math.round(paymentDay)), daysInMonth(year, month));
 }
 
-/** Indica si un gasto fijo está vencido: no pagado y ya se pasó su día efectivo del mes actual */
-export function isFixedExpenseOverdue(expense: FixedExpense, now: Date = new Date()): boolean {
-  return !expense.isPaid && now.getDate() > getEffectivePaymentDay(expense.dayOfMonth, now.getFullYear(), now.getMonth());
+/** Indica si un gasto fijo está vencido: no pagado y ya pasó su vencimiento dentro del período de presupuesto actual */
+export function isFixedExpenseOverdue(expense: FixedExpense, cycle: FixedCycleConfig, now: Date = new Date()): boolean {
+  if (expense.isPaid) return false;
+  const due = dueDateInPeriod(expense.dayOfMonth, periodFor(cycle, now), cycle);
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) > Date.UTC(due.getFullYear(), due.getMonth(), due.getDate());
 }
 
 /** Último instante (23:59:59) del día anterior a la fecha dada */
@@ -1122,15 +1126,15 @@ export const StorageService = {
   /**
    * Marca el gasto fijo como pagado por un movimiento SMS: isPaid, paidDate = tx.date,
    * paidTxId, paidBy 'sms' (lastTxId no se toca) y tx.fixedExpenseId. Con `learnKey`
-   * guarda smsMatchKey para que los próximos meses se marque solo.
+   * guarda smsMatchKey para que los próximos períodos se marque solo.
    */
   async markFixedPaidBySms(expenseId: string, txId: string, learnKey?: string): Promise<FixedExpense[]> {
-    const [expenses, txs] = await Promise.all([this.getFixedExpenses(), this.getTransactions()]);
+    const [expenses, txs, cfg] = await Promise.all([this.getFixedExpenses(), this.getTransactions(), this.getFixedCycleConfig()]);
     const tx = txs.find(t => t.id === txId);
     if (!tx || !expenses.some(e => e.id === expenseId)) return expenses;
     const nextExpenses = expenses.map(e => e.id !== expenseId ? e : {
       ...e, isPaid: true, paidDate: tx.date, paidTxId: txId, paidBy: 'sms' as const,
-      paidCycleKey: occurrenceKeyFor(e.dayOfMonth, tx.date) ?? monthKey(new Date()),
+      paidCycleKey: cycleKeyFor(cfg, tx.date) ?? periodFor(cfg, new Date()).key,
       ...(learnKey ? { smsMatchKey: learnKey } : {}),
     });
     await this.saveFixedExpenses(nextExpenses);
@@ -1185,7 +1189,7 @@ export const StorageService = {
    * Si alguno no existe o no son manual/SMS, no cambia nada.
    */
   async mergeDuplicate(manualId: string, smsId: string): Promise<Transaction[]> {
-    const [txs, expenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const [txs, expenses, cfg] = await Promise.all([this.getTransactions(), this.getFixedExpenses(), this.getFixedCycleConfig()]);
     const manual = txs.find(t => t.id === manualId);
     const sms = txs.find(t => t.id === smsId);
     if (!manual || !sms || manualId === smsId || manual.source !== 'manual' || sms.source !== 'sms') return txs;
@@ -1200,7 +1204,7 @@ export const StorageService = {
       merged = { ...merged, fixedExpenseId: e.id };
       return {
         ...e, paidTxId: smsId, paidBy: 'sms' as const, lastTxId: undefined, paidDate: sms.date,
-        paidCycleKey: e.paidCycleKey ?? occurrenceKeyFor(e.dayOfMonth, sms.date) ?? undefined,
+        paidCycleKey: e.paidCycleKey ?? cycleKeyFor(cfg, sms.date) ?? undefined,
       };
     });
 
@@ -1245,7 +1249,7 @@ export const StorageService = {
   async mergeFixedManualIntoSms(
     expenseId: string, manualId: string, smsId: string, learnKey?: string,
   ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[] }> {
-    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const [txs, rawExpenses, cfg] = await Promise.all([this.getTransactions(), this.getFixedExpenses(), this.getFixedCycleConfig()]);
     const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
     const manual = txs.find(t => t.id === manualId);
     const sms = txs.find(t => t.id === smsId);
@@ -1254,7 +1258,7 @@ export const StorageService = {
       || manual.source !== 'manual' || sms.source !== 'sms' || sms.mergedFrom) {
       return { transactions: txs, fixedExpenses: expenses };
     }
-    const { merged, nextFe } = planFixedFusion(manual, sms, fe, new Date().toISOString(), learnKey);
+    const { merged, nextFe } = planFixedFusion(manual, sms, fe, new Date().toISOString(), cfg, learnKey);
     const nextTxs = txs.filter(t => t.id !== manualId).map(t => t.id === smsId ? merged : t);
     const nextExpenses = expenses.map(e => e.id === expenseId ? nextFe : e);
     await this.saveTransactions(nextTxs);
@@ -1264,20 +1268,20 @@ export const StorageService = {
 
   /**
    * Vincula un movimiento SMS a un gasto fijo (elegido a mano). Resultado:
-   *  - 'paid'    el vencimiento es el del mes actual (o futuro) y el gasto estaba impago: queda pagado por el SMS.
+   *  - 'paid'    el SMS cae en el período actual (o uno futuro) y el gasto estaba impago: queda pagado por el SMS.
    *  - 'merged'  el gasto ya estaba pagado por un registro manual: se une al SMS (el manual desaparece).
-   *  - 'history' el SMS queda vinculado como historial (mes pasado, o gasto ya pagado por otro SMS).
+   *  - 'history' el SMS queda vinculado como historial (período pasado, o gasto ya pagado por otro SMS).
    *  - 'already' el SMS ya era el pago vigente (o la entrada no es válida: no cambia nada).
    * Si el SMS apuntaba a OTRO gasto fijo, suelta ese vínculo (y el otro queda impago si lo pagaba este SMS).
    * opts.learn guarda el comercio en smsMatchKey; opts.updateDay mueve dayOfMonth al día local del SMS
-   * (antes de calcular el vencimiento). Una lectura y una escritura por colección.
+   * (el período del SMS depende solo de su fecha). Una lectura y una escritura por colección.
    */
   async linkSmsToFixed(
     txId: string, expenseId: string, opts: { learn: boolean; updateDay?: boolean },
   ): Promise<{ transactions: Transaction[]; fixedExpenses: FixedExpense[]; outcome: 'paid' | 'merged' | 'history' | 'already' }> {
     const now = new Date();
-    const cur = monthKey(now);
-    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const [txs, rawExpenses, cfg] = await Promise.all([this.getTransactions(), this.getFixedExpenses(), this.getFixedCycleConfig()]);
+    const cur = periodFor(cfg, now).key;
     const expenses = Array.isArray(rawExpenses) ? rawExpenses : [];
     const tx = txs.find(t => t.id === txId);
     const fe0 = expenses.find(e => e.id === expenseId);
@@ -1290,7 +1294,7 @@ export const StorageService = {
       const local = storedToLocalDate(tx.date);
       if (local) fe.dayOfMonth = local.getDate();
     }
-    const key = occurrenceKeyFor(fe.dayOfMonth, tx.date) ?? cur;
+    const key = cycleKeyFor(cfg, tx.date) ?? cur;
 
     // Suelta el vínculo con otro gasto fijo.
     const otherId = tx.fixedExpenseId && tx.fixedExpenseId !== expenseId ? tx.fixedExpenseId : null;
@@ -1300,13 +1304,13 @@ export const StorageService = {
     const linkedTx: Transaction = { ...tx, fixedExpenseId: expenseId };
     const justLink = () => { nextTxs = txs.map(t => t.id === txId ? linkedTx : t); };
 
-    // Registro manual de este gasto: el que lo paga hoy, o el de ese mes (historial).
+    // Registro manual de este gasto: el que lo paga hoy, o el de ese período (historial).
     const isOwnManual = (t: Transaction) =>
       t.source === 'manual' && t.type === 'expense' && !t.mergedFrom
       && (t.fixedExpenseId === fe.id || fixedIdFromFeTxId(t.id) === fe.id);
     const canFuse = tx.source === 'sms' && !tx.mergedFrom;
     const fuse = (manual: Transaction) => {
-      const { merged, nextFe } = planFixedFusion(manual, tx, fe, now.toISOString());
+      const { merged, nextFe } = planFixedFusion(manual, tx, fe, now.toISOString(), cfg);
       fe = nextFe;
       nextTxs = txs.filter(t => t.id !== manual.id).map(t => t.id === txId ? merged : t);
     };
@@ -1326,16 +1330,17 @@ export const StorageService = {
           outcome = 'history';
           justLink();
         } else {
-          fe = { ...fe, isPaid: true, paidBy: 'sms', paidTxId: txId, paidDate: tx.date, paidCycleKey: cur };
+          fe = { ...fe, isPaid: true, paidBy: 'sms', paidTxId: txId, paidDate: tx.date, paidCycleKey: key };
           outcome = 'paid';
           justLink();
         }
       }
     } else {
       outcome = 'history';
-      const monthManual = txs.find(t =>
-        isOwnManual(t) && (cycleKeyFromFeTxId(t.id) ?? occurrenceKeyFor(fe.dayOfMonth, t.date)) === key);
-      if (monthManual && canFuse) fuse(monthManual);
+      const periodManual = txs.find(t =>
+        isOwnManual(t)
+        && (normalizeCycleKey(cycleKeyFromFeTxId(t.id) ?? '', fe.dayOfMonth, cfg) ?? cycleKeyFor(cfg, t.date)) === key);
+      if (periodManual && canFuse) fuse(periodManual);
       else justLink();
     }
 
@@ -1362,15 +1367,15 @@ export const StorageService = {
   },
 
   /**
-   * Vincula SMS de meses pasados a un gasto fijo (historial). Cada ítem pone fixedExpenseId en el SMS
-   * y, con `manualId`, une el registro manual de ese mes al SMS. No toca el gasto fijo (nunca cambia
-   * isPaid del mes en curso): se omiten los SMS ya vinculados a otro gasto y los manuales que pagan
+   * Vincula SMS de períodos pasados a un gasto fijo (historial). Cada ítem pone fixedExpenseId en el SMS
+   * y, con `manualId`, une el registro manual de ese período al SMS. No toca el gasto fijo (nunca cambia
+   * isPaid del período en curso): se omiten los SMS ya vinculados a otro gasto y los manuales que pagan
    * el gasto hoy. `linked` cuenta los SMS vinculados (fusionados incluidos); `merged`, las fusiones.
    */
   async linkFixedHistory(
     expenseId: string, items: Array<{ txId: string; manualId?: string }>,
   ): Promise<{ transactions: Transaction[]; linked: number; merged: number }> {
-    const [txs, rawExpenses] = await Promise.all([this.getTransactions(), this.getFixedExpenses()]);
+    const [txs, rawExpenses, cfg] = await Promise.all([this.getTransactions(), this.getFixedExpenses(), this.getFixedCycleConfig()]);
     const fe = (Array.isArray(rawExpenses) ? rawExpenses : []).find(e => e.id === expenseId);
     if (!fe) return { transactions: txs, linked: 0, merged: 0 };
 
@@ -1384,7 +1389,7 @@ export const StorageService = {
       const manual = item.manualId ? next.find(t => t.id === item.manualId) : undefined;
       if (manual && manual.source === 'manual' && tx.source === 'sms' && !tx.mergedFrom
         && !manual.mergedFrom && manual.id !== fe.lastTxId && manual.id !== fe.paidTxId) {
-        const res = planFixedFusion(manual, tx, fe, nowIso);
+        const res = planFixedFusion(manual, tx, fe, nowIso, cfg);
         next = next.filter(t => t.id !== manual.id).map(t => t.id === tx.id ? res.merged : t);
         merged++;
       } else {
@@ -1627,14 +1632,19 @@ export const StorageService = {
     return updated;
   },
 
+  /** Configuración del período de presupuesto de los gastos fijos según los ajustes. */
+  async getFixedCycleConfig(): Promise<FixedCycleConfig> {
+    return fixedCycleConfig(await this.getSettings());
+  },
+
   /**
-   * Reinicio mensual (planFixedMonthlyReset): un gasto sigue pagado si su paidCycleKey cubre el mes
+   * Reinicio por período (planFixedPeriodReset): un gasto sigue pagado si su paidCycleKey cubre el período
    * actual o uno futuro (pago adelantado); el resto se limpia, vínculos incluidos (no se borra ningún
    * movimiento: quedan como historial). Solo escribe si algo cambió. Idempotente.
    */
-  async resetFixedExpensesForNewMonth(now: Date = new Date()): Promise<void> {
-    const all = await this.getFixedExpenses();
-    const { next, changed } = planFixedMonthlyReset(all, now);
+  async resetFixedExpensesForNewPeriod(now: Date = new Date()): Promise<void> {
+    const [all, cfg] = await Promise.all([this.getFixedExpenses(), this.getFixedCycleConfig()]);
+    const { next, changed } = planFixedPeriodReset(all, now, cfg);
     if (changed) await this.saveFixedExpenses(next);
   },
 
@@ -1854,8 +1864,10 @@ export const StorageService = {
   },
 
   async checkAndRunMonthlyReset(): Promise<boolean> {
-    const lastReset = await this.getLastResetDate();
     const now = new Date();
+    // Gastos fijos: por período (idempotente, en cada carga). Cuotas: por mes calendario.
+    await this.resetFixedExpensesForNewPeriod(now);
+    const lastReset = await this.getLastResetDate();
     const nowY = now.getFullYear();
     const nowM = now.getMonth();
     const currentMonth = `${nowY}-${nowM}`;
@@ -1863,7 +1875,6 @@ export const StorageService = {
     const match = lastReset ? /^(\d{4})-(\d{1,2})$/.exec(lastReset) : null;
     if (!match) {
       // Sin registro previo o con formato inválido: un solo ciclo, como antes.
-      await this.resetFixedExpensesForNewMonth(now);
       await this.processMonthlyInstallments();
       await this.saveLastResetDate(currentMonth);
       return true;
@@ -1881,9 +1892,7 @@ export const StorageService = {
     // Tope de 120 meses (10 años) solo como protección ante un lastReset
     // corrupto o absurdamente viejo; no es un límite funcional esperado.
     const cycles = Math.min(elapsed, 120);
-    // El reinicio de gastos fijos es idempotente (depende solo del mes actual): una sola vez.
-    // processMonthlyInstallments sí avanza una cuota por ciclo y no depende de los gastos fijos.
-    await this.resetFixedExpensesForNewMonth(now);
+    // processMonthlyInstallments avanza una cuota por ciclo (mes calendario) y no depende de los gastos fijos.
     for (let i = 0; i < cycles; i++) {
       await this.processMonthlyInstallments();
     }

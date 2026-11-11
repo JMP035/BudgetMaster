@@ -22,6 +22,7 @@ import { GlassCard, GlassBackground } from "./GlassCard";
 import GradientText from "./GradientText";
 import Money from "./Money";
 import { formatMoney } from "../services/format";
+import { fixedCycleConfig, fixedDueInfo } from "../services/FixedCycle";
 import { isSmsFeatureOn } from "../services/features";
 import { GlassDialog } from "./GlassDialog";
 import type { GlassDialogProps, GlassDialogStat } from "./GlassDialog";
@@ -307,13 +308,23 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
 // ─────────────────────────────────────────────────────────────
 // WIDGET GASTOS FIJOS
 // ─────────────────────────────────────────────────────────────
+const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+/** «28 oct» (mes abreviado fijo: no depende del locale del dispositivo). */
+function formatShortDay(d: Date): string {
+    return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
+}
+
 function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
     fixedExpenses: FixedExpense[]; settings: UserSettings; onPress: () => void;
 }) {
     const active = fixedExpenses.filter(e => e.isActive);
     const paid = active.filter(e => e.isPaid).length;
-    const pending = active.filter(e => !e.isPaid);
-    const overdue = pending.filter(e => isFixedExpenseOverdue(e));
+    const cycle = fixedCycleConfig(settings);
+    const now = new Date();
+    const pending = active.filter(e => !e.isPaid)
+        .map(e => ({ e, due: fixedDueInfo(e, cycle, now).due }))
+        .sort((a, b) => a.due.getTime() - b.due.getTime());
+    const overdue = pending.filter(p => isFixedExpenseOverdue(p.e, cycle, now));
     if (active.length === 0) return null;
 
     return (
@@ -321,7 +332,7 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
             <GlassCard contentStyle={s.widgetCard}>
             <View style={s.widgetHeader}>
                 <Ionicons name="calendar-outline" size={18} color={C.primaryLight} />
-                <Text style={s.widgetTitle}>Gastos Fijos del Mes</Text>
+                <Text style={s.widgetTitle}>Gastos fijos del período</Text>
                 <View style={[s.widgetBadge, { backgroundColor: overdue.length > 0 ? C.danger + "22" : C.income + "22" }]}>
                     <Text style={[s.widgetBadgeTxt, { color: overdue.length > 0 ? C.danger : C.income }]}>
                         {paid}/{active.length}
@@ -335,12 +346,12 @@ function FixedExpensesWidget({ fixedExpenses, settings, onPress }: {
                     <Text style={s.overdueTxt}>{overdue.length} gasto(s) vencido(s) sin pagar</Text>
                 </View>
             )}
-            {pending.slice(0, 2).map(e => (
+            {pending.slice(0, 2).map(({ e, due }) => (
                 <View key={e.id} style={s.widgetItem}>
                     <Ionicons name="ellipse-outline" size={12} color={C.textMuted} style={{ marginRight: 8 }} />
                     <Text style={s.widgetItemTxt} numberOfLines={1}>{e.name}</Text>
                     <Money amount={e.amount} currency={e.currency} size="sm" tone="neutral" decimals={0} align="right" containerStyle={[s.moneyRowEnd, { marginRight: 8 }]} />
-                    <Text style={s.widgetItemDay}>Día {e.dayOfMonth}</Text>
+                    <Text style={s.widgetItemDay}>vence {formatShortDay(due)}</Text>
                 </View>
             ))}
             {pending.length > 2 && <Text style={s.widgetMore}>+{pending.length - 2} más →</Text>}

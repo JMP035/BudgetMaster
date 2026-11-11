@@ -6,7 +6,7 @@ import { FixedExpense, StorageService, Transaction, UserSettings } from "../serv
 import { findPastSmsForFixed } from "../services/FixedExpenseMatcher";
 import type { FixedMatch } from "../services/FixedExpenseMatcher";
 import { dupPairKey } from "../services/DuplicateDetector";
-import { occurrenceKeyFor } from "../services/FixedCycle";
+import { cycleKeyFor, fixedCycleConfig } from "../services/FixedCycle";
 import { merchantKey, merchantOfTransaction } from "../services/MerchantRules";
 import { formatMoney } from "../services/format";
 import { GlassCard } from "./GlassCard";
@@ -29,7 +29,7 @@ export interface FixedExpenseMatchModalProps {
 
 const SWITCH_DELAY_MS = 250;
 
-/** Tras confirmar: duplicados reales (manual + SMS del mismo ciclo) de meses anteriores que se pueden unir. */
+/** Tras confirmar: duplicados reales (manual + SMS del mismo período) de períodos anteriores que se pueden unir. */
 interface HistoryOffer { tx: Transaction; expenseId: string; count: number; }
 
 const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -165,11 +165,12 @@ export function FixedExpenseMatchModal({
                         ? `«${expense.name}» quedó pagado. La próxima vez se marcará solo.`
                         : `«${expense.name}» quedó pagado.`,
             );
-            // ¿Hay duplicados reales (manual + SMS) de meses anteriores para unir?
+            // ¿Hay duplicados reales (manual + SMS) de períodos anteriores para unir?
             const feAfter = nextFes.find(e => e.id === match.expenseId);
-            const beforeKey = feAfter ? occurrenceKeyFor(feAfter.dayOfMonth, tx.date) : null;
-            const count = feAfter && learnKey && beforeKey && settings
-                ? findPastSmsForFixed(feAfter, nextTxs, { key: learnKey, excludeTxId: tx.id, beforeKey }).filter(p => !!p.manualId).length
+            const cycle = settings ? fixedCycleConfig(settings) : null;
+            const beforeKey = feAfter && cycle ? cycleKeyFor(cycle, tx.date) : null;
+            const count = feAfter && learnKey && beforeKey && cycle && settings
+                ? findPastSmsForFixed(feAfter, nextTxs, { key: learnKey, excludeTxId: tx.id, beforeKey, cycle }).filter(p => !!p.manualId).length
                 : 0;
             setOffer(count > 0 ? { tx, expenseId: match.expenseId, count } : null);
             onChanged();

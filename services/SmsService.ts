@@ -14,6 +14,7 @@ import type { TransferPair } from './TransferPairs';
 import type { SmsBatchRecord } from './storage';
 import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, isPendingUnassigned, matchAccountForSms } from './AccountLinking';
 import { findFixedFusions, matchFixedExpenses } from './FixedExpenseMatcher';
+import { fixedCycleConfig } from './FixedCycle';
 import { merchantKey, merchantOfTransaction } from './MerchantRules';
 import { findManualSmsDuplicates } from './DuplicateDetector';
 import { findTransferPairs } from './TransferPairs';
@@ -225,7 +226,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       .filter(m => typeof m?.body === 'string' && Number(m.date) >= minDate)
       .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
 
-    const [txs, insts, dismissed, kept, accounts, rules, fixedBefore, dupIgnoredList, linkSeenPrev] = await Promise.all([
+    const [txs, insts, dismissed, kept, accounts, rules, fixedBefore, dupIgnoredList, linkSeenPrev, settings] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCreditInstallments(),
       StorageService.getDismissedSms(),
@@ -235,7 +236,9 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       StorageService.getFixedExpenses(),
       StorageService.getDupIgnored(),
       StorageService.getSmsLinkSeen(),
+      StorageService.getSettings(),
     ]);
+    const cycle = fixedCycleConfig(settings);
 
     const index = buildExistingSmsIndex(txs, insts, dismissed);
     const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, existingTxs: txs });
@@ -268,7 +271,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
     const fixedAutoMarked: FixedMatch[] = [];
     let fixedProposals: FixedMatch[] = [];
     try {
-      const matches = matchFixedExpenses(newTxs, fixedBefore, allTxs, now, { ignored: new Set(dupIgnoredList) });
+      const matches = matchFixedExpenses(newTxs, fixedBefore, allTxs, now, { cycle, ignored: new Set(dupIgnoredList) });
       fixedProposals = matches.filter(m => !m.auto);
       for (const m of matches.filter(x => x.auto)) {
         const fe = fixedBefore.find(e => e.id === m.expenseId);
@@ -297,7 +300,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       const fixedNow = mutated ? await StorageService.getFixedExpenses() : fixedBefore;
       const marked = new Set(fixedMarks.map(m => m.expenseId));
       const markedSms = new Set(fixedAutoMarked.map(m => m.txId));
-      const fusions = findFixedFusions(txsNow, fixedNow, { ignored: new Set(dupIgnoredList), onlySmsIds: newIds })
+      const fusions = findFixedFusions(txsNow, fixedNow, { cycle, ignored: new Set(dupIgnoredList), onlySmsIds: newIds })
         .filter(f => !markedSms.has(f.smsId) && !marked.has(f.expenseId));
       for (const f of fusions) {
         if (!f.auto) {
