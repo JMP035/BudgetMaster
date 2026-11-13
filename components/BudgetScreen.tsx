@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     Animated, Easing, LayoutChangeEvent,
     Platform, ScrollView, StyleSheet, Text, TextInput,
@@ -32,6 +32,10 @@ import { ScreenHeader } from "./ScreenHeader";
 import { useKeyboardHeight } from "./useKeyboardHeight";
 import Money from "./Money";
 import { formatMoney } from "../services/format";
+import {
+    CategoryBreakdown, buildPeriodBreakdown, currencyNoun, foreignTotalsOf, formatShortDay, uncoveredCategories
+} from "../services/BudgetBreakdown";
+import CategoryBreakdownSheet from "./CategoryBreakdownSheet";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -297,12 +301,6 @@ function SavingsGoalModal({ onSave, onClose, existing, defaultCurrency }: {
 // ─────────────────────────────────────────────────────────────
 // HOJA "¿CUÁNDO SE PAGÓ?" (marcar un gasto fijo como pagado a mano)
 // ─────────────────────────────────────────────────────────────
-const SHORT_MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-/** «28 oct» (mes abreviado fijo: no depende del locale del dispositivo). */
-function formatShortDay(d: Date): string {
-    return `${d.getDate()} ${SHORT_MONTHS[d.getMonth()]}`;
-}
-
 function PaidDateSheet({ expenseName, initial, minDate, onConfirm, onCancel }: {
     expenseName: string;
     initial: Date;
@@ -692,14 +690,16 @@ function FixedExpensesTab({
 // SECCIÓN 2 — PRESUPUESTO POR CATEGORÍA
 // ─────────────────────────────────────────────────────────────
 function CategoryBudgetTab({
-    categoryBudgets, setCategoryBudgets, transactions, settings
+    categoryBudgets, setCategoryBudgets, transactions, settings, fixedExpenses
 }: {
     categoryBudgets: CategoryBudget[];
     setCategoryBudgets: (b: CategoryBudget[]) => void;
     transactions: Transaction[];
     settings: UserSettings;
+    fixedExpenses: FixedExpense[];
 }) {
     const [editing, setEditing] = useState<string | null>(null);
+    const [breakdownCat, setBreakdownCat] = useState<string | null>(null);
     const [limitVal, setLimitVal] = useState("");
     const [limitError, setLimitError] = useState("");
     const kb = useKeyboardHeight();
@@ -707,6 +707,7 @@ function CategoryBudgetTab({
     const tutScroll = useTutorialScroll('budget_categories', scrollRef);
     const summaryRef = useTutorialRef('budget_cat_summary');
     const gridRef = useTutorialRef('budget_cat_grid');
+    const listRef = useTutorialRef('budget_cat_list');
     const limitCardY = useRef(0);
     useEffect(() => {
         if (kb > 0 && editing) {
@@ -744,7 +745,20 @@ function CategoryBudgetTab({
     const totalBudgeted = categoryBudgets.reduce((s, b) => s + b.limit, 0);
     const totalSpent = categoryBudgets.reduce((s, b) => s + getSpent(b.categoryId), 0);
 
+    // Desglose del período por categoría y moneda (solo lectura; el total en Q de arriba sigue usando getSpent)
+    const periodStartMs = fp.start.getTime();
+    const periodEndMs = fp.end.getTime();
+    const breakdowns = useMemo(
+        () => buildPeriodBreakdown(transactions, { start: new Date(periodStartMs), end: new Date(periodEndMs) }),
+        [transactions, periodStartMs, periodEndMs],
+    );
+    const foreignSummary = foreignTotalsOf(breakdowns);
+    const uncovered = uncoveredCategories(breakdowns, categoryBudgets.map(b => b.categoryId));
+    const foreignLine = (list: CategoryBreakdown["foreign"]) =>
+        list.map(b => `En ${currencyNoun(b.currency)}: ${formatMoney(b.total, b.currency)}`);
+
     return (
+        <>
         <ScrollView {...tutScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {/* RESUMEN TOTAL */}
             <View ref={summaryRef} collapsable={false}>
@@ -765,7 +779,13 @@ function CategoryBudgetTab({
                     </View>
                 </GlassCard>
             </View>
+            {foreignSummary.length > 0 && (
+                <Text style={s.fxSummary}>
+                    Además gastaste {foreignSummary.map(f => `${formatMoney(f.total, f.currency)} en ${currencyNoun(f.currency)}`).join(" y ")} (aparte)
+                </Text>
+            )}
 
+            <View ref={listRef} collapsable={false}>
             {/* CATEGORÍAS CON PRESUPUESTO */}
             {categoryBudgets.length > 0 && (
                 <Text style={s.sectionTitle}>CON PRESUPUESTO ASIGNADO</Text>
@@ -777,23 +797,33 @@ function CategoryBudgetTab({
                 const pct = Math.min((spent / cb.limit) * 100, 100);
                 const over = spent > cb.limit;
                 const barColor = over ? C.danger : pct > 80 ? C.warning : cat.color;
+                const fxLines = foreignLine(breakdowns.get(cb.categoryId)?.foreign ?? []);
+                const openBreakdown = () => setBreakdownCat(cb.categoryId);
 
                 return (
                     <GlassCard key={cb.categoryId} radius={16} blur={false} style={s.catBudgetCard} contentStyle={s.catBudgetContent}>
                         <View style={s.catBudgetHeader}>
-                            <View style={[s.catIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44" }]}>
-                                <Ionicons name={cat.icon} size={18} color={cat.color} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={s.catName}>{cat.label}</Text>
-                                <Text style={[s.catStatus, { color: barColor }]}>
-                                    {over ? `Excedido ${formatMoney(spent - cb.limit, "Q")}` : `${formatMoney(cb.limit - spent, "Q")} disponibles`}
-                                </Text>
-                            </View>
-                            <View style={{ alignItems: "flex-end" }}>
-                                <Money amount={spent} currency="Q" size="sm" align="right" />
-                                <Text style={s.catLimit}>de {formatMoney(cb.limit, "Q")}</Text>
-                            </View>
+                            <TouchableOpacity
+                                style={s.catMainTap}
+                                activeOpacity={0.7}
+                                onPress={openBreakdown}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Ver movimientos de ${cat.label}`}
+                            >
+                                <View style={[s.catIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44" }]}>
+                                    <Ionicons name={cat.icon} size={18} color={cat.color} />
+                                </View>
+                                <View style={{ flex: 1, flexShrink: 1 }}>
+                                    <Text style={s.catName}>{cat.label}</Text>
+                                    <Text style={[s.catStatus, { color: barColor }]}>
+                                        {over ? `Excedido ${formatMoney(spent - cb.limit, "Q")}` : `${formatMoney(cb.limit - spent, "Q")} disponibles`}
+                                    </Text>
+                                </View>
+                                <View style={{ alignItems: "flex-end" }}>
+                                    <Money amount={spent} currency="Q" size="sm" align="right" />
+                                    <Text style={s.catLimit}>de {formatMoney(cb.limit, "Q")}</Text>
+                                </View>
+                            </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={() => handleDelete(cb.categoryId)}
                                 style={[s.deleteBtn, { marginLeft: 8 }]}
@@ -803,11 +833,63 @@ function CategoryBudgetTab({
                                 <Ionicons name="trash-outline" size={14} color={C.danger} />
                             </TouchableOpacity>
                         </View>
-                        <AnimatedBar pct={pct} color={barColor} height={8} />
-                        <Text style={s.pctLabel}>{Math.round(pct)}%</Text>
+                        {/* El resto de la tarjeta también abre el desglose (el botón de arriba ya lo anuncia) */}
+                        <TouchableOpacity activeOpacity={0.7} onPress={openBreakdown} accessible={false}>
+                            {fxLines.map(line => (
+                                <Text key={line} style={s.fxLine}>{line}</Text>
+                            ))}
+                            <AnimatedBar pct={pct} color={barColor} height={8} />
+                            <View style={s.catFooter}>
+                                <Text style={s.pctLabel}>{Math.round(pct)}%</Text>
+                                <View style={s.viewMore}>
+                                    <Text style={s.viewMoreTxt}>Ver movimientos</Text>
+                                    <Ionicons name="chevron-forward" size={13} color={C.textSub} />
+                                </View>
+                            </View>
+                        </TouchableOpacity>
                     </GlassCard>
                 );
             })}
+
+            {/* GASTOS SIN PRESUPUESTO */}
+            {uncovered.length > 0 && (
+                <>
+                    <Text style={[s.sectionTitle, { marginTop: 8 }]}>GASTOS SIN PRESUPUESTO</Text>
+                    <Text style={s.sectionHint}>Categorías con gasto este período que no tienen límite. Toca una para ver sus movimientos.</Text>
+                    {uncovered.map(e => {
+                        const cat = getCat(e.categoryId, settings.customCategories, "expense");
+                        const fxLines = foreignLine(e.foreign);
+                        return (
+                            <TouchableOpacity
+                                key={e.categoryId}
+                                activeOpacity={0.75}
+                                onPress={() => setBreakdownCat(e.categoryId)}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Ver movimientos de ${cat.label}`}
+                            >
+                                <GlassCard radius={14} blur={false} style={s.uncoveredCard} contentStyle={s.uncoveredContent}>
+                                    <View style={[s.catIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44" }]}>
+                                        <Ionicons name={cat.icon} size={18} color={cat.color} />
+                                    </View>
+                                    <View style={{ flex: 1, flexShrink: 1 }}>
+                                        <Text style={s.catName} numberOfLines={2}>{cat.label}</Text>
+                                    </View>
+                                    <View style={s.uncoveredAmounts}>
+                                        {e.qTotal > 0 && (
+                                            <Money amount={e.qTotal} currency="Q" size="sm" tone="expense" gradient={false} align="right" />
+                                        )}
+                                        {fxLines.map(line => (
+                                            <Text key={line} style={[s.fxLine, s.fxLineRight]}>{line}</Text>
+                                        ))}
+                                    </View>
+                                    <Ionicons name="chevron-forward" size={16} color={C.textSub} />
+                                </GlassCard>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </>
+            )}
+            </View>
 
             {/* AGREGAR PRESUPUESTO A CATEGORÍAS */}
             <View ref={gridRef} collapsable={false}>
@@ -862,6 +944,20 @@ function CategoryBudgetTab({
 
             <View style={{ height: 100 + kb }} />
         </ScrollView>
+
+        {/* DESGLOSE DE MOVIMIENTOS DE LA CATEGORÍA (solo lectura) */}
+        {breakdownCat && (
+            <CategoryBreakdownSheet
+                categoryId={breakdownCat}
+                breakdown={breakdowns.get(breakdownCat)}
+                limit={categoryBudgets.find(b => b.categoryId === breakdownCat)?.limit}
+                period={{ start: fp.start, end: fp.end }}
+                settings={settings}
+                fixedExpenses={fixedExpenses}
+                onClose={() => setBreakdownCat(null)}
+            />
+        )}
+        </>
     );
 }
 
@@ -1163,6 +1259,7 @@ export default function BudgetScreen({
                         setCategoryBudgets={setCategoryBudgets}
                         transactions={transactions}
                         settings={settings}
+                        fixedExpenses={fixedExpenses}
                     />
                 )}
                 {activeTab === 2 && (
@@ -1220,7 +1317,17 @@ const s = StyleSheet.create({
     catName: { color: C.text, fontSize: 14, fontWeight: "700" },
     catStatus: { fontSize: 11, marginTop: 2 },
     catLimit: { color: C.textSub, fontSize: 11 },
-    pctLabel: { color: C.textSub, fontSize: 10, marginTop: 4, textAlign: "right" },
+    catMainTap: { flex: 1, flexDirection: "row", alignItems: "center" },
+    catFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginTop: 4 },
+    viewMore: { flexDirection: "row", alignItems: "center", gap: 2 },
+    viewMoreTxt: { color: C.textSub, fontSize: 11, fontWeight: "700" },
+    fxLine: { color: C.fx, fontSize: 12, fontWeight: "700", marginBottom: 8 },
+    fxLineRight: { marginTop: 2, marginBottom: 0, textAlign: "right" },
+    fxSummary: { color: C.textSub, fontSize: 12, lineHeight: 17, marginTop: -6, marginBottom: 14, paddingHorizontal: 4 },
+    uncoveredCard: { marginBottom: 8 },
+    uncoveredContent: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 10 },
+    uncoveredAmounts: { alignItems: "flex-end", flexShrink: 0, maxWidth: "45%" },
+    pctLabel: { color: C.textSub, fontSize: 10 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
     catChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
     catChipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },

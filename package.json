@@ -9,7 +9,8 @@
     "test:sms": "sucrase-node scripts/sms-parser.test.ts",
     "test:sms-links": "sucrase-node scripts/sms-links.test.ts",
     "test:sms-matchers": "sucrase-node scripts/sms-matchers.test.ts",
-    "test:sms-transfers": "sucrase-node scripts/sms-transfers.test.ts"
+    "test:sms-transfers": "sucrase-node scripts/sms-transfers.test.ts",
+    "test:budget-breakdown": "sucrase-node scripts/budget-breakdown.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

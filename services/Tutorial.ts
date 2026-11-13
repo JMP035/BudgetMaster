@@ -319,6 +319,12 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'La suma de los límites que asignaste, cuánto llevás gastado en esas categorías este período y cuánto te queda disponible o cuánto te excediste.',
             },
             {
+                id: 'budget_5b', elementId: 'budget_cat_list', screen: 'budget', scrollKey: 'budget_categories', position: 'bottom', icon: 'list-outline', padding: 8,
+                title: 'Movimientos de cada categoría',
+                description: 'Tocá una categoría para ver los movimientos del período. Los gastos en dólares u otra moneda se muestran aparte: no se convierten ni cuentan en el límite. Más abajo, «Gastos sin presupuesto» lista las categorías con gasto que todavía no tienen límite.',
+                emptyHint: 'Aquí aparecen las categorías con límite y, debajo, las que tienen gasto este período pero aún no tienen límite.',
+            },
+            {
                 id: 'budget_6', elementId: 'budget_cat_grid', screen: 'budget', scrollKey: 'budget_categories', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Asignar un límite',
                 description: 'Tocá una categoría, escribí el monto máximo para el período y confirmá con el check. La app te avisa al llegar al 80% y te alerta si lo superás. Para quitar un límite usá la papelera de su tarjeta.',
