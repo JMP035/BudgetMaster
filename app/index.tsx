@@ -17,6 +17,8 @@ import { isSmsFeatureOn } from "../services/features";
 import { maybeAutoSync } from "../services/SmsAutoSync";
 import { hasSomethingToShow } from "../services/SmsService";
 import type { SyncResult } from "../services/SmsService";
+import { buildOnboardingCommit } from "../services/OnboardingPlan";
+import type { OnboardingResult } from "../services/OnboardingPlan";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
@@ -32,7 +34,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 import AccountsScreen from "../components/AccountsScreen";
 import AddScreen from "../components/AddScreen";
 import AIAdvisor from "../components/AIAdvisor";
-import BiometricGate from "../components/BiometricGate";
+import BiometricGate, { setBiometricRuntimeEnabled } from "../components/BiometricGate";
 import BudgetScreen from "../components/BudgetScreen";
 import CardsOnboardingScreen from "../components/CardsOnboardingScreen";
 import DashboardScreen from "../components/Dashboard";
@@ -44,43 +46,6 @@ import TransactionsScreen from "../components/Transactions";
 import TutorialOverlay, { TutorialMenuProvider } from "../components/TutorialOverlay";
 
 export type Tab = "dashboard" | "transactions" | "add" | "budget" | "stats" | "settings";
-
-// ─────────────────────────────────────────────────────────────
-// ONBOARDING → SETTINGS
-// ─────────────────────────────────────────────────────────────
-// Parsea montos con separadores ambiguos (convención de Guatemala); vacío o inválido = 0
-const num = (x: any): number => {
-  const n = parseAmount(String(x ?? ""));
-  return isNaN(n) ? 0 : n;
-};
-
-function buildSettingsFromOnboarding(data: any): UserSettings {
-  const totalDebts = data.activeDebtsList?.length > 0
-    ? data.activeDebtsList.reduce((s: number, d: any) => s + num(d.monthlyPayment), 0)
-    : num(data.activeDebts);
-
-  return {
-    ...DEFAULT_SETTINGS,
-    userName: data.name || "Usuario",
-    currency: data.currency || "Q",
-    monthlyIncome: num(data.monthlyIncome),
-    monthlyIncomeUSD: data.currency === "USD" ? num(data.monthlyIncome) : 0,
-    paymentCycle: data.paymentCycle || "monthly",
-    paymentDay: parseInt(data.paymentDay || "30"),
-    paymentDays: (() => {
-      const parsed = (data.paymentDays || "").split(",").map((d: string) => parseInt(d.trim())).filter((n: number) => !isNaN(n));
-      return parsed.length > 0 ? parsed : [15, 30];
-    })(),
-    budgetLimit: (num(data.monthlyIncome) || 6000) * 0.8,
-    activeDebts: totalDebts,
-    monthlySavingsGoal: num(data.monthlySavings),
-    preferredBanks: data.preferredBanks || [],
-    externalSavings: num(data.externalSavings),
-    onboardingComplete: true,
-    tutorialComplete: true,
-    activeDebtsList: data.activeDebtsList || [],
-  };
-}
 
 // ─────────────────────────────────────────────────────────────
 // TAB BAR — estable con refs para tutorial
@@ -179,6 +144,12 @@ function AppContent() {
   const autoSyncRunningRef = useRef(false);
   const showSplashRef = useRef(true);
   showSplashRef.current = showSplash;
+  // Sección de Ajustes a la que bajar (desde la tarjeta «Guía y primeros pasos»)
+  const [settingsFocus, setSettingsFocus] = useState<"biometric" | "gemini" | "sms" | null>(null);
+  // Importación guiada de SMS tras el onboarding: sube el contador y el Dashboard la ejecuta.
+  const [syncRequest, setSyncRequest] = useState(0);
+  // true mientras la importación guiada espera (al recorrido o a que arranque): frena la sync automática.
+  const pendingImportRef = useRef(false);
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
@@ -234,8 +205,12 @@ function AppContent() {
       const data = await loadData();
       // El tour automático solo corre si el onboarding ya está completo
       if (data.settings.onboardingComplete) {
-        TutorialService.isCompleted('tour_inicial').then(done => {
-          if (!done) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
+        // Quien eligió «Más tarde» en el cierre del onboarding no recibe el recorrido solo.
+        Promise.all([
+          TutorialService.isCompleted('tour_inicial'),
+          StorageService.getGettingStarted(),
+        ]).then(([done, guide]) => {
+          if (!done && !guide?.tourDeferred) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
         }).catch(() => { });
       }
       const granted = await NotificationService.requestPermissions();
@@ -246,7 +221,7 @@ function AppContent() {
   // ── Sincronización automática de SMS ──────────────────────
   // maybeAutoSync ya valida Android, permiso, interruptores y el límite de 15 min (persistido).
   const runAutoSync = useCallback(async (s: UserSettings) => {
-    if (autoSyncRunningRef.current) return;
+    if (autoSyncRunningRef.current || pendingImportRef.current) return;
     autoSyncRunningRef.current = true;
     try {
       const r = await maybeAutoSync(s);
@@ -340,42 +315,40 @@ function AppContent() {
     setTab("dashboard");
   };
 
-  const handleOnboarding = async (data: any) => {
-    const newSettings = buildSettingsFromOnboarding(data);
-    await StorageService.saveSettings(newSettings);
-    setSettings(newSettings);
+  // Recibe el borrador del onboarding, lo guarda de forma idempotente (upsert por id) y arranca
+  // el recorrido y/o la importación guiada de SMS según lo que pidió el usuario.
+  const handleOnboarding = async (r: OnboardingResult) => {
+    const base = await StorageService.getSettings();
+    const cachedRate = await ExchangeRateService.getCachedRate().catch(() => null);
+    const commit = buildOnboardingCommit(r.draft, base, {
+      isAndroid: Platform.OS === "android",
+      exchangeRate: cachedRate?.rate ?? base.exchangeRate,
+      parse: parseAmount,
+      nowIso: new Date().toISOString(),
+    });
+    await StorageService.commitOnboarding(commit);
+    setBiometricRuntimeEnabled(commit.settings.biometricEnabled);
+    await StorageService.saveGettingStarted({
+      v: 1,
+      dismissed: false,
+      collapsed: false,
+      skipped: [],
+      tourDeferred: !r.tourRequested,
+      createdAt: new Date().toISOString(),
+    });
+    await loadData();
 
-    // Crear CreditInstallments desde las deudas declaradas en el onboarding
-    if (data.activeDebtsList && data.activeDebtsList.length > 0) {
-      let allInstallments = [...creditInstallments];
-      for (const debt of data.activeDebtsList) {
-        const monthly = num(debt.monthlyPayment);
-        if (monthly <= 0) continue;
+    const importAfter = Platform.OS === "android" && commit.settings.smsEnabled
+      && r.draft.sms.importAfter && r.draft.sms.granted;
+    if (importAfter) pendingImportRef.current = true;
 
-        const newInstallment: CreditInstallment = {
-          id: `onb_${debt.id}`,
-          accountId: "",  // Sin cuenta asociada inicialmente
-          name: debt.name,
-          totalAmount: num(debt.totalAmount) || monthly * 12,
-          monthlyPayment: monthly,
-          totalInstallments: num(debt.totalAmount) > 0
-            ? Math.ceil(num(debt.totalAmount) / monthly)
-            : 12,
-          paidInstallments: 0,
-          startDate: new Date().toISOString(),
-          currency: data.currency || "Q",
-          category: debt.type === 'credit' ? 'transfer' :
-                    debt.type === 'loan' ? 'other' : 'subscriptions',
-          isActive: true,
-          notes: `Registrado en onboarding (${debt.type === 'credit' ? 'Tarjeta de crédito' : debt.type === 'loan' ? 'Préstamo' : debt.type === 'installment' ? 'Visacuota' : 'Otra deuda'})`,
-        };
-        const updated = await StorageService.addCreditInstallment(newInstallment);
-        allInstallments = updated;
-      }
-      setCreditInstallments(allInstallments);
+    if (r.tourRequested) {
+      // La importación espera a que termine el recorrido (onTutorialEnd)
+      setTimeout(() => setAutoTutorial("tour_inicial"), 800);
+    } else if (importAfter) {
+      pendingImportRef.current = false;
+      setSyncRequest(n => n + 1);
     }
-
-    setTimeout(() => setAutoTutorial('tour_inicial'), 800);
   };
 
   const switchTab = (id: Tab) => {
@@ -436,6 +409,8 @@ function AppContent() {
               onNavigateAccounts={() => setShowAccounts(true)}
               smsAutoResult={smsAuto}
               onDismissSmsAuto={() => setSmsAuto(null)}
+              syncRequest={syncRequest}
+              onNavigateSettings={section => { setSettingsFocus(section); switchTab("settings"); }}
             />
           )}
           {tab === "transactions" && !showAI && (
@@ -481,6 +456,9 @@ function AppContent() {
               settings={settings}
               onSave={hSaveSettings}
               onClearAll={hClearAll}
+              focusSection={settingsFocus}
+              onFocusHandled={() => setSettingsFocus(null)}
+              onOpenGuide={() => switchTab("dashboard")}
             />
           )}
           {showAI && (
@@ -492,6 +470,10 @@ function AppContent() {
               categoryBudgets={categoryBudgets}
               savingsGoals={savingsGoals}
               creditInstallments={creditInstallments}
+              onTransactionsChanged={setTxs}
+              onFixedExpensesChanged={setFixedExpenses}
+              onCategoryBudgetsChanged={setCategoryBudgets}
+              onSavingsGoalsChanged={setSavingsGoals}
             />
           )}
         </View>
@@ -527,6 +509,11 @@ function AppContent() {
               tutorialOpenedAccountsRef.current = false;
               setShowAccounts(false);
               void loadData();
+            }
+            // Importación guiada de SMS: arranca cuando termina el recorrido del onboarding
+            if (pendingImportRef.current) {
+              pendingImportRef.current = false;
+              setSyncRequest(n => n + 1);
             }
           }}
           showMenu={showTutorialMenu}

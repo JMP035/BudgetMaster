@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatDateOnly } from './DateAmount';
 import { buildSmsFingerprint } from './BankSmsParser';
 import { assignAccountsToTransactions } from './AccountLinking';
 import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
@@ -11,6 +12,15 @@ import {
 } from './FixedCycle';
 import type { FixedCycleConfig } from './FixedCycle';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
+// Módulos puros del onboarding: de ellos solo se importan valores sin dependencia de storage en runtime
+// (sanitizeDraft / sanitizeGettingStarted); los tipos van con `import type`.
+import { sanitizeDraft } from './OnboardingPlan';
+import type { OnboardingCommit, OnboardingDraft } from './OnboardingPlan';
+import { sanitizeGettingStarted } from './GettingStarted';
+import type { GettingStartedState } from './GettingStarted';
+// Chat del asistente: validación/recorte puros en ChatStore (solo tipos de ./assistant/types).
+import type { StoredAssistantChat } from './assistant/types';
+import { parseStoredChatJson, trimStoredChat } from './assistant/ChatStore';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS BASE
@@ -289,7 +299,28 @@ const K = {
   SMS_BATCHES: '@bm_sms_batches',
   DUP_IGNORED: '@bm_dup_ignored',
   SMS_LINK_SEEN: '@bm_sms_link_seen',
+  ONBOARDING_DRAFT: '@bm_onboarding_draft',
+  GETTING_STARTED: '@bm_getting_started',
+  ASSISTANT_CHAT: '@bm_assistant_chat',
 };
+
+/** Lista JSON guardada; [] si no hay nada. A diferencia de los getters, propaga los errores (commitOnboarding). */
+async function readListStrict<T>(key: string): Promise<T[]> {
+  const data = await AsyncStorage.getItem(key);
+  if (!data) return [];
+  const parsed = JSON.parse(data);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/** Reemplaza por id los elementos existentes y agrega los nuevos al final (idempotente). */
+function upsertById<T extends { id: string }>(all: T[], items: T[]): T[] {
+  const next = [...all];
+  for (const it of items) {
+    const idx = next.findIndex(x => x.id === it.id);
+    if (idx >= 0) next[idx] = it; else next.push(it);
+  }
+  return next;
+}
 
 // ─────────────────────────────────────────────────────────────
 // DEFAULTS
@@ -363,44 +394,6 @@ function dayBefore(d: Date): Date {
 }
 
 /**
- * Parsea un monto ingresado por el usuario con separadores de miles/decimales
- * ambiguos (convención de Guatemala: tanto "," como "." pueden ser decimal o
- * de miles según el contexto). Devuelve NaN si no se puede interpretar.
- */
-export function parseAmount(input: string): number {
-  let s = input.trim().replace(/\s/g, "");
-  if (!s) return NaN;
-
-  const hasComma = s.includes(",");
-  const hasDot = s.includes(".");
-
-  if (hasComma && hasDot) {
-    // El separador que aparece último es el decimal.
-    const lastComma = s.lastIndexOf(",");
-    const lastDot = s.lastIndexOf(".");
-    if (lastComma > lastDot) {
-      s = s.replace(/\./g, "").replace(",", ".");
-    } else {
-      s = s.replace(/,/g, "");
-    }
-  } else if (hasComma) {
-    const commaCount = (s.match(/,/g) || []).length;
-    if (commaCount > 1 || /^\d{1,3},\d{3}$/.test(s)) {
-      s = s.replace(/,/g, "");
-    } else {
-      s = s.replace(",", ".");
-    }
-  } else if (hasDot) {
-    const dotCount = (s.match(/\./g) || []).length;
-    if (dotCount > 1) {
-      s = s.replace(/\./g, "");
-    }
-  }
-
-  return /^\d+(\.\d+)?$/.test(s) ? Number(s) : NaN;
-}
-
-/**
  * Indica si existe una tasa de cambio confiable entre dos monedas.
  * La app solo tiene tasa real Q↔USD; cualquier conversión USD↔EUR/£ no es
  * confiable (ver JSDoc de convertAmount) y debe bloquearse con este helper.
@@ -412,25 +405,7 @@ export function hasReliableConversion(from: Currency, to: Currency): boolean {
   return !isUsdEurOrGbpPair;
 }
 
-/** Formatea una fecha (solo año-mes-día, sin hora) como "YYYY-MM-DD" en horario local */
-export function formatDateOnly(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-/** Parsea una cadena "YYYY-MM-DD" a un Date al mediodía local. Devuelve null si no es válida. */
-export function parseDateOnly(s: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
-  if (!match) return null;
-  const y = Number(match[1]);
-  const m = Number(match[2]);
-  const d = Number(match[3]);
-  const date = new Date(y, m - 1, d, 12, 0, 0);
-  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) return null;
-  return date;
-}
+export { parseAmount, formatDateOnly, parseDateOnly } from './DateAmount';
 
 /**
  * Convierte una fecha-hora guardada (string ISO con hora, posiblemente vieja)
@@ -1939,6 +1914,76 @@ export const StorageService = {
       currentMonthSpent,
       lastResetDate: lastResetDate || new Date().toISOString(),
     };
+  },
+
+  // ── Onboarding: borrador, guía de primeros pasos y commit ─
+  async getOnboardingDraft(): Promise<OnboardingDraft | null> {
+    try {
+      const data = await AsyncStorage.getItem(K.ONBOARDING_DRAFT);
+      return data ? sanitizeDraft(JSON.parse(data)) : null;
+    } catch { return null; }
+  },
+
+  async saveOnboardingDraft(d: OnboardingDraft): Promise<void> {
+    try { await AsyncStorage.setItem(K.ONBOARDING_DRAFT, JSON.stringify(d)); } catch { }
+  },
+
+  async clearOnboardingDraft(): Promise<void> {
+    try { await AsyncStorage.removeItem(K.ONBOARDING_DRAFT); } catch { }
+  },
+
+  /** Estado de la tarjeta «Guía y primeros pasos»; null si nunca se creó (usuarios anteriores al onboarding nuevo). */
+  async getGettingStarted(): Promise<GettingStartedState | null> {
+    try {
+      const data = await AsyncStorage.getItem(K.GETTING_STARTED);
+      return data ? sanitizeGettingStarted(JSON.parse(data)) : null;
+    } catch { return null; }
+  },
+
+  async saveGettingStarted(s: GettingStartedState): Promise<void> {
+    try { await AsyncStorage.setItem(K.GETTING_STARTED, JSON.stringify(s)); } catch { }
+  },
+
+  /** Fusiona `p` con el estado guardado; si no existe, lo crea (con tourDeferred: true) y devuelve el resultado. */
+  async patchGettingStarted(p: Partial<GettingStartedState>): Promise<GettingStartedState> {
+    const cur: GettingStartedState = (await this.getGettingStarted()) ?? {
+      v: 1, dismissed: false, collapsed: false, skipped: [], tourDeferred: true, createdAt: new Date().toISOString(),
+    };
+    const next: GettingStartedState = { ...cur, ...p, v: 1 };
+    await this.saveGettingStarted(next);
+    return next;
+  },
+
+  /**
+   * Guarda lo que creó el onboarding. Orden: cuentas, gastos fijos y visacuotas (upsert por id: repetir
+   * no duplica) y AL FINAL los ajustes con onboardingComplete, para que un corte a mitad deje el
+   * onboarding pendiente y se pueda repetir. Luego borra el borrador. Propaga los errores de
+   * escritura en vez de tragarlos (así la pantalla puede avisar y reintentar).
+   */
+  async commitOnboarding(c: OnboardingCommit): Promise<void> {
+    const accounts = upsertById(await readListStrict<Account>(K.ACCOUNTS), c.accounts);
+    await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(accounts));
+    const fixed = upsertById(await readListStrict<FixedExpense>(K.FIXED_EXPENSES), c.fixedExpenses);
+    await AsyncStorage.setItem(K.FIXED_EXPENSES, JSON.stringify(fixed));
+    const inst = upsertById(await readListStrict<CreditInstallment>(K.CREDIT_INSTALLMENTS), c.installments);
+    await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(inst));
+    await AsyncStorage.setItem(K.SETTINGS, JSON.stringify({ ...c.settings, onboardingComplete: true }));
+    await this.clearOnboardingDraft();
+  },
+
+  // ── Chat del asistente ────────────────────────────────────
+  /** Chat guardado del Asesor; null si no hay, está corrupto o no es la versión 1. */
+  async getAssistantChat(): Promise<StoredAssistantChat | null> {
+    try { return parseStoredChatJson(await AsyncStorage.getItem(K.ASSISTANT_CHAT)); } catch { return null; }
+  },
+
+  /** Guarda el chat recortado a los últimos 60 mensajes y 20 entradas del historial de Gemini. */
+  async saveAssistantChat(c: StoredAssistantChat): Promise<void> {
+    try { await AsyncStorage.setItem(K.ASSISTANT_CHAT, JSON.stringify(trimStoredChat(c))); } catch { }
+  },
+
+  async clearAssistantChat(): Promise<void> {
+    try { await AsyncStorage.removeItem(K.ASSISTANT_CHAT); } catch { }
   },
 
   // ── Limpiar todo ──────────────────────────────────────────

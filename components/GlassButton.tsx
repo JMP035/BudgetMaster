@@ -15,6 +15,8 @@ export interface GlassButtonProps {
     icon?: IoniconName;
     loading?: boolean;
     disabled?: boolean;
+    /** Opcional: etiqueta para lectores de pantalla; por defecto es el propio texto del botón. */
+    accessibilityLabel?: string;
     style?: StyleProp<ViewStyle>;
 }
 
@@ -32,6 +34,7 @@ export function GlassButton({
     icon,
     loading = false,
     disabled = false,
+    accessibilityLabel,
     style,
 }: GlassButtonProps) {
     const color = TEXT_COLOR[kind];
@@ -42,7 +45,7 @@ export function GlassButton({
             disabled={inactive}
             activeOpacity={0.8}
             accessibilityRole="button"
-            accessibilityLabel={label}
+            accessibilityLabel={accessibilityLabel ?? label}
             accessibilityState={{ disabled: inactive, busy: loading }}
             style={[
                 s.btn,

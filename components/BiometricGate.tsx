@@ -28,6 +28,15 @@ const AUTH_GRACE_MS = 3000;
 // vuelve antes de este tiempo no se le pide nada.
 const RELOCK_AFTER_MS = 30_000;
 
+// Referencia al ref de "biometría activa" de la instancia montada. Permite que Ajustes y el
+// onboarding avisen al guardián cuando se activa o se apaga el bloqueo sin reiniciar la app.
+let biometricEnabledRuntimeRef: { current: boolean } | null = null;
+
+/** Actualiza en caliente si el guardián debe re-bloquear al volver de segundo plano. */
+export function setBiometricRuntimeEnabled(v: boolean): void {
+    if (biometricEnabledRuntimeRef) biometricEnabledRuntimeRef.current = v;
+}
+
 // ─────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────
@@ -44,6 +53,7 @@ export default function BiometricGate({ children }: Props) {
     const authStateRef = useRef<AuthState>("checking");
     const hasUnlockedOnceRef = useRef(false);
     const biometricEnabledRef = useRef(false);
+    biometricEnabledRuntimeRef = biometricEnabledRef;
     const isAuthenticatingRef = useRef(false);
     // Momento en que la app pasó a background estando desbloqueada (ver RELOCK_AFTER_MS)
     const backgroundedAtRef = useRef<number | null>(null);
@@ -82,7 +92,7 @@ export default function BiometricGate({ children }: Props) {
             if (next === "background") {
                 if (
                     backgroundedAtRef.current === null &&
-                    authStateRef.current === "unlocked" &&
+                    (authStateRef.current === "unlocked" || authStateRef.current === "disabled") &&
                     biometricEnabledRef.current &&
                     !isAuthenticatingRef.current &&
                     Date.now() - lastAuthEventRef.current > AUTH_GRACE_MS
@@ -95,7 +105,7 @@ export default function BiometricGate({ children }: Props) {
                 if (
                     backgroundedAt !== null &&
                     Date.now() - backgroundedAt > RELOCK_AFTER_MS &&
-                    authStateRef.current === "unlocked" &&
+                    (authStateRef.current === "unlocked" || authStateRef.current === "disabled") &&
                     !isAuthenticatingRef.current
                 ) {
                     // Bloqueo síncrono (antes de cualquier await) para minimizar el parpadeo
@@ -146,12 +156,14 @@ export default function BiometricGate({ children }: Props) {
 
             const hasHardware = await LocalAuthentication.hasHardwareAsync();
             if (!hasHardware) {
+                biometricEnabledRef.current = false;
                 markUnlocked("disabled");
                 return;
             }
 
             const isEnrolled = await LocalAuthentication.isEnrolledAsync();
             if (!isEnrolled) {
+                biometricEnabledRef.current = false;
                 markUnlocked("disabled");
                 return;
             }

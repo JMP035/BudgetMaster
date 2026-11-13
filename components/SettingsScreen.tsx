@@ -27,6 +27,7 @@ import { ScreenHeader } from "./ScreenHeader";
 import { useGlassDialog } from "./GlassDialogProvider";
 import { useKeyboardHeight } from "./useKeyboardHeight";
 import { useUndoLastSync } from "./useUndoLastSync";
+import { setBiometricRuntimeEnabled } from "./BiometricGate";
 import { SmsService } from "../services/SmsService";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -192,9 +193,15 @@ interface Props {
     settings: UserSettings;
     onSave: (s: UserSettings) => void;
     onClearAll: () => void;
+    /** Sección a la que bajar al abrir Ajustes (desde la tarjeta «Guía y primeros pasos»). */
+    focusSection?: "biometric" | "gemini" | "sms" | null;
+    /** Se llama una vez que se atendió (o no se pudo atender) focusSection. */
+    onFocusHandled?: () => void;
+    /** «Guía y primeros pasos» en Academia: reabre la tarjeta y vuelve al Inicio. */
+    onOpenGuide?: () => void;
 }
 
-export default function SettingsScreen({ settings, onSave, onClearAll }: Props) {
+export default function SettingsScreen({ settings, onSave, onClearAll, focusSection, onFocusHandled, onOpenGuide }: Props) {
     const dialog = useGlassDialog();
     const kb = useKeyboardHeight();
 
@@ -271,6 +278,28 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
         }
     }, [kb, focusedY]);
     const trackY = (key: string) => (y: number) => { sectionYs.current[key] = y; };
+
+    // Bajar a la sección pedida por la guía. Las secciones miden su posición al montarse (y la de
+    // biometría solo existe cuando el sensor está disponible), así que se reintenta unas veces.
+    useEffect(() => {
+        if (!focusSection) return;
+        let attempts = 0;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const tryScroll = () => {
+            const y = sectionYs.current[focusSection];
+            if (y !== undefined) {
+                scrollRef.current?.scrollTo({ y: Math.max(y - 16, 0), animated: true });
+                onFocusHandled?.();
+                return;
+            }
+            attempts += 1;
+            if (attempts >= 8) { onFocusHandled?.(); return; }
+            timer = setTimeout(tryScroll, 250);
+        };
+        timer = setTimeout(tryScroll, 350);
+        return () => { if (timer) clearTimeout(timer); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [focusSection]);
     const focusProps = (key: string) => ({
         onFocus: () => setFocusedY(sectionYs.current[key] ?? null),
         onBlur: () => setFocusedY(null),
@@ -451,10 +480,19 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
             customCategories: customCats,
         };
         await StorageService.saveSettings(updated);
+        setBiometricRuntimeEnabled(updated.biometricEnabled);
         onSave(updated);
         setSaved(true);
         if (savedTimer.current) clearTimeout(savedTimer.current);
         savedTimer.current = setTimeout(() => setSaved(false), 2500);
+    };
+
+    /** Reabre la tarjeta «Guía y primeros pasos» del Inicio (la crea si el usuario no la tenía). */
+    const handleOpenGuide = async () => {
+        try {
+            await StorageService.patchGettingStarted({ dismissed: false, collapsed: false });
+        } catch (e) { console.warn("[Settings] guía:", e); }
+        onOpenGuide?.();
     };
 
     const handleAddCustomCat = async (cat: CustomCategory) => {
@@ -574,7 +612,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                 </Section>
 
                 {/* SMS (arriba, para que el interruptor sea fácil de encontrar) */}
-                <Section tutId="settings_sms" icon="chatbubble-outline" title="Sincronización de SMS" description="Lee la bandeja de tu teléfono y solo procesa los mensajes de bancos (BAC, BANRURAL, GTC, BANTRAB y PROMERICA) para registrar gastos automáticamente. Nada sale de tu dispositivo.">
+                <Section tutId="settings_sms" onLayoutY={trackY("sms")} icon="chatbubble-outline" title="Sincronización de SMS" description="Lee la bandeja de tu teléfono y solo procesa los mensajes de bancos (BAC, BANRURAL, GTC, BANTRAB y PROMERICA) para registrar gastos automáticamente. Nada sale de tu dispositivo.">
                     <View style={s.switchRow}>
                         <View style={{ flex: 1 }}>
                             <View style={s.switchLabelRow}>
@@ -773,7 +811,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
                 </Section>
 
                 {/* AHORROS EXTERNOS */}
-                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero que tenés guardado fuera de la app. Se suma al Patrimonio Total.">
+                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero fuera de tus cuentas registradas. Solo se usa si no tenés cuentas creadas.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>
@@ -788,7 +826,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
 
                 {/* BIOMETRÍA */}
                 {biometricAvailable && (
-                    <Section tutId="settings_biometric" icon="finger-print-outline" title="Seguridad Biométrica" description="Protegé tu información financiera con huella digital o Face ID al abrir la app.">
+                    <Section tutId="settings_biometric" onLayoutY={trackY("biometric")} icon="finger-print-outline" title="Seguridad Biométrica" description="Protegé tu información financiera con huella digital o Face ID al abrir la app.">
                         <View style={s.switchRow}>
                             <View style={{ flex: 1 }}>
                                 <View style={s.switchLabelRow}>
@@ -856,6 +894,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll }: Props) 
 
                 {/* ACADEMIA / TUTORIALES */}
                 <Section tutId="settings_academy" icon="school-outline" title="Academia BudgetMaster" description="Tutoriales interactivos para aprender a usar todas las funciones de la app.">
+                    <GlassButton kind="secondary" icon="compass-outline" label="Guía y primeros pasos" style={{ marginBottom: 10 }} onPress={handleOpenGuide} />
                     <GlassButton kind="secondary" icon="play-circle-outline" label="Ver tutoriales" style={{ marginBottom: 10 }} onPress={openTutorialMenu} />
                     <GlassButton kind="secondary" icon="refresh-outline" label="Reiniciar todos los tutoriales" onPress={handleResetTutorials} />
                     <Text style={s.hint}>Abrí Ver tutoriales para elegir cualquier tutorial, o tocá el botón ? en el encabezado de cada módulo.</Text>

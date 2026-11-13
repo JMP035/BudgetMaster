@@ -105,6 +105,12 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
             },
             {
+                id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
+                title: 'Guía y primeros pasos',
+                description: 'Lo que te falta configurar y todos los tutoriales, a un toque.',
+                emptyHint: 'Abrila desde Ajustes → Academia.',
+            },
+            {
                 id: 'ini_2', elementId: 'briefing_card', screen: 'dashboard', position: 'bottom', icon: 'sparkles-outline', padding: 8,
                 title: 'Briefing del día',
                 description: 'Un resumen escrito de cómo vas: gasto del período, alertas y una recomendación concreta. Se genera con tus datos locales; si agregás una API Key de Gemini en Ajustes, el texto es más conversacional.',
@@ -420,7 +426,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ia_1', elementId: 'advisor_header', screen: 'advisor', position: 'bottom', icon: 'sparkles-outline', padding: 8,
                 title: 'Modo del asesor',
-                description: 'Modo local analiza tus datos directamente en el teléfono, sin internet ni configuración. Si pegás tu API Key gratuita de aistudio.google.com en Ajustes → Inteligencia Artificial, verás Gemini activo y las respuestas serán más abiertas y conversacionales.',
+                description: 'Modo local entiende tus consultas y órdenes directamente en el teléfono, sin internet ni configuración. Si pegás tu API Key gratuita de aistudio.google.com en Ajustes → Inteligencia Artificial, verás Gemini activo y además podrás conversar de forma abierta.',
             },
             {
                 id: 'ia_2', elementId: 'advisor_chat', screen: 'advisor', position: 'bottom', icon: 'chatbubbles-outline', padding: 8,
@@ -434,9 +440,15 @@ export const TUTORIALS: Tutorial[] = [
                 emptyHint: 'Las sugerencias aparecen cuando el campo de texto está vacío y no hay una respuesta en curso.',
             },
             {
+                id: 'ia_actions', elementId: 'advisor_actions', screen: 'advisor', position: 'top', icon: 'flash-outline', padding: 8,
+                title: 'Acciones guiadas',
+                description: 'Crear meta, Presupuesto, Gasto fijo, Registrar gasto y Consultar te piden los datos paso a paso. Antes de guardar ves una tarjeta para Confirmar, Editar o Cancelar.',
+                emptyHint: 'Se ocultan mientras el teclado está abierto.',
+            },
+            {
                 id: 'ia_4', elementId: 'advisor_input', screen: 'advisor', position: 'top', icon: 'chatbubble-ellipses-outline', padding: 8,
-                title: 'Preguntá lo que quieras',
-                description: 'Por ejemplo: ¿puedo comprarme un celular de Q3,000?, ¿en qué gasté más este mes?, ¿cómo voy con mi presupuesto? o dame un plan para ahorrar Q15,000.',
+                title: 'Escribí una orden o una consulta',
+                description: 'Órdenes: «Crea una meta de Q5,000 para una laptop en diciembre», «Ponle un límite de Q800 a Restaurantes», «Agrega Netflix de $15.99 el 5 de cada mes», «Gasté 85 en gasolina ayer». Consultas: «¿Cuánto gasté en Restaurantes este período?» o «¿Qué gastos fijos me faltan por pagar?». Toda escritura se confirma con la tarjeta y después se puede deshacer. También podés pedir consejos, como ¿puedo comprarme un celular de Q3,000?',
             },
             {
                 id: 'ia_5', elementId: 'advisor_clear', screen: 'advisor', position: 'bottom', icon: 'refresh-outline', padding: 8,

@@ -10,7 +10,15 @@
     "test:sms-links": "sucrase-node scripts/sms-links.test.ts",
     "test:sms-matchers": "sucrase-node scripts/sms-matchers.test.ts",
     "test:sms-transfers": "sucrase-node scripts/sms-transfers.test.ts",
-    "test:budget-breakdown": "sucrase-node scripts/budget-breakdown.test.ts"
+    "test:budget-breakdown": "sucrase-node scripts/budget-breakdown.test.ts",
+    "test:onboarding": "sucrase-node scripts/onboarding.test.ts",
+    "test:assistant": "sucrase-node scripts/assistant-nlu.test.ts",
+    "test:assistant-amount": "sucrase-node scripts/assistant-amount.test.ts",
+    "test:assistant-date": "sucrase-node scripts/assistant-date.test.ts",
+    "test:assistant-lexicon": "sucrase-node scripts/assistant-lexicon.test.ts",
+    "test:assistant-executor": "sucrase-node scripts/assistant-executor.test.ts",
+    "test:assistant-flow": "sucrase-node scripts/assistant-flow.test.ts",
+    "test:assistant-gemini": "sucrase-node scripts/assistant-gemini.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

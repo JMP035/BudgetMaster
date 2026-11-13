@@ -243,6 +243,40 @@ Tocá **✦ Asesor** en la barra inferior. Es un chat con tu "CFO personal" que 
 
 El botón ⟳ del chat reinicia la conversación. Si no hay internet, el asesor responde en modo local automáticamente.
 
+### Órdenes y consultas
+
+Además de aconsejarte, el Asesor entiende **órdenes** y **consultas**. Funciona en modo local (sin internet ni clave); con Gemini además entiende frases más libres.
+
+**Órdenes** (crean algo; siempre te piden confirmación):
+
+| Querés... | Escribí por ejemplo |
+|-----------|---------------------|
+| Crear una meta de ahorro | "Crea una meta de Q5,000 para una laptop en diciembre" |
+| Fijar un límite por categoría | "Ponle un límite de Q800 a Restaurantes" |
+| Agregar un gasto fijo | "Agrega Netflix de $15.99 el 5 de cada mes" |
+| Registrar un gasto | "Gasté 85 en gasolina ayer" |
+| Registrar un ingreso | "Me pagaron Q6,000 de sueldo" |
+
+Si falta algún dato (monto, fecha, categoría...), el Asesor te lo pregunta con botones de respuesta rápida. Los límites por categoría se manejan siempre en quetzales.
+
+**Consultas** (solo muestran información, no cambian nada):
+
+- "¿Cuánto gasté en Restaurantes este período?" — total por moneda; los dólares se muestran aparte, nunca se suman a los quetzales.
+- "Muéstrame los movimientos de Spotify" — últimos movimientos, filtrables por comercio, categoría o fechas.
+- "¿Qué gastos fijos me faltan por pagar?" — pendientes del período, con insignia **Vencido** si corresponde.
+- "¿Cómo van mis presupuestos?" — avance de cada límite por categoría.
+- "¿Cómo van mis metas?" — avance de tus metas de ahorro.
+
+Podés acotar el rango con frases como "este período", "período anterior", "ayer", "esta semana", "este mes", "mes pasado" o "últimos 30 días". Sin rango se usa tu período de presupuesto actual.
+
+**Acciones guiadas:** debajo del chat están los botones **Crear meta**, **Presupuesto**, **Gasto fijo**, **Registrar gasto** y **Consultar**. Te piden los datos paso a paso. Se ocultan mientras el teclado está abierto.
+
+**Confirmar, Editar, Cancelar y Deshacer:**
+- Antes de guardar, el Asesor muestra una **tarjeta** con el resumen y los avisos (por ejemplo, un posible movimiento duplicado). Escribir "sí" no guarda nada: tenés que tocar **Confirmar**.
+- **Editar** abre un formulario para corregir cualquier dato; **Cancelar** descarta la propuesta. También podés corregir escribiendo, por ejemplo, "no, eran 600".
+- Después de guardar aparece un aviso con **Deshacer**. Solo deshace si el registro sigue igual (si cambió después, por ejemplo al unirse con un SMS, ya no se puede).
+- La conversación se conserva al cambiar de pestaña. Las tarjetas que quedaron sin confirmar se marcan como vencidas al volver.
+
 ---
 
 ## 10. Ajustes

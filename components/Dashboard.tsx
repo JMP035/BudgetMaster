@@ -13,6 +13,9 @@ import {
 } from "../services/storage";
 import { SmsService } from "../services/SmsService";
 import type { SmsPermissionDetail, SmsSyncMode, SyncResult } from "../services/SmsService";
+import { smsPermissionHelp } from "../services/SmsPermissionHelp";
+import GettingStartedCard from "./GettingStartedCard";
+import type { GuideSettingsSection } from "./GettingStartedCard";
 import { NotificationService } from "../services/NotificationService";
 import { getCat } from "../categories";
 import { C } from "../theme";
@@ -507,7 +510,14 @@ interface Props {
     /** Resultado de la última sincronización automática (alimenta el aviso bajo el encabezado). */
     smsAutoResult?: SyncResult | null;
     onDismissSmsAuto?: () => void;
+    /** Contador que sube cuando el onboarding pide la importación guiada de SMS (3 meses). */
+    syncRequest?: number;
+    /** Abre Ajustes enfocando una sección (desde la tarjeta «Guía y primeros pasos»). */
+    onNavigateSettings?: (section: GuideSettingsSection) => void;
 }
+
+// Última petición de importación atendida: sobrevive a que el Dashboard se desmonte al cambiar de pestaña.
+let lastHandledSyncRequest = 0;
 
 // Texto del aviso de sincronización automática; null si no hay nada que decir.
 function buildAutoNotice(r: SyncResult): { text: string; variant: "success" | "warning"; actionLabel: "Ver" | "Revisar" } | null {
@@ -533,7 +543,7 @@ export default function DashboardScreen({
     transactions, settings, fixedExpenses, categoryBudgets,
     savingsGoals, accounts, creditInstallments,
     onRefresh, refreshing, onNavigateBudget, onNavigateAccounts,
-    smsAutoResult, onDismissSmsAuto,
+    smsAutoResult, onDismissSmsAuto, syncRequest, onNavigateSettings,
 }: Props) {
     const glass = useGlassDialog();
     const undo = useUndoLastSync(onRefresh);
@@ -620,27 +630,7 @@ export default function DashboardScreen({
     });
 
     const showSmsPermissionBlocked = (perm: SmsPermissionDetail) => {
-        const apiLevel = perm.apiLevel ?? 0;
-        const restricted = apiLevel >= 33;
-        const message = perm.instantDenial && restricted
-            ? "Android bloqueó el permiso sin preguntarte. Es lo normal cuando la app se instaló desde un APK (fuera de Play Store): Android lo trata como «configuración restringida»."
-            : "Android ya no muestra el aviso de permiso porque se rechazó antes con «No volver a preguntar».";
-        const steps = restricted
-            ? [
-                "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
-                "Tocá el menú de tres puntos arriba a la derecha y elegí «Permitir configuración restringida». Si no aparece, seguí al paso 3.",
-                "Entrá a Permisos → SMS → Permitir.",
-                "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
-            ]
-            : [
-                "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
-                "Entrá a Permisos → SMS → Permitir.",
-                "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
-            ];
-        const maker = perm.manufacturer.toLowerCase();
-        const footnote = maker.includes("honor") || maker.includes("huawei")
-            ? "En Honor/MagicOS, si no ves la opción: Ajustes → Apps → Apps → BudgetMaster → Permisos. Algunos modelos también piden habilitarlo en Gestor del teléfono → Permisos."
-            : undefined;
+        const { message, steps, footnote } = smsPermissionHelp(perm);
         setDialog({
             variant: "warning",
             icon: "lock-closed-outline",
@@ -770,6 +760,14 @@ export default function DashboardScreen({
         });
         if (ok) void handleSmsSync("full");
     };
+
+    // Importación guiada pedida por el onboarding (una sola vez por petición).
+    useEffect(() => {
+        if (!syncRequest || syncRequest <= lastHandledSyncRequest) return;
+        lastHandledSyncRequest = syncRequest;
+        void handleSmsSync("full");
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [syncRequest]);
 
     // Aviso de la sincronización automática (Ver / Revisar). Se descarta al abrirlo.
     const autoNotice = smsAutoResult ? buildAutoNotice(smsAutoResult) : null;
@@ -938,6 +936,18 @@ export default function DashboardScreen({
                     </TouchableOpacity>
                 </View>
             )}
+
+            {/* GUÍA Y PRIMEROS PASOS */}
+            <GettingStartedCard
+                settings={settings}
+                accounts={accounts}
+                fixedExpenses={fixedExpenses}
+                onOpenAccounts={() => onNavigateAccounts?.()}
+                onOpenBudget={() => onNavigateBudget?.()}
+                onActivateSms={() => { void handleSmsSync(); }}
+                onOpenSettings={section => onNavigateSettings?.(section)}
+                refreshKey={syncing}
+            />
 
             {/* BRIEFING CFO */}
             <View ref={briefingRef} collapsable={false}>

@@ -1,424 +1,69 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-    ActivityIndicator, Animated, Easing, KeyboardAvoidingView,
-    Platform, ScrollView, StyleSheet, Text, TextInput,
-    TouchableOpacity, View
+    ActivityIndicator, ScrollView, StyleSheet, Text, TextInput,
+    TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense,
-    SavingsGoal, Transaction, UserSettings,
-    calcCreditCommitments, calcNetWorthFromAccounts, convertAmount, getAccountMonthlyInstallmentTotal,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment
+    SavingsGoal, StorageService, Transaction, UserSettings,
+    getCurrentFinancialPeriod
 } from "../services/storage";
 import { buildLocalOpening, computeLocalMetrics, getLocalResponse, getQuickReplies } from "../services/LocalAdvisorEngine";
-import { categoryLabelOf } from "../categories";
+import { createGeminiTransport } from "../services/GeminiClient";
+import { isSmsFeatureOn } from "../services/features";
+import { applyEdit, startGuided } from "../services/assistant/Dialogue";
+import type { DialogueOutput } from "../services/assistant/Dialogue";
+import { IN_PROGRESS, SAVE_ERROR, UNDO_ERROR, executeProposal, undoAction } from "../services/assistant/Executor";
+import { createExecutorDeps } from "../services/assistant/ExecutorDeps";
+import { routeMessage } from "../services/assistant/Router";
+import type { RouterDeps } from "../services/assistant/Router";
+import { EMPTY_DIALOGUE } from "../services/assistant/types";
+import type {
+    ActionProposal, ActionResult, AssistantContext, ChatMessage, Chip, DialogueState, DialogueTarget, SlotMap,
+} from "../services/assistant/types";
 import { C } from "../theme";
 import { useTutorialRef } from "../context/TutorialContext";
-import { GlassBackground, GlassCard } from "./GlassCard";
+import { AssistantMessageView, AssistantTypingRow } from "./assistant/AssistantMessageView";
+import { ProposalEditSheet } from "./assistant/ProposalEditSheet";
+import { QuickActionsBar } from "./assistant/QuickActionsBar";
+import type { QuickActionId } from "./assistant/QuickActionsBar";
+import { GlassBackground } from "./GlassCard";
 import { HelpButton } from "./HelpButton";
 import { InlineNotice } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
+import { useKeyboardHeight } from "./useKeyboardHeight";
 
 // ─────────────────────────────────────────────────────────────
-// TIPOS
+// CONSTANTES
 // ─────────────────────────────────────────────────────────────
-interface Message {
-    id: string;
-    role: "user" | "ai";
-    text: string;
-    loading?: boolean;
-}
+type Busy = "idle" | "thinking" | "gemini" | "executing";
+type GeminiTurn = { role: "user" | "model"; text: string };
 
-interface GeminiMessage {
-    role: "user" | "model";
-    parts: { text: string }[];
-}
+const WELCOME_EXTRA = "También puedo crear metas, presupuestos y gastos fijos, registrar movimientos y responder consultas.";
+const SAVE_DEBOUNCE_MS = 800;
+const GEMINI_COOLDOWN_MS = 60000;
+const MAX_GEMINI_HISTORY = 20;
+const LOCAL_BANNER = "Modo local: entiendo consultas y órdenes en el teléfono, sin internet. Gemini es opcional (Ajustes).";
 
-// ─────────────────────────────────────────────────────────────
-// CONSTRUIR CONTEXTO FINANCIERO
-// ─────────────────────────────────────────────────────────────
-function buildFinancialContext(
-    transactions: Transaction[],
-    settings: UserSettings,
-    accounts: Account[] = [],
-    fixedExpenses: FixedExpense[] = [],
-    categoryBudgets: CategoryBudget[] = [],
-    savingsGoals: SavingsGoal[] = [],
-    creditInstallments: CreditInstallment[] = [],
-): string {
-    const now = new Date();
-    const fp = getCurrentFinancialPeriod(settings);
-    const daysLeft = getDaysUntilNextPayment(settings);
+/** Pregunta del botón «Consultar»: el `value` de cada chip se envía como si se hubiera escrito. */
+const QUERY_QUESTION = "¿Qué desea consultar?";
+const QUERY_CHIPS: Chip[] = [
+    { label: "Gasto por categoría", value: "Cuánto gasté por categoría este período" },
+    { label: "Movimientos de un comercio", value: "Muéstrame los movimientos" },
+    { label: "Gastos fijos pendientes", value: "Qué gastos fijos me faltan por pagar" },
+    { label: "Presupuestos", value: "Cómo van mis presupuestos" },
+    { label: "Metas", value: "Cómo van mis metas" },
+];
+/** Slot de las preguntas que no pertenecen a un diálogo (aclaración del router y «Consultar»). */
+const FREE_QUESTION_SLOT = "_intent";
 
-    // Transacciones del período financiero actual
-    const periodTx = transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; });
-    const prevTx   = transactions.filter(t => { const d = new Date(t.date); return d >= fp.prevStart && d <= fp.prevEnd; });
-
-    const incomeQ  = periodTx.filter(t => t.type === "income"  && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const expenseQ = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const prevExpQ = prevTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const balance  = incomeQ - expenseQ;
-    const pct      = settings.budgetLimit > 0 ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
-    const dailyRate   = expenseQ / Math.max(fp.daysPassed, 1);
-    const projected   = dailyRate * fp.daysTotal;
-    const vsLastPeriod = prevExpQ > 0 ? ((expenseQ - prevExpQ) / prevExpQ * 100).toFixed(1) : "N/A";
-
-    // Top categorías
-    const catMap: Record<string, number> = {};
-    periodTx.filter(t => t.type === "expense").forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
-    const topCats = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5)
-        .map(([cat, amt]) => `  · ${categoryLabelOf(cat, settings.customCategories, "expense")}: Q${amt.toFixed(0)}`).join("\n");
-
-    // Historial últimos 3 períodos por mes calendario
-    const m = now.getMonth(); const y = now.getFullYear();
-    const history = Array.from({ length: 3 }, (_, i) => {
-        const d = new Date(y, m - (2 - i), 1);
-        const mo = d.getMonth(); const yr = d.getFullYear();
-        const exp = transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
-            new Date(t.date).getMonth() === mo && new Date(t.date).getFullYear() === yr)
-            .reduce((s, t) => s + t.amount, 0);
-        const inc = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
-            new Date(t.date).getMonth() === mo && new Date(t.date).getFullYear() === yr)
-            .reduce((s, t) => s + t.amount, 0);
-        return `  ${d.toLocaleDateString("es-GT", { month: "long" })}: gastos Q${exp.toFixed(0)} | ingresos Q${inc.toFixed(0)} | ahorro Q${(inc - exp).toFixed(0)}`;
-    }).join("\n");
-
-    // Cuentas bancarias
-    const activeAccounts = accounts.filter(a => a.isActive);
-    const accountsSummary = activeAccounts.length > 0
-        ? activeAccounts.map(a => {
-            if (a.type === 'credit') {
-                const dayInfo = [
-                    a.cutoffDay ? `corte día ${a.cutoffDay}` : null,
-                    a.paymentDueDay ? `pago día ${a.paymentDueDay}` : null,
-                ].filter(Boolean).join(", ");
-                const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
-                return `  · ${a.name} (${a.type})${dayInfo ? `: ${dayInfo}` : ""} — cuota mensual: Q${accMonthly.toFixed(2)}`;
-            }
-            return `  · ${a.name} (${a.type}): Q${a.balance.toFixed(2)}`;
-        }).join("\n")
-        : "  · No hay cuentas configuradas";
-    const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(activeAccounts, settings.exchangeRate);
-    const totalBalance = netWorthQ + netWorthUSD * (settings.exchangeRate || 7.7) + netWorthEUR + netWorthGBP;
-
-    // Compromisos de crédito (separados del patrimonio: pendiente de visacuotas)
-    const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
-    const creditCommitmentsSummary = activeAccounts.filter(a => a.type === 'credit').length > 0
-        ? activeAccounts.filter(a => a.type === 'credit').map(a => {
-            const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, settings.exchangeRate, 'Q');
-            return `  · ${a.name}: ${accMonthly > 0 ? `Q${accMonthly.toFixed(2)}/mes en cuotas` : "sin cuotas activas"}`;
-        }).join("\n")
-        : "  · Sin tarjetas de crédito registradas";
-
-    // Gastos fijos
-    const fixedTotal = fixedExpenses.filter(f => f.isActive).reduce((s, f) => s + f.amount, 0);
-    const fixedPaid  = fixedExpenses.filter(f => f.isActive && f.isPaid).reduce((s, f) => s + f.amount, 0);
-    const fixedPending = fixedTotal - fixedPaid;
-    const fixedSummary = fixedExpenses.filter(f => f.isActive).slice(0, 5)
-        .map(f => `  · ${f.name}: Q${f.amount.toFixed(0)} [${f.isPaid ? "PAGADO" : "PENDIENTE"}]`).join("\n") || "  · Sin gastos fijos";
-
-    // Presupuestos por categoría
-    const budgetsSummary = categoryBudgets.slice(0, 5)
-        .map(b => { 
-            const spent = transactions.filter(t => t.category === b.categoryId && t.type === "expense" && new Date(t.date) >= fp.start && new Date(t.date) <= fp.end).reduce((s,t)=>s+t.amount, 0);
-            const pctB = b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0;
-            return `  · ${categoryLabelOf(b.categoryId, settings.customCategories, "expense")}: Q${spent.toFixed(0)} / Q${b.limit.toFixed(0)} (${pctB}%${pctB >= 100 ? " ⚠️ EXCEDIDO" : ""})`; 
-        })
-        .join("\n") || "  · Sin límites por categoría";
-
-    // Metas de ahorro
-    const goalsSummary = savingsGoals.filter(g => !g.isCompleted).slice(0, 3)
-        .map(g => { const pctG = g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0; return `  · ${g.name}: Q${g.currentAmount.toFixed(0)} / Q${g.targetAmount.toFixed(0)} (${pctG}%)`; })
-        .join("\n") || "  · Sin metas activas";
-
-    // Visacuotas
-    const installTotal = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0)
-        .reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
-    const installSummary = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0).slice(0, 3)
-        .map(c => `  · ${c.name}: Q${c.monthlyPayment.toFixed(0)}/mes (${c.totalInstallments - c.paidInstallments} cuotas restantes)`)
-        .join("\n") || "  · Sin cuotas activas";
-
-    return `
-=== CONTEXTO FINANCIERO COMPLETO DE ${settings.userName.toUpperCase()} ===
-Fecha actual: ${now.toLocaleDateString("es-GT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
-País: Guatemala | Moneda principal: ${settings.currency || "Q"}
-Días hasta próximo pago: ${daysLeft}
-
-── PERÍODO FINANCIERO ACTUAL ──
-Rango: ${fp.label} (día ${fp.daysPassed} de ${fp.daysTotal})
-Ingresos del período: Q${incomeQ.toFixed(2)}
-Gastos del período:   Q${expenseQ.toFixed(2)}
-Saldo libre:          Q${balance.toFixed(2)}
-Presupuesto:          Q${settings.budgetLimit.toFixed(2)} → ${pct}% utilizado
-Ritmo diario:         Q${dailyRate.toFixed(2)}/día | Proyección: Q${projected.toFixed(2)}
-Vs período anterior:  ${vsLastPeriod}% (anterior: Q${prevExpQ.toFixed(0)})
-
-── GASTOS POR CATEGORÍA (período actual) ──
-${topCats || "  · Sin gastos registrados"}
-
-── HISTORIAL ÚLTIMOS 3 MESES ──
-${history}
-
-── CUENTAS BANCARIAS ──
-${accountsSummary}
-Patrimonio total en cuentas (sin incluir tarjetas de crédito): Q${totalBalance.toFixed(2)}
-
-── COMPROMISOS DE CRÉDITO (separados del patrimonio) ──
-${creditCommitmentsSummary}
-Pendiente total en visacuotas: Q${installmentsPendingQ.toFixed(2)}
-Nota: las tarjetas de crédito ya NO tienen saldo propio (siempre sería Q0.00) — toda su deuda vive en las visacuotas asociadas. Estos compromisos NO se restan del patrimonio total. Se analizan aparte para no mezclar activos con deuda de tarjeta.
-
-── GASTOS FIJOS MENSUALES ──
-Total: Q${fixedTotal.toFixed(0)} | Pagado: Q${fixedPaid.toFixed(0)} | Pendiente: Q${fixedPending.toFixed(0)}
-${fixedSummary}
-
-── CUOTAS / VISACUOTAS ──
-Carga mensual total: Q${installTotal.toFixed(0)}
-${installSummary}
-
-── PRESUPUESTOS POR CATEGORÍA ──
-${budgetsSummary}
-
-── METAS DE AHORRO ──
-${goalsSummary}
-
-── PERFIL DEL USUARIO ──
-Ingreso mensual declarado: Q${settings.monthlyIncome || "No especificado"}
-Ciclo de pago: ${settings.paymentCycle || "mensual"} (día ${settings.paymentDay})
-Deudas activas: Q${settings.activeDebts || 0}
-Meta de ahorro mensual: Q${settings.monthlySavingsGoal || 0}
-Ahorros externos: Q${settings.externalSavings || 0}
-======================================`.trim();
-}
-
-// ─────────────────────────────────────────────────────────────
-// SYSTEM PROMPT DEL CFO
-// ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Sos el CFO personal del usuario — un asesor financiero experto con acceso COMPLETO a sus datos financieros reales. Contexto: Guatemala (moneda principal Quetzales).
-
-REGLAS ABSOLUTAS:
-1. SIEMPRE usá los números reales del contexto financiero en tus respuestas. Nunca inventes cifras.
-2. Respondé DIRECTAMENTE a lo que pregunta el usuario. No des respuestas genéricas.
-3. Si el usuario pregunta si puede comprar algo, calculá si tiene saldo disponible y decilo con Q exactos.
-4. Si el usuario pregunta en qué gastó, listá las categorías reales con sus montos.
-5. Hablás en español guatemalteco natural — sos un asesor de confianza, no un robot.
-6. Cuando hay un problema financiero, dalo con la solución concreta y números específicos.
-7. Respuestas concisas por defecto (máx 5 oraciones) salvo que pidan análisis detallado.
-8. NUNCA digas "no tengo acceso a tus datos" — tenés acceso completo al contexto proporcionado.
-9. ORIENTACIÓN A FINANZAS: Eres un asesor financiero. Si el usuario te pregunta sobre temas no financieros (como recetas de cocina, chistes, deportes, programación, etc.), debes redirigir la conversación con ingenio de vuelta al ámbito financiero y económico personal (ej. "Como tu CFO personal, no sé cocinar eso, pero sí sé cómo puedes ahorrar Q50 en los ingredientes en el supermercado..."). Nunca respondas temas ajenos a finanzas.
-
-CONTEXTO GUATEMALTECO — RECONOCIMIENTO DE GASTOS:
-- "Est. de Serv.", "Estación de Servicio", "Shell", "Texaco", "Puma", "Esso", "Redipsa", "gasolinera" = COMBUSTIBLE (categoría: fuel)
-- "Pollo Campero" = comida guatemalteca icónica
-- "Despensa Familiar", "Hiper Paiz", "Maxi Despensa" = supermercados GT
-- "BANRURAL", "BAC", "GTC", "BANTRAB", "BI", "PROMERICA" = bancos guatemaltecos
-- "Visacuota", "cuota", "cuotas" = compra a plazos en tarjeta de crédito
-- "IRTRA" = parque de diversiones guatemalteco
-- Canasta básica GT ≈ Q3,950/mes. Salario mínimo GT ≈ Q3,500/mes
-- Tipo de cambio aproximado: Q7.70 por USD
-
-SISTEMA DE DEUDAS Y CUOTAS:
-- Las tarjetas de crédito YA NO tienen saldo propio (siempre es Q0.00): son fichas de referencia con nombre, banco, día de corte y día de pago. TODA su deuda vive en las visacuotas asociadas a esa tarjeta.
-- La "cuota mensual total" de una tarjeta es la suma de las cuotas mensuales de sus visacuotas activas — así es como se mide su carga real.
-- Las "visacuotas" son compras financiadas a través de la tarjeta de crédito en cuotas mensuales
-- Si el usuario tiene visacuotas activas, incluílas en el análisis de flujo de caja mensual
-- El patrimonio total y el pendiente en visacuotas se muestran SEPARADOS en el contexto: el patrimonio NO resta la deuda de visacuotas. Nunca digas que la deuda de tarjeta "reduce" el patrimonio neto — son cosas distintas que no deben mezclarse. Si el usuario pregunta por su situación completa, mencioná ambos por separado.
-- Un ratio deuda/ingreso mayor al 30% es zona de alerta
-
-CAPACIDADES:
-- Analizar el período financiero actual (no solo el mes calendario)
-- Evaluar compras contra el saldo real y días hasta el próximo pago
-- Identificar categorías problemáticas y su impacto en el presupuesto
-- Calcular proyecciones realistas basadas en el ritmo actual
-- Analizar gastos fijos vs variables y optimizarlos
-- Evaluar el avance en metas de ahorro con planes concretos
-- Comparar períodos y detectar tendencias de mejora/deterioro
-- Entender abreviaturas guatemaltecas de comercios (est. de serv. = gasolinera, etc.)
-
-TONO: Directo, honesto, como un buen amigo que sabe de finanzas. Inspirado en Dave Ramsey para la disciplina, Kiyosaki para el activo/pasivo, y Buffett para el largo plazo.`;
-
-// ─────────────────────────────────────────────────────────────
-// LLAMADA A GEMINI CON HISTORIAL
-// ─────────────────────────────────────────────────────────────
-const GEMINI_MODEL = "gemini-2.5-flash";
-// Holgado: en los modelos 2.5 el "thinking" comparte este presupuesto con la respuesta visible.
-const GEMINI_MAX_OUTPUT_TOKENS = 2048;
-// Continuaciones automáticas máximas cuando la respuesta se corta por MAX_TOKENS.
-const GEMINI_MAX_CONTINUATIONS = 2;
-const GEMINI_TIMEOUT_MS = 14000;
-const CONTINUE_PROMPT = "Continúa exactamente donde quedaste, sin repetir lo anterior ni saludar.";
-
-interface GeminiChunk {
-    text: string;
-    finishReason?: string;
-}
-
-/** thinkingBudget: 0 solo es válido en la familia flash (2.5-pro no permite desactivarlo). */
-function supportsThinkingOff(model: string): boolean {
-    return /^gemini-2\.5-flash/.test(model);
-}
-
-/** Una sola petición a Gemini con timeout propio. Devuelve texto (todas las parts) y finishReason. */
-async function requestGemini(
-    messages: GeminiMessage[],
-    apiKey: string,
-    disableThinking: boolean,
-): Promise<GeminiChunk> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-    try {
-        const generationConfig: Record<string, unknown> = {
-            maxOutputTokens: GEMINI_MAX_OUTPUT_TOKENS,
-            temperature: 0.7,
-            topP: 0.9,
-        };
-        if (disableThinking) generationConfig.thinkingConfig = { thinkingBudget: 0 };
-
-        const res = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ contents: messages, generationConfig }),
-                signal: controller.signal,
-            }
-        );
-        if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
-
-        const data = await res.json();
-        const candidate = data?.candidates?.[0];
-        const parts: any[] = candidate?.content?.parts ?? [];
-        // Concatenar TODAS las partes de texto (ignorando las de "thought" si vinieran)
-        const text = parts
-            .filter(p => typeof p?.text === "string" && !p?.thought)
-            .map(p => p.text)
-            .join("");
-        return { text, finishReason: candidate?.finishReason };
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
-
-/** Petición con thinking desactivado (si el modelo lo soporta); si la API responde 400, reintenta sin ese campo. */
-async function requestGeminiSafe(messages: GeminiMessage[], apiKey: string): Promise<GeminiChunk> {
-    if (supportsThinkingOff(GEMINI_MODEL)) {
-        try {
-            return await requestGemini(messages, apiKey, true);
-        } catch (e: any) {
-            if (!String(e?.message ?? "").includes("400")) throw e;
-            // 400: posible campo no soportado -> reintento sin thinkingConfig
-        }
-    }
-    return requestGemini(messages, apiKey, false);
-}
-
-async function callGemini(
-    history: GeminiMessage[],
-    apiKey: string,
-    newMessage: string,
-    context: string,
-    onContinue?: () => void,
-): Promise<string> {
-    // Primer mensaje siempre incluye el contexto financiero
-    const contextMessage: GeminiMessage = {
-        role: "user",
-        parts: [{ text: `${SYSTEM_PROMPT}\n\n${context}` }],
-    };
-    const contextAck: GeminiMessage = {
-        role: "model",
-        parts: [{ text: "Entendido. Tengo tu contexto financiero completo. ¿En qué te puedo ayudar?" }],
-    };
-
-    const messages: GeminiMessage[] = [
-        contextMessage,
-        contextAck,
-        ...history,
-        { role: "user", parts: [{ text: newMessage }] },
-    ];
-
-    const trimmedKey = apiKey.trim();
-
-    const first = await requestGeminiSafe(messages, trimmedKey);
-    let fullText = first.text;
-    let finishReason = first.finishReason;
-
-    // Continuación automática si se cortó por límite de tokens
-    let continuations = 0;
-    while (finishReason === "MAX_TOKENS" && fullText && continuations < GEMINI_MAX_CONTINUATIONS) {
-        continuations++;
-        onContinue?.();
-        try {
-            const next = await requestGeminiSafe(
-                [
-                    ...messages,
-                    { role: "model", parts: [{ text: fullText }] },
-                    { role: "user", parts: [{ text: CONTINUE_PROMPT }] },
-                ],
-                trimmedKey,
-            );
-            if (!next.text) break;
-            fullText += next.text;
-            finishReason = next.finishReason;
-        } catch {
-            // Si falla la continuación, se entrega lo que ya se tiene en vez de perder la respuesta
-            break;
-        }
-    }
-
-    const cleaned = fullText.replace(/\*\*/g, "").replace(/\*/g, "").trim();
-    if (!cleaned) throw new Error("Respuesta vacía de Gemini");
-    return cleaned;
-}
-
-// ─────────────────────────────────────────────────────────────
-// BURBUJA DE MENSAJE
-// ─────────────────────────────────────────────────────────────
-function MessageBubble({ message }: { message: Message }) {
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(message.role === "user" ? 20 : -20)).current;
-
-    useEffect(() => {
-        Animated.parallel([
-            Animated.timing(fadeAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
-            Animated.spring(slideAnim, { toValue: 0, friction: 7, useNativeDriver: true }),
-        ]).start();
-    }, []);
-
-    const isUser = message.role === "user";
-
-    return (
-        <Animated.View
-            style={[
-                bs.wrap,
-                isUser ? bs.userWrap : bs.aiWrap,
-                { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
-            ]}
-        >
-            {!isUser && (
-                <View style={bs.aiAvatar}>
-                    <Ionicons name="sparkles" size={14} color={C.primaryLight} />
-                </View>
-            )}
-            {isUser ? (
-                <View style={[bs.bubble, bs.userBubble]}>
-                    <Text style={[bs.text, bs.userText]}>{message.text}</Text>
-                </View>
-            ) : (
-                <GlassCard radius={18} blur={false} style={bs.aiBubble} contentStyle={bs.aiBubbleContent}>
-                    {message.loading ? (
-                        <View style={bs.loadingRow}>
-                            <ActivityIndicator size="small" color={C.primary} />
-                            <Text style={bs.loadingTxt}>{message.text || "Analizando..."}</Text>
-                        </View>
-                    ) : (
-                        <Text style={bs.text}>{message.text}</Text>
-                    )}
-                </GlassCard>
-            )}
-        </Animated.View>
-    );
-}
+const GUIDED_TARGETS: Record<Exclude<QuickActionId, "query">, { target: DialogueTarget; preset?: SlotMap }> = {
+    goal: { target: { type: "action", id: "create_goal" } },
+    budget: { target: { type: "action", id: "set_category_budget" } },
+    fixed: { target: { type: "action", id: "create_fixed_expense" } },
+    expense: { target: { type: "action", id: "create_transaction" }, preset: { tx_type: "expense" } },
+};
 
 // ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
@@ -431,264 +76,630 @@ interface Props {
     categoryBudgets?: CategoryBudget[];
     savingsGoals?: SavingsGoal[];
     creditInstallments?: CreditInstallment[];
+    /** El asistente escribe datos: la app debe refrescar su estado con la lista nueva. */
+    onTransactionsChanged: (t: Transaction[]) => void;
+    onFixedExpensesChanged: (f: FixedExpense[]) => void;
+    onCategoryBudgetsChanged: (b: CategoryBudget[]) => void;
+    onSavingsGoalsChanged: (g: SavingsGoal[]) => void;
 }
 
-export default function AIAdvisor({
-    transactions, settings,
-    accounts = [], fixedExpenses = [], categoryBudgets = [],
-    savingsGoals = [], creditInstallments = [],
-}: Props) {
-    const hasApiKey = !!(settings.geminiApiKey && settings.geminiApiKey.length > 20);
+export default function AIAdvisor(props: Props) {
+    const {
+        transactions, settings,
+        accounts = [], fixedExpenses = [], categoryBudgets = [],
+        savingsGoals = [], creditInstallments = [],
+    } = props;
+    const hasApiKey = (settings.geminiApiKey ?? "").trim().length > 20;
+    const { height: windowHeight } = useWindowDimensions();
+    const kb = useKeyboardHeight();
 
     const metrics = useMemo(
         () => computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets),
         [transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]
     );
 
-    const getWelcomeText = (): string => hasApiKey
-        ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
-        : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+    const getWelcomeText = (): string => {
+        const base = hasApiKey
+            ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
+            : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+        return `${base}\n\n${WELCOME_EXTRA}`;
+    };
 
-    const [messages, setMessages] = useState<Message[]>([
-        {
-            id: "welcome",
-            role: "ai",
-            text: getWelcomeText(),
-        }
-    ]);
+    // ── Estado (con espejo en refs para leerlo de forma síncrona dentro de handlers asíncronos) ──
+    const [messages, setMessages] = useState<ChatMessage[]>([]);
+    const [dialogue, setDialogue] = useState<DialogueState>(EMPTY_DIALOGUE);
+    const [geminiHistory, setGeminiHistory] = useState<GeminiTurn[]>([]);
+    const [busy, setBusy] = useState<Busy>("idle");
+    const [editing, setEditing] = useState<ActionProposal | null>(null);
+    const [merchantRules, setMerchantRules] = useState<AssistantContext["merchantRules"]>([]);
+    const [hydrated, setHydrated] = useState(false);
     const [input, setInput] = useState("");
-    const [loading, setLoading] = useState(false);
-    const [geminiHistory, setGeminiHistory] = useState<GeminiMessage[]>([]);
+    const [rootBox, setRootBox] = useState<{ y: number; h: number } | null>(null);
+
+    const messagesRef = useRef<ChatMessage[]>([]);
+    const dialogueRef = useRef<DialogueState>(EMPTY_DIALOGUE);
+    const geminiHistoryRef = useRef<GeminiTurn[]>([]);
+    const busyRef = useRef<Busy>("idle");
+    const hydratedRef = useRef(false);
+    const mountedRef = useRef(true);
+    const dirtyRef = useRef(false);
+    const cooldownRef = useRef(0);
+    const idSeq = useRef(0);
+    const layoutYRef = useRef<Record<string, number>>({});
+    const focusRef = useRef<string | null>(null);
+    const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const undoingRef = useRef<Set<string>>(new Set());
+
     const scrollRef = useRef<ScrollView>(null);
+    const rootRef = useRef<View>(null);
     const inputRef = useRef<TextInput>(null);
-    const headerRef = useTutorialRef('advisor_header');
-    const chatRef = useTutorialRef('advisor_chat');
-    const suggestionsRef = useTutorialRef('advisor_suggestions');
-    const inputBoxRef = useTutorialRef('advisor_input');
-    const clearRef = useTutorialRef('advisor_clear');
+    const headerRef = useTutorialRef("advisor_header");
+    const chatRef = useTutorialRef("advisor_chat");
+    const suggestionsRef = useTutorialRef("advisor_suggestions");
+    const inputBoxRef = useTutorialRef("advisor_input");
+    const clearRef = useTutorialRef("advisor_clear");
 
-    useEffect(() => {
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
-    }, [messages]);
+    const newId = (): string => `${Date.now().toString(36)}${(idSeq.current++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
+    const saveNow = () => {
+        if (!hydratedRef.current) return;
+        dirtyRef.current = false;
+        const msgs = messagesRef.current;
+        // Solo la bienvenida: no hay nada que guardar (y así «Reiniciar» deja el almacenamiento limpio).
+        if (msgs.length === 0 || (msgs.length === 1 && msgs[0].id === "welcome" && geminiHistoryRef.current.length === 0)) return;
+        void StorageService.saveAssistantChat({
+            v: 1, messages: msgs, geminiHistory: geminiHistoryRef.current, savedAt: new Date().toISOString(),
+        });
+    };
+    const saveNowRef = useRef(saveNow);
+    saveNowRef.current = saveNow;
+
+    const updateMessages = (fn: (prev: ChatMessage[]) => ChatMessage[]) => {
+        const next = fn(messagesRef.current);
+        if (next === messagesRef.current) return;
+        messagesRef.current = next;
+        setMessages(next);
+        // Si la pantalla ya se desmontó (cambio de pestaña en medio de una acción), el efecto de guardado no corre.
+        if (!mountedRef.current) { dirtyRef.current = true; saveNowRef.current(); }
+    };
+    const updateDialogue = (next: DialogueState) => { dialogueRef.current = next; setDialogue(next); };
+    const updateGeminiHistory = (next: GeminiTurn[]) => { geminiHistoryRef.current = next; setGeminiHistory(next); };
+    const setBusyBoth = (b: Busy) => { busyRef.current = b; setBusy(b); };
+
+    /** Contexto fresco para el NLU, el Gemini y el Executor (siempre con los datos más recientes del render). */
+    const buildCtx = (): AssistantContext => ({
+        now: new Date(),
+        period: getCurrentFinancialPeriod(settings),
+        settings,
+        transactions, accounts, fixedExpenses, categoryBudgets, savingsGoals, merchantRules,
+        smsOn: isSmsFeatureOn(settings),
+    });
+    const latest = useRef({ buildCtx, props, hasApiKey });
+    latest.current = { buildCtx, props, hasApiKey };
+
+    const getWelcomeTextRef = useRef(getWelcomeText);
+    getWelcomeTextRef.current = getWelcomeText;
+
+    // ── Montaje: chat guardado + reglas de comercio ──
     useEffect(() => {
+        mountedRef.current = true;
+        let alive = true;
+        (async () => {
+            let chat: Awaited<ReturnType<typeof StorageService.getAssistantChat>> = null;
+            let rules: AssistantContext["merchantRules"] = [];
+            try { chat = await StorageService.getAssistantChat(); } catch { }
+            try { rules = await StorageService.getMerchantRules(); } catch { }
+            if (!alive) return;
+            setMerchantRules(rules);
+            if (chat && chat.messages.length > 0) {
+                // Lo pendiente de una sesión anterior ya no se puede confirmar ni deshacer.
+                messagesRef.current = chat.messages.map((m): ChatMessage => {
+                    if (m.kind === "proposal" && (m.proposal.status === "pending" || m.proposal.status === "executing")) {
+                        return { ...m, proposal: { ...m.proposal, status: "expired" } };
+                    }
+                    if (m.kind === "notice" && m.undoState === "available") return { ...m, undoState: "expired" };
+                    return m;
+                });
+                geminiHistoryRef.current = chat.geminiHistory.slice(-MAX_GEMINI_HISTORY);
+            } else {
+                messagesRef.current = [{
+                    id: "welcome", at: new Date().toISOString(), role: "ai", kind: "text", source: "advisor",
+                    text: getWelcomeTextRef.current(),
+                }];
+            }
+            setMessages(messagesRef.current);
+            setGeminiHistory(geminiHistoryRef.current);
+            hydratedRef.current = true;
+            setHydrated(true);
+        })();
+        return () => {
+            alive = false;
+            mountedRef.current = false;
+            if (dirtyRef.current) saveNowRef.current();
+            if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+        };
+    }, []);
+
+    // ── Guardado con debounce (solo tras hidratar) ──
+    useEffect(() => {
+        if (!hydrated) return;
+        dirtyRef.current = true;
+        const t = setTimeout(() => saveNowRef.current(), SAVE_DEBOUNCE_MS);
+        return () => clearTimeout(t);
+    }, [hydrated, messages, geminiHistory]);
+
+    // La bienvenida (con cifras) se mantiene al día mientras sea el único mensaje.
+    useEffect(() => {
+        if (!hydrated) return;
         const text = getWelcomeText();
-        setMessages(prev => {
-            if (prev.length > 0 && (prev[0].id === "welcome" || prev[0].id === "welcome_new")) {
-                if (prev[0].text === text) return prev;
-                const updatedWelcome = { ...prev[0], text };
-                return [updatedWelcome, ...prev.slice(1)];
+        updateMessages(prev => {
+            const first = prev[0];
+            if (prev.length === 1 && first.kind === "text" && first.id === "welcome" && first.text !== text) {
+                return [{ ...first, text }];
             }
             return prev;
         });
-    }, [hasApiKey, settings, transactions, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]);
+    }, [hydrated, hasApiKey, settings, transactions, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]);
 
+    // ── Teclado: edge-to-edge no redimensiona la ventana; se compensa el solape con la TabBar ──
+    const measureRoot = () => {
+        rootRef.current?.measureInWindow((_x, y, _w, h) => {
+            if (h > 0) setRootBox(prev => (prev && prev.y === y && prev.h === h ? prev : { y, h }));
+        });
+    };
+    useEffect(() => {
+        measureRoot();
+        const t = setTimeout(() => {
+            measureRoot();
+            scrollRef.current?.scrollToEnd({ animated: true });
+        }, 80);
+        return () => clearTimeout(t);
+    }, [kb]);
+    const kbPad = rootBox ? Math.max(0, kb - (windowHeight - (rootBox.y + rootBox.h))) : 0;
+    const keyboardOpen = kb > 0;
+
+    // ── Scroll ──
+    const scrollToProposal = (proposalId: string): boolean => {
+        const msg = messagesRef.current.find(m => m.kind === "proposal" && m.proposal.proposalId === proposalId);
+        const y = msg ? layoutYRef.current[msg.id] : undefined;
+        if (y === undefined) return false;
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+        focusRef.current = null;
+        return true;
+    };
+    const requestFocus = (proposalId: string) => {
+        focusRef.current = proposalId;
+        if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+        // Si la tarjeta nunca reporta su posición, no se bloquea el scroll al final.
+        focusTimerRef.current = setTimeout(() => { focusRef.current = null; }, 1200);
+    };
+    const onLayoutMessage = (messageId: string, y: number) => {
+        layoutYRef.current[messageId] = y;
+        const pid = focusRef.current;
+        if (!pid) return;
+        const msg = messagesRef.current.find(m => m.id === messageId);
+        if (msg && msg.kind === "proposal" && msg.proposal.proposalId === pid) scrollToProposal(pid);
+    };
+    useEffect(() => {
+        // Tarjeta corregida (mismo mensaje, posición ya conocida): el onLayout puede no repetirse.
+        const pid = focusRef.current;
+        if (pid) scrollToProposal(pid);
+    }, [messages]);
+
+    // ── Helpers de mensajes ──
+    const makeNotice = (variant: "success" | "error" | "info" | "warning", text: string, extra: Partial<Extract<ChatMessage, { kind: "notice" }>> = {}): ChatMessage => ({
+        id: newId(), at: new Date().toISOString(), role: "ai", kind: "notice", variant, text, ...extra,
+    });
+    const makeUser = (text: string): ChatMessage => ({
+        id: newId(), at: new Date().toISOString(), role: "user", kind: "text", text,
+    });
+    const findProposal = (proposalId: string): ActionProposal | null => {
+        const m = messagesRef.current.find(x => x.kind === "proposal" && x.proposal.proposalId === proposalId);
+        return m && m.kind === "proposal" ? m.proposal : null;
+    };
+    const patchProposal = (proposalId: string, patch: Partial<ActionProposal>) => {
+        updateMessages(prev => prev.map(m =>
+            m.kind === "proposal" && m.proposal.proposalId === proposalId ? { ...m, proposal: { ...m.proposal, ...patch } } : m));
+    };
+    const clearLastProposal = (proposalId: string) => {
+        if (dialogueRef.current.lastProposalId === proposalId) {
+            updateDialogue({ ...dialogueRef.current, lastProposalId: null });
+        }
+    };
+
+    const outputToMessages = (out: DialogueOutput): ChatMessage[] => {
+        const at = new Date().toISOString();
+        switch (out.type) {
+            case "ask": return [{ id: newId(), at, role: "ai", kind: "question", text: out.text, chips: out.chips, slot: out.slot }];
+            case "propose": return [{ id: newId(), at, role: "ai", kind: "proposal", proposal: out.proposal }];
+            case "query": return [{ id: newId(), at, role: "ai", kind: "query", result: out.result }];
+            case "cancelled": return [makeNotice("info", out.text)];
+            default: return [];
+        }
+    };
+
+    // ── Enviar un mensaje (escrito o desde un chip) ──
     const handleSend = async (text?: string) => {
-        const userText = (text || input).trim();
-        if (!userText || loading) return;
+        const userText = (text ?? input).trim();
+        if (!userText || busyRef.current !== "idle" || !hydratedRef.current) return;
         setInput("");
+        setBusyBoth("thinking");
+        updateMessages(prev => [...prev, makeUser(userText)]);
 
-        // Agregar mensaje del usuario
-        const userMsg: Message = { id: `u_${Date.now()}`, role: "user", text: userText };
-        const loadingMsg: Message = { id: `l_${Date.now()}`, role: "ai", text: "", loading: true };
-
-        setMessages(prev => [...prev, userMsg, loadingMsg]);
-        setLoading(true);
-
-        let response = "";
-
+        const { buildCtx: ctxOf, props: p, hasApiKey: keyOn } = latest.current;
+        const st = p.settings;
+        // Tras una espera corta, si hay clave, el indicador pasa a «Consultando con Gemini…».
+        const timer = keyOn ? setTimeout(() => { if (busyRef.current === "thinking") setBusyBoth("gemini"); }, 350) : null;
         try {
-            if (hasApiKey) {
-                // Chat real con Gemini
-                const context = buildFinancialContext(transactions, settings, accounts, fixedExpenses, categoryBudgets, savingsGoals, creditInstallments);
+            const ctx = ctxOf();
+            const deps: RouterDeps = {
+                newId,
+                gemini: keyOn ? {
+                    transport: createGeminiTransport((st.geminiApiKey ?? "").trim()),
+                    history: geminiHistoryRef.current,
+                    userName: st.userName,
+                    extras: {
+                        budgetLimit: st.budgetLimit,
+                        monthlyIncome: st.monthlyIncome,
+                        activeDebts: st.activeDebts,
+                        monthlySavingsGoal: st.monthlySavingsGoal,
+                        installments: p.creditInstallments ?? [],
+                    },
+                } : null,
+                geminiCooldownUntil: cooldownRef.current,
+                localAdvisor: t => getLocalResponse(
+                    t, p.transactions, st, p.accounts ?? [], p.fixedExpenses ?? [], p.savingsGoals ?? [],
+                    p.creditInstallments ?? [], p.categoryBudgets ?? [],
+                ),
+                getProposal: findProposal,
+            };
+            const outcome = await routeMessage(userText, dialogueRef.current, ctx, deps);
 
-                // Limitar historial a los últimos 20 pares (40 mensajes) para no exceder tokens
-                const MAX_HISTORY_PAIRS = 20;
-                const trimmedHistory = geminiHistory.length > MAX_HISTORY_PAIRS * 2
-                    ? geminiHistory.slice(-(MAX_HISTORY_PAIRS * 2))
-                    : geminiHistory;
-
-                response = await callGemini(trimmedHistory, settings.geminiApiKey!, userText, context, () => {
-                    setMessages(prev => prev.map(m => m.loading ? { ...m, text: "Escribiendo..." } : m));
-                });
-
-                // Actualizar historial de Gemini
-                setGeminiHistory(prev => {
-                    const updated = [
-                        ...prev,
-                        { role: "user" as const, parts: [{ text: userText }] },
-                        { role: "model" as const, parts: [{ text: response }] },
-                    ];
-                    // Mantener máximo 40 entradas en memoria
-                    return updated.length > 40 ? updated.slice(-40) : updated;
-                });
-            } else {
-                // Fallback local
-                await new Promise(r => setTimeout(r, 600)); // Simular delay
-                response = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+            if (outcome.rateLimited) cooldownRef.current = Date.now() + GEMINI_COOLDOWN_MS;
+            if (outcome.geminiText) {
+                updateGeminiHistory([
+                    ...geminiHistoryRef.current,
+                    { role: "user" as const, text: userText },
+                    { role: "model" as const, text: outcome.geminiText },
+                ].slice(-MAX_GEMINI_HISTORY));
             }
-        } catch (e: any) {
-            const errStr = e.message || "";
-            if (e.name === "AbortError" || errStr.toLowerCase().includes("abort")) {
-                const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
-                response = `Gemini tardó demasiado en responder (más de 14s). Te respondo en modo local mientras tanto: ${offlineResp}`;
-            } else if (errStr.includes("429")) {
-                response = "Límite de solicitudes alcanzado en Gemini. Espera unos segundos e intenta de nuevo.";
-            } else if (errStr.includes("400")) {
-                response = "Error 400 (Solicitud incorrecta): Verifica que tu API Key de Gemini en Ajustes esté bien escrita y no contenga espacios adicionales.";
-            } else if (errStr.includes("403")) {
-                response = "Error 403 (Acceso denegado): La API Key ingresada no es válida para Gemini. Por favor, asegúrate de haber copiado la clave completa en Ajustes.";
-            } else if (errStr.includes("404")) {
-                response = "Error 404 (Modelo no encontrado): El modelo de Gemini configurado no está disponible actualmente.";
-            } else {
-                const offlineResp = getLocalResponse(userText, transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments);
-                response = `(Asistente local sin conexión) ${offlineResp}`;
+            if (outcome.focusProposalId) requestFocus(outcome.focusProposalId);
+            updateMessages(prev => {
+                let next = prev;
+                const rep = outcome.replaceProposal;
+                if (rep) {
+                    next = next.map(m => (m.kind === "proposal" && m.proposal.proposalId === rep.proposalId ? { ...m, proposal: rep } : m));
+                }
+                const cancelled = outcome.cancelledProposalId;
+                if (cancelled) {
+                    next = next.map(m => (
+                        m.kind === "proposal" && m.proposal.proposalId === cancelled && m.proposal.status === "pending"
+                            ? { ...m, proposal: { ...m.proposal, status: "cancelled" as const } } : m));
+                }
+                return [...next, ...outcome.messages];
+            });
+            updateDialogue(outcome.state);
+        } catch {
+            updateMessages(prev => [...prev, makeNotice("error", "No pude procesar el mensaje. Intente de nuevo.")]);
+        } finally {
+            if (timer) clearTimeout(timer);
+            setBusyBoth("idle");
+        }
+    };
+
+    /** Los chips se envían como si se hubieran escrito; «Cancelar» sin nada pendiente no pasa por el router. */
+    const handleChip = (chip: Chip) => {
+        if (busyRef.current !== "idle") return;
+        if (chip.value === "cancelar" && !dialogueRef.current.active) {
+            const lp = dialogueRef.current.lastProposalId;
+            const pending = lp ? findProposal(lp) : null;
+            if (!pending || pending.status !== "pending") {
+                updateMessages(prev => [...prev, makeUser(chip.label), makeNotice("info", "Listo. Escriba otra consulta u orden cuando quiera.")]);
+                return;
             }
         }
-
-        // Reemplazar mensaje de carga con respuesta real
-        setMessages(prev => [
-            ...prev.filter(m => !m.loading),
-            { id: `a_${Date.now()}`, role: "ai", text: response },
-        ]);
-        setLoading(false);
+        void handleSend(chip.value);
     };
+
+    // ── Acciones guiadas ──
+    const handleQuickAction = (id: QuickActionId) => {
+        if (busyRef.current !== "idle" || !hydratedRef.current) return;
+        if (id === "query") {
+            updateDialogue({ active: null, lastProposalId: dialogueRef.current.lastProposalId });
+            updateMessages(prev => [...prev, {
+                id: newId(), at: new Date().toISOString(), role: "ai", kind: "question",
+                text: QUERY_QUESTION, chips: QUERY_CHIPS, slot: FREE_QUESTION_SLOT,
+            }]);
+            return;
+        }
+        const g = GUIDED_TARGETS[id];
+        const r = startGuided(g.target, latest.current.buildCtx(), newId, g.preset);
+        const out = outputToMessages(r.out);
+        const prop = out.find(m => m.kind === "proposal");
+        if (prop && prop.kind === "proposal") requestFocus(prop.proposal.proposalId);
+        updateMessages(prev => [...prev, ...out]);
+        updateDialogue(r.state);
+    };
+
+    // ── Confirmar / Editar / Cancelar / Deshacer ──
+    const executorDeps = () => createExecutorDeps({
+        settings: latest.current.props.settings,
+        onTransactions: latest.current.props.onTransactionsChanged,
+        onFixed: latest.current.props.onFixedExpensesChanged,
+        onBudgets: latest.current.props.onCategoryBudgetsChanged,
+        onGoals: latest.current.props.onSavingsGoalsChanged,
+    });
+
+    const handleConfirm = async (proposalId: string) => {
+        const original = findProposal(proposalId);
+        if (!original || original.status !== "pending") return;
+        const wasIdle = busyRef.current === "idle";
+        if (wasIdle) setBusyBoth("executing");
+        // Visualmente «executing»; al Executor se le pasa la propuesta ORIGINAL (status 'pending').
+        patchProposal(proposalId, { status: "executing", error: undefined });
+        let result: ActionResult;
+        try {
+            result = await executeProposal(original, latest.current.buildCtx(), executorDeps());
+        } catch {
+            result = { ok: false, proposalId, error: SAVE_ERROR };
+        }
+        if (!result.ok && result.error === IN_PROGRESS) {
+            // Doble toque: el primer intento ya está en curso y pintará el resultado.
+            if (wasIdle && busyRef.current === "executing") setBusyBoth("idle");
+            return;
+        }
+        if (result.ok) {
+            patchProposal(proposalId, { status: "done" });
+            clearLastProposal(proposalId);
+            const notice = makeNotice("success", result.message, result.undo ? { undo: result.undo, undoState: "available" } : {});
+            // Un solo «Deshacer» vigente: al confirmar otra escritura, los anteriores vencen.
+            updateMessages(prev => [
+                ...prev.map((m): ChatMessage => (m.kind === "notice" && m.undoState === "available" ? { ...m, undoState: "expired" } : m)),
+                notice,
+            ]);
+        } else {
+            patchProposal(proposalId, { status: "failed", error: result.error });
+        }
+        if (wasIdle && busyRef.current === "executing") setBusyBoth("idle");
+    };
+
+    const handleEdit = (proposalId: string) => {
+        const p = findProposal(proposalId);
+        if (p && p.status === "pending") setEditing(p);
+    };
+
+    const handleEditSave = (patch: SlotMap) => {
+        const base = editing ? findProposal(editing.proposalId) : null;
+        setEditing(null);
+        if (!base || base.status !== "pending") return;
+        // Un campo vaciado llega como '' y applyEdit lo interpreta como «vaciar el slot».
+        const next = applyEdit(base, patch, latest.current.buildCtx());
+        requestFocus(next.proposalId);
+        updateMessages(prev => prev.map(m => (m.kind === "proposal" && m.proposal.proposalId === next.proposalId ? { ...m, proposal: next } : m)));
+        updateDialogue({ ...dialogueRef.current, lastProposalId: next.proposalId });
+    };
+
+    const handleCancel = (proposalId: string) => {
+        const p = findProposal(proposalId);
+        if (!p || p.status !== "pending") return;
+        patchProposal(proposalId, { status: "cancelled" });
+        clearLastProposal(proposalId);
+    };
+
+    const handleUndo = async (messageId: string) => {
+        const msg = messagesRef.current.find(m => m.id === messageId);
+        if (!msg || msg.kind !== "notice" || msg.undoState !== "available" || !msg.undo) return;
+        if (undoingRef.current.has(messageId)) return;
+        undoingRef.current.add(messageId);
+        const setUndoState = (state: "available" | "done" | "expired") =>
+            updateMessages(prev => prev.map(m => (m.kind === "notice" && m.id === messageId ? { ...m, undoState: state } : m)));
+        try {
+            const res = await undoAction(msg.undo, executorDeps());
+            if (res.message === IN_PROGRESS) return;
+            if (res.ok) {
+                updateMessages(prev => [
+                    ...prev.map((m): ChatMessage => (m.kind === "notice" && m.id === messageId ? { ...m, undoState: "done" } : m)),
+                    makeNotice("info", res.message),
+                ]);
+            } else {
+                // Fallo transitorio: se puede reintentar; si el registro cambió, ya no.
+                updateMessages(prev => [
+                    ...prev.map((m): ChatMessage => (m.kind === "notice" && m.id === messageId
+                        ? { ...m, undoState: res.message === UNDO_ERROR ? "available" : "expired" } : m)),
+                    makeNotice("warning", res.message),
+                ]);
+            }
+        } catch {
+            setUndoState("available");
+            updateMessages(prev => [...prev, makeNotice("warning", UNDO_ERROR)]);
+        } finally {
+            undoingRef.current.delete(messageId);
+        }
+    };
+
+    // ── Reiniciar ──
+    const handleClearChat = () => {
+        if (busyRef.current !== "idle") return;
+        layoutYRef.current = {};
+        focusRef.current = null;
+        updateMessages(() => [{
+            id: "welcome", at: new Date().toISOString(), role: "ai", kind: "text", source: "advisor", text: getWelcomeText(),
+        }]);
+        updateGeminiHistory([]);
+        updateDialogue(EMPTY_DIALOGUE);
+        setEditing(null);
+        dirtyRef.current = false;
+        void StorageService.clearAssistantChat();
+    };
+
+    const editCtx = useMemo(() => (editing ? latest.current.buildCtx() : null), [editing]);
 
     const quickReplies = useMemo(() => getQuickReplies(metrics), [metrics]);
-    const lastUserText = [...messages].reverse().find(m => m.role === "user")?.text ?? "";
-    const visibleReplies = quickReplies.filter(q => q !== lastUserText);
-
-    const handleClearChat = () => {
-        if (loading) return;
-        setMessages([{
-            id: "welcome_new",
-            role: "ai",
-            text: hasApiKey
-                ? `Chat reiniciado. ¿En qué te puedo ayudar, ${settings.userName}?`
-                : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets),
-        }]);
-        setGeminiHistory([]);
-    };
+    const lastUserText = [...messages].reverse().find(m => m.role === "user" && m.kind === "text");
+    const visibleReplies = quickReplies.filter(q => !lastUserText || lastUserText.kind !== "text" || q !== lastUserText.text);
+    const idle = busy === "idle";
+    const typing = busy === "thinking" || busy === "gemini";
+    const showSuggestions = !keyboardOpen && idle && !dialogue.active && input.trim() === "" && visibleReplies.length > 0;
 
     return (
-        <KeyboardAvoidingView
-            style={{ flex: 1 }}
-            behavior="padding"
-            keyboardVerticalOffset={0}
+        <View
+            ref={rootRef}
+            onLayout={measureRoot}
+            style={[s.screen, { paddingBottom: kbPad }]}
         >
-            <View style={s.screen}>
-
-                {/* HEADER */}
-                <View style={s.headerWrap}>
-                    <ScreenHeader
-                        title="Asesor IA"
-                        subtitle={hasApiKey ? "Gemini activo" : "Modo local"}
-                        compact
-                        headerRef={headerRef}
-                        left={
-                            <View style={s.iconBg}>
-                                <GlassBackground radius={14} blur={false} />
-                                <Ionicons name="sparkles" size={22} color={C.primaryLight} />
-                            </View>
-                        }
-                        right={
-                            <>
-                                <HelpButton tutorialId="tutorial_ia" />
-                                <View ref={clearRef} collapsable={false}>
-                                    <TouchableOpacity
-                                        onPress={handleClearChat}
-                                        disabled={loading}
-                                        activeOpacity={0.7}
-                                        accessibilityRole="button"
-                                        accessibilityLabel="Reiniciar el chat"
-                                        style={[s.clearBtn, loading && { opacity: 0.4 }]}
-                                    >
-                                        <GlassBackground radius={18} blur={false} />
-                                        <Ionicons name="refresh-outline" size={18} color={C.primaryLight} />
-                                    </TouchableOpacity>
-                                </View>
-                            </>
-                        }
-                    />
-                </View>
-
-                {/* AVISO sin API Key */}
-                {!hasApiKey && (
-                    <InlineNotice
-                        variant="info"
-                        icon="shield-checkmark-outline"
-                        text="Modo local: analizo tus datos en tu teléfono, sin internet. Gemini es opcional (Ajustes)."
-                        style={s.banner}
-                    />
-                )}
-
-                {/* MENSAJES */}
-                <View ref={chatRef} collapsable={false} style={s.chatWrap}>
-                    <ScrollView
-                        ref={scrollRef}
-                        style={s.chatList}
-                        contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
-                        showsVerticalScrollIndicator={false}
-                        keyboardShouldPersistTaps="handled"
-                    >
-                        {messages.map(msg => <MessageBubble key={msg.id} message={msg} />)}
-                    </ScrollView>
-                </View>
-
-                {/* SUGERENCIAS RÁPIDAS */}
-                <View ref={suggestionsRef} collapsable={false} style={s.suggestionsWrap}>
-                    {!loading && input.trim() === "" && visibleReplies.length > 0 && (
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            keyboardShouldPersistTaps="handled"
-                            style={s.suggestionsRow}
-                            contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
-                        >
-                            {visibleReplies.map(q => (
+            {/* HEADER */}
+            <View style={s.headerWrap}>
+                <ScreenHeader
+                    title="Asesor IA"
+                    subtitle={hasApiKey ? "Gemini activo" : "Modo local"}
+                    compact
+                    headerRef={headerRef}
+                    left={
+                        <View style={s.iconBg}>
+                            <GlassBackground radius={14} blur={false} />
+                            <Ionicons name="sparkles" size={22} color={C.primaryLight} />
+                        </View>
+                    }
+                    right={
+                        <>
+                            <HelpButton tutorialId="tutorial_ia" />
+                            <View ref={clearRef} collapsable={false}>
                                 <TouchableOpacity
-                                    key={q}
-                                    style={s.suggestionChip}
-                                    onPress={() => handleSend(q)}
-                                    disabled={loading}
+                                    onPress={handleClearChat}
+                                    disabled={!idle}
+                                    activeOpacity={0.7}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Reiniciar el chat"
+                                    style={[s.clearBtn, !idle && { opacity: 0.4 }]}
                                 >
-                                    <Text style={s.suggestionTxt}>{q}</Text>
+                                    <GlassBackground radius={18} blur={false} />
+                                    <Ionicons name="refresh-outline" size={18} color={C.primaryLight} />
                                 </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    )}
-                </View>
-
-                {/* INPUT */}
-                <View ref={inputBoxRef} collapsable={false} style={s.inputContainer}>
-                    <GlassBackground radius={0} blur={false} />
-                    <TextInput
-                        ref={inputRef}
-                        style={s.input}
-                        value={input}
-                        onChangeText={setInput}
-                        placeholder="Preguntame lo que necesitás..."
-                        placeholderTextColor={C.textMuted}
-                        onSubmitEditing={() => handleSend()}
-                        returnKeyType="send"
-                        multiline
-                        maxLength={500}
-                        editable={!loading}
-                    />
-                    <TouchableOpacity
-                        style={[s.sendBtn, (!input.trim() || loading) && { opacity: 0.4 }]}
-                        onPress={() => handleSend()}
-                        disabled={!input.trim() || loading}
-                    >
-                        {loading
-                            ? <ActivityIndicator size="small" color={C.onPrimary} />
-                            : <Ionicons name="send" size={20} color={C.onPrimary} />
-                        }
-                    </TouchableOpacity>
-                </View>
-
+                            </View>
+                        </>
+                    }
+                />
             </View>
-        </KeyboardAvoidingView>
+
+            {/* AVISO sin API Key */}
+            {!hasApiKey && (
+                <InlineNotice
+                    variant="info"
+                    icon="shield-checkmark-outline"
+                    text={LOCAL_BANNER}
+                    style={s.banner}
+                />
+            )}
+
+            {/* MENSAJES */}
+            <View ref={chatRef} collapsable={false} style={s.chatWrap}>
+                <ScrollView
+                    ref={scrollRef}
+                    style={s.chatList}
+                    contentContainerStyle={{ paddingTop: 8, paddingBottom: 16 }}
+                    showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    onContentSizeChange={() => {
+                        if (focusRef.current) return;
+                        scrollRef.current?.scrollToEnd({ animated: true });
+                    }}
+                >
+                    {messages.map((msg, i) => (
+                        <AssistantMessageView
+                            key={msg.id}
+                            message={msg}
+                            isLast={
+                                i === messages.length - 1 && idle &&
+                                (msg.kind !== "question" || !!dialogue.active || msg.slot === FREE_QUESTION_SLOT)
+                            }
+                            onChip={handleChip}
+                            onConfirm={id => { void handleConfirm(id); }}
+                            onEdit={handleEdit}
+                            onCancel={handleCancel}
+                            onUndo={id => { void handleUndo(id); }}
+                            settings={settings}
+                            onLayoutMessage={onLayoutMessage}
+                        />
+                    ))}
+                    {typing && (
+                        <AssistantTypingRow text={busy === "gemini" ? "Consultando con Gemini…" : "Analizando…"} />
+                    )}
+                </ScrollView>
+            </View>
+
+            {/* ACCIONES GUIADAS: se ocultan con el teclado abierto */}
+            {!keyboardOpen && (
+                <View style={s.quickWrap}>
+                    <QuickActionsBar onAction={handleQuickAction} disabled={!idle || !hydrated} />
+                </View>
+            )}
+
+            {/* SUGERENCIAS RÁPIDAS */}
+            <View ref={suggestionsRef} collapsable={false} style={s.suggestionsWrap}>
+                {showSuggestions && (
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        style={s.suggestionsRow}
+                        contentContainerStyle={{ paddingHorizontal: 16, gap: 8, alignItems: "center" }}
+                    >
+                        {visibleReplies.map(q => (
+                            <TouchableOpacity
+                                key={q}
+                                style={s.suggestionChip}
+                                onPress={() => { void handleSend(q); }}
+                                disabled={!idle}
+                                accessibilityRole="button"
+                                accessibilityLabel={q}
+                            >
+                                <Text style={s.suggestionTxt} maxFontSizeMultiplier={1.3}>{q}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                )}
+            </View>
+
+            {/* INPUT */}
+            <View ref={inputBoxRef} collapsable={false} style={s.inputContainer}>
+                <GlassBackground radius={0} blur={false} />
+                <TextInput
+                    ref={inputRef}
+                    style={s.input}
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Escriba una consulta u orden…"
+                    placeholderTextColor={C.textMuted}
+                    onSubmitEditing={() => { void handleSend(); }}
+                    returnKeyType="send"
+                    multiline
+                    maxLength={500}
+                    accessibilityLabel="Mensaje para el asesor"
+                />
+                <TouchableOpacity
+                    style={[s.sendBtn, (!input.trim() || !idle || !hydrated) && { opacity: 0.4 }]}
+                    onPress={() => { void handleSend(); }}
+                    disabled={!input.trim() || !idle || !hydrated}
+                    accessibilityRole="button"
+                    accessibilityLabel="Enviar"
+                >
+                    {typing
+                        ? <ActivityIndicator size="small" color={C.onPrimary} />
+                        : <Ionicons name="send" size={20} color={C.onPrimary} />
+                    }
+                </TouchableOpacity>
+            </View>
+
+            {/* EDITAR PROPUESTA */}
+            {editing && editCtx && (
+                <ProposalEditSheet
+                    proposal={editing}
+                    ctx={editCtx}
+                    onSave={handleEditSave}
+                    onClose={() => setEditing(null)}
+                />
+            )}
+        </View>
     );
 }
 
@@ -703,6 +714,7 @@ const s = StyleSheet.create({
     banner: { marginHorizontal: 16, marginBottom: 8 },
     chatWrap: { flex: 1, minHeight: 0 },
     chatList: { flex: 1, paddingHorizontal: 16 },
+    quickWrap: { flexShrink: 0, marginBottom: 8 },
     suggestionsWrap: { flexShrink: 0 },
     suggestionsRow: { flexGrow: 0, height: 48, marginBottom: 8 },
     suggestionChip: { paddingHorizontal: 14, paddingVertical: 8, backgroundColor: C.primaryDark + "33", borderRadius: 20, borderWidth: 1, borderColor: C.primary + "44" },
@@ -744,19 +756,4 @@ const s = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
     },
-});
-
-const bs = StyleSheet.create({
-    wrap: { marginBottom: 16 },
-    userWrap: { alignItems: "flex-end" },
-    aiWrap: { alignItems: "flex-start", flexDirection: "row", gap: 8 },
-    aiAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.primaryDark + "44", borderWidth: 1, borderColor: C.primary + "55", alignItems: "center", justifyContent: "center", marginTop: 4 },
-    bubble: { maxWidth: "80%", padding: 14, borderRadius: 18 },
-    userBubble: { backgroundColor: C.primary, borderBottomRightRadius: 4, borderWidth: 1, borderColor: C.primaryLight },
-    aiBubble: { maxWidth: "80%", flexShrink: 1, borderBottomLeftRadius: 4 },
-    aiBubbleContent: { padding: 14 },
-    text: { color: C.text, fontSize: 14, lineHeight: 22 },
-    userText: { color: C.onPrimary },
-    loadingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-    loadingTxt: { color: C.textSub, fontSize: 13 },
 });
