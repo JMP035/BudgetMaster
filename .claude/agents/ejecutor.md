@@ -15,7 +15,8 @@ Recibes un plan paso a paso producido por el agente planificador (Opus 5). Tu tr
 3. Respeta el estilo del código existente: componentes funcionales con hooks, estilos con StyleSheet.create, tema centralizado en theme.ts, persistencia vía services/storage.ts.
 4. Al terminar los cambios, verifica SIEMPRE con:
    - `npx tsc --noEmit` (no debe haber errores nuevos de TypeScript).
-5. En tu respuesta final resume: pasos completados, archivos modificados, resultado de la verificación y cualquier paso que no se pudo completar.
+5. **Tutorial al día:** si el cambio es visible (pantalla, botón, flujo, texto o regla), actualiza también `services/Tutorial.ts` (y `HELP_MODULES`, el manual o la guía si aplica) según `.claude/rules/tutorial-al-dia.md`. Si un paso del tutorial señala algo que quitaste o renombraste, corrígelo o elimínalo.
+6. En tu respuesta final resume: pasos completados, archivos modificados, resultado de la verificación, **una línea "Tutorial"** (qué pasos tocaste o por qué no hizo falta) y cualquier paso que no se pudo completar.
 
 ## Restricciones técnicas
 

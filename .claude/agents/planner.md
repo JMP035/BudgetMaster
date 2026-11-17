@@ -34,6 +34,9 @@ Tu única responsabilidad es PLANIFICAR. Nunca modificas archivos.
 1. <archivo> — <cambio concreto>
 2. ...
 
+## Tutorial
+- <pasos de services/Tutorial.ts, HELP_MODULES o manual que se actualizan; o por qué no aplica. Ver .claude/rules/tutorial-al-dia.md>
+
 ## Verificación
 - <comandos o pasos de prueba>
 

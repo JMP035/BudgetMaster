@@ -27,6 +27,8 @@ Para tareas no triviales se usa el flujo **plan → ejecución** descrito en
 ## Reglas
 
 - No instalar dependencias nuevas sin aprobación explícita.
+- **Tutorial al día:** un cambio visible no está terminado hasta que el tutorial lo refleja
+  (ver `.claude/rules/tutorial-al-dia.md`). Cada plan y cada reporte de ejecución incluye una línea "Tutorial".
 - Respetar el tema de `theme.ts` y `StyleSheet.create` para estilos.
 - Todo diseño nuevo (pantallas, componentes, modales) sigue el sistema visual
   Ónix Profundo × Bronce Metálico + Liquid Glass validado en el Dashboard —
@@ -36,3 +38,4 @@ Reglas adicionales, que solo entran en contexto al tocar los archivos donde apli
 - `async-storage-via-services.md` — no usar AsyncStorage directo en `components/`, `context/`, `app/`.
 - `sms-solo-android.md` — proteger las APIs de SMS con `Platform.OS === 'android'`.
 - `liquid-glass-design.md` — todo diseño nuevo usa el sistema visual bronce/vidrio (GlassCard, GradientText, theme.ts), no estilos planos ni Alert.alert nativo.
+- `tutorial-al-dia.md` — todo cambio visible se registra también en el tutorial (`services/Tutorial.ts`), y los flujos con pasos previos (primero la cuenta o tarjeta, luego el cargo) tienen su tutorial de proceso.

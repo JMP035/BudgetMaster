@@ -20,6 +20,8 @@ Para cualquier tarea no trivial (nueva funcionalidad, refactor, bug complejo):
 3. **Ejecutar** — pasar el plan completo al agente ejecutor:
    > Usa el subagente `ejecutor` para implementar este plan: <plan>.
 4. **Verificar** — confirmar que `npx tsc --noEmit` pasa y probar la app con `npx expo start`.
+5. **Tutorial** — confirmar que el cambio quedó reflejado en `services/Tutorial.ts` (ver
+   `.claude/rules/tutorial-al-dia.md`). Un cambio visible sin su tutorial no se da por terminado.
 
 Para cambios triviales (un typo, un color, un texto) no hace falta el flujo:
 se editan directamente.
