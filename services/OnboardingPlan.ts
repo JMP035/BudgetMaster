@@ -10,6 +10,7 @@ import type {
 import { dueDateInPeriod, periodFor } from './FixedCycle';
 import type { FixedCycleConfig } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
+import { suggestInstallmentCount } from './InstallmentMath';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -555,7 +556,7 @@ export function buildOnboardingCommit(
       name: d.name.trim(),
       totalAmount: total || monthly * 12,
       monthlyPayment: monthly,
-      totalInstallments: total > 0 ? Math.ceil(total / monthly) : 12,
+      totalInstallments: total > 0 ? suggestInstallmentCount(total, monthly) : 12,
       paidInstallments: 0,
       startDate: ctx.nowIso,
       currency: d.currency as Currency,

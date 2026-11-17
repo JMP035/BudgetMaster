@@ -1030,7 +1030,7 @@ export default function AccountsScreen({
         />
       )}
       {showInstModal && (
-        <InstallmentModal accounts={accounts} existing={editingInst} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
+        <InstallmentModal accounts={accounts} existing={editingInst} customCategories={settings.customCategories} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
       )}
       {showTransfer && accounts.filter(a => a.isActive && a.type !== 'credit').length >= 2 && (
         <TransferModal accounts={accounts.filter(a => a.isActive && a.type !== 'credit')} settings={settings} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />

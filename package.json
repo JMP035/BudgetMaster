@@ -12,6 +12,7 @@
     "test:sms-transfers": "sucrase-node scripts/sms-transfers.test.ts",
     "test:budget-breakdown": "sucrase-node scripts/budget-breakdown.test.ts",
     "test:onboarding": "sucrase-node scripts/onboarding.test.ts",
+    "test:installments": "sucrase-node scripts/installments.test.ts",
     "test:assistant": "sucrase-node scripts/assistant-nlu.test.ts",
     "test:assistant-amount": "sucrase-node scripts/assistant-amount.test.ts",
     "test:assistant-date": "sucrase-node scripts/assistant-date.test.ts",

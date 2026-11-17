@@ -826,6 +826,7 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
             {convertingTx && (
                 <InstallmentModal
                     accounts={accounts}
+                    customCategories={settings.customCategories}
                     prefill={{ name: convertingTx.description, total: convertingTx.amount.toString(), currency: convertingTx.currency }}
                     onSave={(item) => { onConvertToInstallment(item, convertingTx.id); setConvertingTx(null); }}
                     onClose={() => setConvertingTx(null)}

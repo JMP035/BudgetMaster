@@ -1,14 +1,15 @@
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View
 } from "react-native";
 import {
-  Account, CreditInstallment, Currency,
+  Account, CreditInstallment, Currency, CustomCategory,
   formatDateOnly, parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
-import { EXPENSE_CATEGORIES } from "../categories";
+import { getAllExpenseCategories } from "../categories";
+import { suggestInstallmentCount } from "../services/InstallmentMath";
 import { C } from "../theme";
 import { GlassButton } from "./GlassButton";
 import { GlassSheet } from "./GlassSheet";
@@ -23,9 +24,12 @@ interface Props {
   onClose: () => void;
   existing?: CreditInstallment;
   prefill?: { name?: string; total?: string; currency?: Currency };
+  /** Categorías creadas por el usuario (settings.customCategories): se muestran junto a las predefinidas. */
+  customCategories?: CustomCategory[];
 }
 
-export default function InstallmentModal({ accounts, onSave, onClose, existing, prefill }: Props) {
+export default function InstallmentModal({ accounts, onSave, onClose, existing, prefill, customCategories }: Props) {
+  const categories = getAllExpenseCategories(customCategories);
   const creditAccounts = accounts.filter(a => a.type === 'credit' && a.isActive);
   const [accountId, setAccountId] = useState(existing?.accountId || creditAccounts[0]?.id || '');
   const [name, setName] = useState(existing?.name || prefill?.name || '');
@@ -45,11 +49,13 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
   // Cada cambio en un campo limpia el aviso de error
   const ch = (set: (v: string) => void) => (v: string) => { set(v); setError(''); };
 
-  // Auto-calcular cuotas al cambiar total/mensual
+  // Auto-calcular cuotas al cambiar total/mensual. Al editar una visacuota existente no se recalcula
+  // al abrir: se respeta el número de cuotas guardado hasta que la persona cambie el total o la cuota.
+  const skipAutoCalc = useRef(!!existing);
   React.useEffect(() => {
-    const t = parseAmount(total);
-    const m = parseAmount(monthly);
-    if (t > 0 && m > 0) setInstallments(Math.ceil(t / m).toString());
+    if (skipAutoCalc.current) { skipAutoCalc.current = false; return; }
+    const n = suggestInstallmentCount(parseAmount(total), parseAmount(monthly));
+    if (n > 0) setInstallments(n.toString());
   }, [total, monthly]);
 
   const handleSave = () => {
@@ -172,7 +178,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
           <Text style={md.lbl}>CATEGORÍA</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              {EXPENSE_CATEGORIES.slice(0, 10).map(cat => (
+              {categories.map(cat => (
                 <TouchableOpacity key={cat.id} style={[md.typeChip, category === cat.id && { borderColor: cat.color, backgroundColor: cat.color + '22' }]} onPress={() => setCategory(cat.id)}>
                   <Ionicons name={cat.icon} size={14} color={category === cat.id ? cat.color : C.textSub} />
                   <Text style={[md.typeChipTxt, category === cat.id && { color: cat.color }]}>{cat.label}</Text>
