@@ -183,12 +183,20 @@ export default function OnboardingScreen({ onComplete }: Props) {
 
     // ── Teclado: scroll al campo enfocado (patrón de SettingsScreen) ──
     const scrollRef = useRef<ScrollView>(null);
+    const scrollYRef = useRef(0);
+    const [viewH, setViewH] = useState(0);
     const [focusedY, setFocusedY] = useState<number | null>(null);
     useEffect(() => {
-        if (kb > 0 && focusedY !== null) {
-            scrollRef.current?.scrollTo({ y: Math.max(focusedY - 16, 0), animated: true });
+        if (kb <= 0 || focusedY === null || viewH <= 0) return;
+        // Solo se desplaza si el campo no se ve completo. Si ya cabe, no se mueve nada:
+        // antes siempre subía el contenido y el título del paso quedaba fuera de pantalla.
+        const FIELD_H = 96;
+        const top = scrollYRef.current;
+        const hidden = focusedY < top || focusedY + FIELD_H > top + viewH;
+        if (hidden) {
+            scrollRef.current?.scrollTo({ y: Math.max(focusedY - 24, 0), animated: true });
         }
-    }, [kb, focusedY]);
+    }, [kb, focusedY, viewH]);
 
     const fieldCtx = useMemo<FieldCtx>(() => {
         // posición del bloque dentro del contenido del ScrollView
@@ -378,9 +386,13 @@ export default function OnboardingScreen({ onComplete }: Props) {
                                 keyboardShouldPersistTaps="handled"
                                 keyboardDismissMode="on-drag"
                                 showsVerticalScrollIndicator={false}
+                                onLayout={e => setViewH(e.nativeEvent.layout.height)}
+                                onScroll={e => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
+                                scrollEventThrottle={16}
                             >
                                 {body}
-                                <View style={{ height: 120 + kb }} />
+                                {/* El KeyboardAvoidingView de arriba ya sube todo con el teclado: aquí no se suma kb otra vez. */}
+                                <View style={{ height: compact ? 24 : 120 }} />
                             </ScrollView>
                         </FieldContext.Provider>
                     </AnimatedCard>
