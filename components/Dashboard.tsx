@@ -856,7 +856,7 @@ export default function DashboardScreen({
                     <View style={s.logoBox}>
                         <Ionicons name="wallet-outline" size={26} color={C.onPrimary} />
                     </View>
-                    <View style={{ flex: 1 }}>
+                    <View style={{ flex: 1, minWidth: 110 }}>
                         <Text style={s.greeting} numberOfLines={1}>Hola, {settings.userName}</Text>
                         <Text style={s.month}>{period.label.toUpperCase()}</Text>
                         <Text style={s.periodProgress}>
@@ -865,23 +865,12 @@ export default function DashboardScreen({
                     </View>
                     <HelpButton tutorialId="tutorial_inicio" />
                 </View>
-                <View style={{ flexDirection: "row", gap: 8 }}>
+                <View style={{ flexDirection: "row", gap: 8, flexShrink: 0 }}>
                     {daysLeft > 0 && settings.paymentCycle !== "irregular" && (
                         <View style={[s.daysBadge, { borderColor: daysLeft <= 3 ? C.danger + "66" : C.cardBorder }]}>
                             <Ionicons name="time-outline" size={12} color={daysLeft <= 3 ? C.danger : C.textMuted} />
                             <Text style={[s.daysBadgeTxt, { color: daysLeft <= 3 ? C.danger : C.textMuted }]}>{daysLeft}d</Text>
                         </View>
-                    )}
-                    {smsOn && inboxCount > 0 && (
-                        <TouchableOpacity
-                            onPress={() => setShowInbox(true)}
-                            style={s.inboxChip}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${inboxCount} mensajes sin clasificar. Abrir buzón`}
-                        >
-                            <Ionicons name="file-tray-outline" size={13} color={C.warning} />
-                            <Text style={s.inboxChipTxt} numberOfLines={1}>{inboxCount} sin clasificar</Text>
-                        </TouchableOpacity>
                     )}
                     {smsOn && (
                         <View ref={syncRef} collapsable={false}>
@@ -913,6 +902,21 @@ export default function DashboardScreen({
                     )}
                 </View>
             </View>
+
+            {/* MENSAJES SIN CLASIFICAR: fila propia para que no le quite ancho al saludo */}
+            {smsOn && inboxCount > 0 && (
+                <View style={s.inboxRow}>
+                    <TouchableOpacity
+                        onPress={() => setShowInbox(true)}
+                        style={s.inboxChip}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${inboxCount} mensajes sin clasificar. Abrir buzón`}
+                    >
+                        <Ionicons name="file-tray-outline" size={13} color={C.warning} />
+                        <Text style={s.inboxChipTxt} numberOfLines={1}>{inboxCount} sin clasificar</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* AVISO DE SINCRONIZACIÓN AUTOMÁTICA DE SMS */}
             {smsOn && autoNotice && (
@@ -1138,6 +1142,7 @@ const s = StyleSheet.create({
     month: { color: C.textPrimary, fontSize: 11, marginTop: 2, letterSpacing: 1.5, fontWeight: "700" },
     daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.glassFill },
     daysBadgeTxt: { fontSize: 11, fontWeight: "700" },
+    inboxRow: { flexDirection: "row", marginTop: -8, marginBottom: 14 },
     inboxChip: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: C.warning + "66", backgroundColor: C.glassFill },
     inboxChipTxt: { color: C.warning, fontSize: 11, fontWeight: "700", flexShrink: 1 },
     syncBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
