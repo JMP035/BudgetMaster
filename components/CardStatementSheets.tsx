@@ -226,7 +226,7 @@ export function CardPaymentSheet({ card, statement, fromChoices, onSave, onClose
                     </TouchableOpacity>
                 ))}
             </View>
-            <Text style={st.hint}>El pago no cambia el saldo de tus cuentas: solo queda registrado como transferencia a la tarjeta.</Text>
+            <Text style={st.hint}>El pago resta de la cuenta con la que pagas, si lleva saldo, y queda registrado como transferencia a la tarjeta: no es un gasto nuevo.</Text>
             <View style={{ height: 8 }} />
         </GlassSheet>
     );

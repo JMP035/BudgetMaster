@@ -9,6 +9,7 @@
 import type { Currency, CreditInstallment, UserSettings } from '../storage';
 import type { AssistantContext } from './types';
 import { formatDateOnly } from '../DateAmount';
+import { isBalanceTracked } from '../Balances';
 import { formatMoney } from '../format';
 import { currencyOf, formatPeriodRange, formatShortDay } from '../BudgetBreakdown';
 import { fixedCycleConfig, fixedDueInfo, isPaidForPeriod, storedToLocalDate } from '../FixedCycle';
@@ -205,7 +206,7 @@ export function buildCompactContext(ctx: AssistantContext, userName: string, ext
 
   // ── Patrimonio total por moneda (sin tarjetas ni cuentas una por una) ──
   const assets = sumByCurrency(
-    ctx.accounts.filter(a => a.isActive && a.type !== 'credit').map(a => ({ amount: a.balance, currency: (a.currency || 'Q') as Currency })),
+    ctx.accounts.filter(a => a.isActive && a.type !== 'credit' && isBalanceTracked(a)).map(a => ({ amount: a.balance, currency: (a.currency || 'Q') as Currency })),
   );
   if (assets.length) lines.push(`Patrimonio en cuentas (sin tarjetas de crédito), por moneda: ${joinTotals(assets)}.`);
 

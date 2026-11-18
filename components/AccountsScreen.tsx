@@ -15,6 +15,7 @@ import {
 } from "../services/storage";
 import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
 import { detectBankName } from "../services/BankSmsParser";
+import { balanceModeOf } from "../services/Balances";
 import { nextInstallmentCut } from "../services/InstallmentSchedule";
 import { statementFor } from "../services/CardStatement";
 import type { StatementStatus } from "../services/CardStatement";
@@ -189,7 +190,10 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
       smsLinks: smsLinks.length > 0 ? smsLinks : undefined,
       smsLinkedAt: linksChanged ? new Date().toISOString() : existing?.smsLinkedAt,
       smsAutoBalance: existing?.smsAutoBalance,
+      // Saldo opcional (ver services/Balances.ts): se conserva lo que la cuenta ya tenía.
+      balanceMode: existing?.balanceMode ?? (type === 'credit' ? 'none' as const : 'manual' as const),
       balanceAnchorAt: existing?.balanceAnchorAt,
+      balanceAnchorAmount: existing?.balanceAnchorAmount,
     };
 
     if (type === 'credit') {
@@ -469,7 +473,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
           )}
 
           <Text style={[md.hint, { marginTop: 10 }]}>
-            Vincular no cambia saldos pasados: por ahora solo organiza tus movimientos por cuenta.
+            Vincular organiza tus movimientos por cuenta; no cambia un saldo que escribiste a mano.
           </Text>
           {type === 'credit' && (
             <Text style={md.hint}>
@@ -528,7 +532,9 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
     if (fxBlocked) { setNotice({ variant: 'warning', text: fxBlockedText }); return; }
     const amt = parseAmount(amount);
     if (isNaN(amt) || amt <= 0) { setNotice({ variant: 'error', text: 'Ingresa un monto válido.' }); return; }
-    if (!fromAcc || fromAcc.balance < amt) { setNotice({ variant: 'error', text: 'Saldo insuficiente en la cuenta origen.' }); return; }
+    if (!fromAcc) { setNotice({ variant: 'error', text: 'Elige la cuenta origen.' }); return; }
+    // Una cuenta sin saldo (modo 'none') no se valida: la app no sabe cuánto tiene.
+    if (balanceModeOf(fromAcc) !== 'none' && fromAcc.balance < amt) { setNotice({ variant: 'error', text: 'Saldo insuficiente en la cuenta origen.' }); return; }
     onSave(fromId, toId, amt);
     onClose();
   };
@@ -543,8 +549,10 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
       >
         <View style={[md.accDot, { backgroundColor: acc.color }]} />
         <Text style={md.accSelectName} numberOfLines={1}>{acc.name}</Text>
-        <Money amount={acc.balance} currency={acc.currency} size="sm" gradient={false} align="right" />
-        {selected && <Ionicons name="checkmark-circle" size={18} color={acc.color} />}
+        {balanceModeOf(acc) === 'none'
+          ? <Text style={md.noBal}>Sin saldo</Text>
+          : <Money amount={acc.balance} currency={acc.currency} size="sm" gradient={false} align="right" />}
+        {selected &&<Ionicons name="checkmark-circle" size={18} color={acc.color} />}
       </GlassCard>
     </TouchableOpacity>
   );
@@ -769,6 +777,8 @@ export default function AccountsScreen({
   ) => {
     try {
       setTransactions(await StorageService.registerCardPayment({ cardId, cutKey, ...p }));
+      // El pago resta de la cuenta pagadora si lleva saldo manual.
+      setAccounts(await StorageService.getAccounts());
     } catch (e) {
       console.warn('[AccountsScreen] No se pudo registrar el pago:', e);
       void dialog.alert({ variant: 'error', title: 'No se pudo registrar', message: 'No se pudo registrar el pago. Intenta de nuevo.' });
@@ -783,27 +793,16 @@ export default function AccountsScreen({
     if (!hasReliableConversion(fromAcc.currency, toAcc.currency)) return;
 
     const amountToCredit = convertAmount(amount, fromAcc.currency, toAcc.currency, settings.exchangeRate);
-    const accs = await StorageService.transferBetweenAccounts(fromId, toId, -amount, amountToCredit);
-    setAccounts(accs);
-
-    // Registrar como transacción de transferencia
     const description = fromAcc.currency !== toAcc.currency
       ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${formatMoney(amount, fromAcc.currency)} → ${formatMoney(amountToCredit, toAcc.currency)})`
       : `Transferencia: ${fromAcc.name} → ${toAcc.name}`;
-    const tx: Transaction = {
-      id: `transfer_${Date.now()}`,
-      amount,
+    // Un solo movimiento type 'transfer' (neutro); el saldo de las cuentas con saldo manual se ajusta en storage.
+    const res = await StorageService.transferBetweenAccounts(fromId, toId, amount, {
       description,
-      category: 'transfer',
-      date: new Date().toISOString(),
-      type: 'transfer',
-      source: 'manual',
-      currency: fromAcc.currency,
-      fromAccountId: fromId,
-      toAccountId: toId,
-    };
-    const txUpdated = await StorageService.addTransaction(tx);
-    setTransactions(txUpdated);
+      ...(fromAcc.currency !== toAcc.currency ? { toAmount: amountToCredit } : {}),
+    });
+    setAccounts(res.accounts);
+    setTransactions(res.transactions);
   };
 
   return (
@@ -998,6 +997,8 @@ export default function AccountsScreen({
                           ) : (
                             <Text style={s.noInst}>Sin cuotas activas</Text>
                           )
+                        ) : balanceModeOf(acc) === 'none' ? (
+                          <Text style={s.noInst}>Sin saldo</Text>
                         ) : (
                           <Money amount={acc.balance} currency={acc.currency} size="md" tone="auto" align="right" containerStyle={s.accMoney} />
                         )}
@@ -1290,6 +1291,7 @@ const md = StyleSheet.create({
   footer: { gap: 10, paddingTop: 12 },
   lbl: { color: C.textSub, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 14 },
   hint: { color: C.textSub, fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  noBal: { color: C.textSub, fontSize: 12 },
   input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 14, color: C.text, fontSize: 15 },
   amtRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, paddingHorizontal: 14, paddingVertical: 10 },
   amtInput: { flex: 1, color: C.text, fontSize: 18, fontWeight: '700' },

@@ -5,6 +5,7 @@ import {
 } from "react-native";
 import { Account, CreditInstallment, Currency, FixedExpense, IncomeSource, StorageService, Transaction, UserSettings } from "../services/storage";
 import { matchIncome } from "../services/IncomeSources";
+import { balanceModeOf } from "../services/Balances";
 import { sanitizePayRules, ymd } from "../services/PayCalendar";
 import { storedToLocalDate } from "../services/FixedCycle";
 import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
@@ -630,7 +631,9 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                         <Text style={m.hint}>El mensaje trae: {hintLabel}</Text>
                     )}
                     <Text style={m.hint}>
-                        Los movimientos no cambian el saldo de la cuenta: por ahora la cuenta solo organiza tus movimientos.
+                        {accountId !== null && accounts.some(a => a.id === accountId && balanceModeOf(a) === "auto")
+                            ? "Esta cuenta lleva su saldo automático: el movimiento lo suma o lo resta solo."
+                            : "Este movimiento no cambia el saldo de la cuenta: aquí la cuenta solo organiza tus movimientos."}
                     </Text>
                 </View>
             )}

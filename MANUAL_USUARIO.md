@@ -59,7 +59,7 @@ Es tu centro de mando. De arriba hacia abajo:
 - **Botón de sincronización SMS** (⟳, esquina superior derecha) — lee tus SMS bancarios e importa transacciones automáticamente. Ver [sección 4](#4-sincronización-automática-por-sms-android).
 - **CFO Intelligence (briefing)** — resumen diario de tu situación: porcentaje de presupuesto usado, dinero restante, gastos fijos pendientes y una frase motivacional. Con API Key de Gemini el briefing es generado por IA con tus datos reales.
 - **Score Financiero (0–100)** — tu termómetro de disciplina. Sube si ahorrás (tasa ≥ 10–20 %), te mantenés dentro del presupuesto, pagás todos tus gastos fijos y tenés cuentas registradas. 80+ Excelente · 60+ Bueno · 40+ Regular · <40 Crítico.
-- **Patrimonio Total** — activos menos deudas. Si registraste cuentas, se calcula con sus saldos reales; si no, se estima con tus ingresos/gastos + ahorros externos. Tocá el ícono ⓘ para ver la explicación.
+- **Patrimonio Total** — activos menos deudas. El saldo es opcional: si tus cuentas llevan saldo, se calcula con esos saldos (una cuenta sin saldo no suma); si no hay ninguna que lo lleve, se estima con tus ingresos/gastos + ahorros externos. Tocá el ícono ⓘ para ver la explicación.
 - **Balance por moneda** — ingresos, gastos y neto del período en Q (y en USD si tenés movimientos en dólares).
 - **Comparativa con el período anterior** — cuánto más (rojo) o menos (verde) llevás gastado respecto al período pasado.
 - **Anillo de presupuesto** — porcentaje del presupuesto del período ya consumido. Cambia a amarillo al superar el 80 % y a rojo al excederlo.
@@ -233,7 +233,7 @@ En el detalle de cada tarjeta ves el bloque **«Estado al {corte}»**:
 
 ### Transferencias entre cuentas
 
-Botón **"Transferir"** (necesitás al menos 2 cuentas activas): elegí origen, destino y monto. El saldo se mueve entre cuentas y queda registrado como movimiento tipo *transferencia* — **no cuenta como gasto ni ingreso**.
+Botón **"Transferir"** (necesitás al menos 2 cuentas activas): elegí origen, destino y monto. Si las cuentas llevan saldo, se mueve entre ellas (en la de saldo manual se ajusta el número) y queda registrado como movimiento tipo *transferencia* — **no cuenta como gasto ni ingreso**.
 
 > ⚠️ Transferí entre cuentas de la **misma moneda**: la app no convierte Q↔USD automáticamente.
 

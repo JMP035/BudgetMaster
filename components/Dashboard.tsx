@@ -11,6 +11,7 @@ import {
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
     getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
+import { isBalanceTracked } from "../services/Balances";
 import { SmsService } from "../services/SmsService";
 import type { SmsPermissionDetail, SmsSyncMode, SyncResult } from "../services/SmsService";
 import { smsPermissionHelp } from "../services/SmsPermissionHelp";
@@ -204,6 +205,8 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
     const monthlyInst = getMonthlyInstallmentTotal(installments, settings.exchangeRate);
     const { installmentsPendingQ } = calcCreditCommitments(installments, settings.exchangeRate);
     const creditCards = active.filter(a => a.type === "credit");
+    // Sin ninguna cuenta con saldo no hay "neto" que mostrar (el saldo es opcional).
+    const anyTracked = active.some(a => a.type !== "credit" && isBalanceTracked(a));
 
     return (
         <TouchableOpacity style={s.glassOuter} onPress={onPress} activeOpacity={0.8}>
@@ -216,10 +219,12 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
             </View>
 
             <View style={s.accountsRow}>
-                <View style={s.accountsItem}>
-                    <Text style={s.accountsLbl}>NETO Q</Text>
-                    <Money amount={totalQ} currency="Q" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
-                </View>
+                {anyTracked && (
+                    <View style={s.accountsItem}>
+                        <Text style={s.accountsLbl}>NETO Q</Text>
+                        <Money amount={totalQ} currency="Q" size="md" tone="auto" decimals={0} align="center" containerStyle={s.moneyFill} />
+                    </View>
+                )}
                 {totalUSD !== 0 && (
                     <>
                         <View style={s.accountsDivider} />
@@ -287,7 +292,9 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                     <View key={acc.id} style={s.accMiniRow}>
                         <View style={[s.accMiniDot, { backgroundColor: acc.color }]} />
                         <Text style={s.accMiniName} numberOfLines={1}>{acc.name}</Text>
-                        <Money amount={acc.balance} currency={acc.currency} size="sm" tone="auto" align="right" containerStyle={s.moneyRowEnd} />
+                        {isBalanceTracked(acc)
+                            ? <Money amount={acc.balance} currency={acc.currency} size="sm" tone="auto" align="right" containerStyle={s.moneyRowEnd} />
+                            : <Text style={[s.accMiniVal, { color: C.textMuted }]}>Sin saldo</Text>}
                     </View>
                 );
             })}
@@ -828,7 +835,8 @@ export default function DashboardScreen({
     const periodDiffPct = prevExpenseQ > 0 ? Math.abs(periodDiff / prevExpenseQ) * 100 : 0;
 
     // Patrimonio total
-    const hasAccounts = accounts.filter(a => a.isActive).length > 0;
+    // El saldo es opcional: solo cuentan las cuentas que lo llevan (modo distinto de 'none'). Sin ninguna, se estima.
+    const hasAccounts = accounts.some(a => a.isActive && a.type !== "credit" && isBalanceTracked(a));
     const { totalQ: accNetQ, totalUSD: accNetUSD, totalEUR: accNetEUR, totalGBP: accNetGBP } = calcNetWorthFromAccounts(accounts.filter(a => a.isActive), settings.exchangeRate);
     const allIncQ = transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
     const allExpQ = transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);

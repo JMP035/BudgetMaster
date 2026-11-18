@@ -9,6 +9,9 @@ import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule
 import { planIncomeLinksUndo, planSmsUndo } from './SmsUndoPlan';
 import { applyCardPaymentMatch, applyCardPaymentProposal, buildCardPaymentTxs, cardPaymentProposalKey, planCardPaymentsUndo } from './CardStatement';
 import type { CardPaymentMatch } from './CardStatement';
+import { applyManualEffects, balanceModeOf, planBalanceAnchorsUndo, planSmsBalanceAnchors, withBalanceAnchor } from './Balances';
+import type { BalanceAnchorRecord } from './Balances';
+import { planAssignTransferDestination, planDismissTransferQuestion } from './TransferQuestions';
 import { planIncomeLink, sanitizeIncomeSources } from './IncomeSources';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
@@ -99,6 +102,10 @@ export interface Transaction {
   installmentNo?: number;
   /** Pago de una tarjeta: tarjeta y estado (cutKey 'AAAA-MM-DD' del corte) que cubre. Es una transferencia neutra. */
   cardPayment?: { cardId: string; cutKey: string };
+  /** Transferencia entre cuentas de distinta moneda: lo que recibió la cuenta destino (en SU moneda). */
+  toAmount?: number;
+  /** Saldo de la cuenta que trajo el SMS después de este movimiento (concilia el saldo automático). */
+  smsBalance?: { amount: number; currency: Currency };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -122,8 +129,11 @@ export interface Account {
   notes?: string;
   smsLinks?: string[];       // Claves de vínculo SMS normalizadas ('BANCO|tipo:valor')
   smsLinkedAt?: string;      // ISO: última vez que cambiaron los vínculos
-  smsAutoBalance?: boolean;  // Saldo automático con SMS (ronda R-C, hoy sin uso)
-  balanceAnchorAt?: string;  // ISO: solo cuentan los movimientos posteriores (R-C)
+  /** Cómo lleva su saldo (ver services/Balances.ts). Sin valor: 'none' en tarjetas y 'manual' en el resto. */
+  balanceMode?: 'none' | 'manual' | 'auto';
+  smsAutoBalance?: boolean;  // Saldo automático: concilia con el saldo que trae el SMS (re-ancla)
+  balanceAnchorAt?: string;  // ISO: en modo auto solo cuentan los movimientos posteriores a esta fecha
+  balanceAnchorAmount?: number; // Saldo real en balanceAnchorAt (punto de partida del saldo derivado)
   /** Tarjeta: cuenta con la que se paga (de ahí sale el dinero). */
   payFromAccountId?: string;
   /** Tarjeta: montos reales de los últimos estados de cuenta (los últimos 6). */
@@ -333,6 +343,8 @@ export interface SmsBatchRecord {
   incomeLinks?: Array<{ txId: string; prevCategory: string; anchorKey?: string }>;
   /** Pagos de tarjeta que el lote emparejó solo (para deshacer: la salida vuelve a su tipo y el pago pierde su estado). */
   cardPayments?: Array<{ txId: string; cardId: string; cutKey: string; outId?: string; outOnly?: boolean }>;
+  /** Cuentas de saldo automático que el lote re-ancló con el saldo del SMS (para deshacer: vuelve el ancla previa). */
+  balanceAnchors?: BalanceAnchorRecord[];
 }
 
 export interface SmsLinkSeen { key: string; count: number; lastAt: string; }
@@ -589,6 +601,7 @@ export function calcFinancialScore(
  * activos ni se restan como pasivo aquí. Sus saldos y el pendiente de
  * visacuotas se reportan aparte como "compromisos de crédito"
  * (ver calcCreditCommitments) para no mezclar patrimonio con deuda de tarjeta.
+ * Tampoco suman las cuentas que no llevan saldo (modo 'none'): el saldo es opcional.
  */
 export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: number): { totalQ: number; totalUSD: number; totalEUR: number; totalGBP: number } {
   let totalQ = 0;
@@ -599,6 +612,7 @@ export function calcNetWorthFromAccounts(accounts: Account[], exchangeRate: numb
   for (const acc of accounts) {
     if (!acc.isActive) continue;
     if (acc.type === 'credit') continue;
+    if (balanceModeOf(acc) === 'none') continue;
     const amount = acc.balance;
 
     if (acc.currency === 'Q') totalQ += amount;
@@ -1213,6 +1227,11 @@ export const StorageService = {
       await this.saveTransactions(cardUndo ? cardUndo.txs : (incomeUndo ? incomeUndo.txs : remaining));
     }
     if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
+    // Cuentas de saldo automático que el lote re-ancló con el saldo del SMS: vuelve el ancla de antes.
+    if (batch.balanceAnchors && batch.balanceAnchors.length > 0) {
+      const balUndo = planBalanceAnchorsUndo(batch.balanceAnchors, await this.getAccounts());
+      if (balUndo.changed) await this.saveAccounts(balUndo.accounts);
+    }
     if (plan.removeInsts.length > 0) {
       const instIds = new Set(plan.removeInsts.map(i => i.id));
       await this.saveCreditInstallments(insts.filter(i => !instIds.has(i.id)));
@@ -1623,8 +1642,10 @@ export const StorageService = {
 
   /**
    * Registra el pago de una tarjeta: un movimiento por moneda (type 'transfer', category 'transfer',
-   * toAccountId = la tarjeta, con `cardPayment`). Es una transferencia neutra: no suma al gasto del período
-   * ni cambia saldos. Devuelve la lista completa de movimientos.
+   * toAccountId = la tarjeta, con `cardPayment`). Es una transferencia neutra: no suma al gasto del período.
+   * El pago resta de la cuenta con la que se paga: en modo 'manual' se descuenta aquí de su saldo guardado; en
+   * 'auto' lo hace el saldo derivado (Balances.accountEffect); en 'none' no hay saldo. La tarjeta nunca cambia.
+   * Devuelve la lista completa de movimientos.
    */
   async registerCardPayment(p: {
     cardId: string; cutKey: string; amounts: { Q?: number; USD?: number }; fromAccountId?: string; date: Date;
@@ -1638,6 +1659,8 @@ export const StorageService = {
     if (news.length === 0) return txs;
     const next = [...news, ...txs];
     await this.saveTransactions(next);
+    const adjusted = applyManualEffects(accounts, news);
+    if (adjusted.some((a, i) => a !== accounts[i])) await this.saveAccounts(adjusted);
     return next;
   },
 
@@ -1888,6 +1911,21 @@ export const StorageService = {
             if (r.changed) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
           },
         },
+        {
+          // Saldos opcionales: las tarjetas no llevan saldo ('none') y el resto sigue como hoy ('manual'); nada
+          // cambia para la persona salvo que elija el saldo automático.
+          id: 'balance_modes_v1',
+          run: async () => {
+            const accounts = await this.getAccounts();
+            let changed = false;
+            const next = accounts.map(a => {
+              if (a.balanceMode) return a;
+              changed = true;
+              return { ...a, balanceMode: a.type === 'credit' ? 'none' as const : 'manual' as const };
+            });
+            if (changed) await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(next));
+          },
+        },
       ];
 
       for (const step of steps) {
@@ -2054,19 +2092,83 @@ export const StorageService = {
     await this.saveAccounts(updated);
   },
 
-  /** Transferencia en una sola lectura+escritura para no dejar saldos a medias */
-  async transferBetweenAccounts(fromId: string, toId: string, fromDelta: number, toDelta: number): Promise<Account[]> {
+  /**
+   * «Ajustar al saldo real»: fija el saldo de la cuenta en `atIso` (ancla). Los movimientos posteriores son los
+   * únicos que cuentan; en modo auto el saldo queda derivado (ancla + movimientos), en manual es el número fijado.
+   */
+  async setBalanceAnchor(accountId: string, amount: number, atIso: string): Promise<Account[]> {
     const all = await this.getAccounts();
-    const fromAcc = all.find(a => a.id === fromId);
-    const toAcc = all.find(a => a.id === toId);
-    if (fromId === toId || !fromAcc || !toAcc) return all;
-    const updated = all.map(a => {
-      if (a.id === fromId) return { ...a, balance: a.balance + fromDelta };
-      if (a.id === toId) return { ...a, balance: a.balance + toDelta };
-      return a;
-    });
+    if (!isFinite(amount) || isNaN(Date.parse(atIso)) || !all.some(a => a.id === accountId)) return all;
+    const updated = all.map(a => (a.id === accountId ? withBalanceAnchor(a, amount, atIso) : a));
     await this.saveAccounts(updated);
     return updated;
+  },
+
+  /**
+   * Transferencia entre cuentas propias: crea UN movimiento type 'transfer' (neutro para las estadísticas) con
+   * fromAccountId / toAccountId / toAmount (lo que recibe el destino si es de otra moneda). Sin validar saldo
+   * (el saldo es opcional: la UI avisa solo si la cuenta origen lo lleva). En modo 'manual' ajusta el saldo
+   * guardado a mano; en 'auto' el movimiento ya cuenta en el saldo derivado; en 'none' no hay saldo.
+   */
+  async transferBetweenAccounts(
+    fromId: string, toId: string, amount: number,
+    opts?: { toAmount?: number; date?: Date; description?: string },
+  ): Promise<{ accounts: Account[]; transactions: Transaction[] }> {
+    const [accounts, txs] = await Promise.all([this.getAccounts(), this.getTransactions()]);
+    const fromAcc = accounts.find(a => a.id === fromId);
+    const toAcc = accounts.find(a => a.id === toId);
+    if (fromId === toId || !fromAcc || !toAcc || !isFinite(amount) || amount <= 0) return { accounts, transactions: txs };
+    const crossCurrency = fromAcc.currency !== toAcc.currency;
+    const toAmount = crossCurrency && typeof opts?.toAmount === 'number' && isFinite(opts.toAmount) && opts.toAmount > 0
+      ? Math.round(opts.toAmount * 100) / 100 : undefined;
+    const tx: Transaction = {
+      id: `transfer_${Date.now()}`,
+      amount,
+      description: opts?.description ?? `Transferencia: ${fromAcc.name} → ${toAcc.name}`,
+      category: 'transfer',
+      date: (opts?.date ?? new Date()).toISOString(),
+      type: 'transfer',
+      source: 'manual',
+      currency: fromAcc.currency,
+      fromAccountId: fromId,
+      toAccountId: toId,
+      ...(toAmount !== undefined ? { toAmount } : {}),
+    };
+    const nextTxs = [tx, ...txs];
+    await this.saveTransactions(nextTxs);
+    const adjusted = applyManualEffects(accounts, [tx]);
+    if (adjusted.some((a, i) => a !== accounts[i])) await this.saveAccounts(adjusted);
+    return { accounts: adjusted, transactions: nextTxs };
+  },
+
+  /**
+   * Concilia con el saldo del SMS: toda cuenta de modo auto con `smsAutoBalance` se re-ancla con el SMS más
+   * reciente que traiga saldo. Devuelve un registro por cuenta cambiada (la sincronización lo guarda en el lote
+   * para que «Deshacer» devuelva el ancla anterior).
+   */
+  async syncSmsBalances(): Promise<BalanceAnchorRecord[]> {
+    const [accounts, txs] = await Promise.all([this.getAccounts(), this.getTransactions()]);
+    const plan = planSmsBalanceAnchors(accounts, txs);
+    if (plan.records.length > 0) await this.saveAccounts(plan.accounts);
+    return plan.records;
+  },
+
+  /** «Esta transferencia fue a (o vino de) esta cuenta»: el movimiento pasa a ser una transferencia entre cuentas propias. */
+  async assignTransferDestination(txId: string, accountId: string, toAmount?: number): Promise<Transaction[]> {
+    const [txs, accounts] = await Promise.all([this.getTransactions(), this.getAccounts()]);
+    const tx = txs.find(t => t.id === txId);
+    if (!tx) return txs;
+    const planned = planAssignTransferDestination(tx, accountId, accounts, { toAmount });
+    if (!planned) return txs;
+    const next = txs.map(t => (t.id === txId ? planned : t));
+    // Los SMS no cambian el saldo guardado de una cuenta manual; las de modo auto lo derivan del movimiento.
+    await this.saveTransactions(next);
+    return next;
+  },
+
+  /** «A otra persona» / «Ingreso externo»: el movimiento queda como está y la pregunta no vuelve. */
+  async dismissTransferQuestion(txId: string): Promise<void> {
+    await this.addDupIgnored([planDismissTransferQuestion(txId)]);
   },
 
   // ── Visacuotas / Cuotas ───────────────────────────────────

@@ -127,7 +127,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_4', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'diamond-outline', padding: 8,
                 title: 'Patrimonio total',
-                description: 'Suma el saldo de tus cuentas y tus ahorros externos, y resta lo que todavía debés en visacuotas. Los dólares se convierten a quetzales con el tipo de cambio de Ajustes. Tocá el ícono de información de la tarjeta para ver el detalle del cálculo.',
+                description: 'Suma el saldo de las cuentas que llevan saldo y tus ahorros externos, y resta lo que todavía debés en visacuotas. Los dólares se convierten a quetzales con el tipo de cambio de Ajustes. Tocá el ícono de información de la tarjeta para ver el detalle del cálculo.',
             },
             {
                 id: 'ini_5', elementId: 'dash_balance_q', screen: 'dashboard', position: 'top', icon: 'cash-outline', padding: 8,
@@ -559,7 +559,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_1', elementId: 'accounts_header', screen: 'accounts', position: 'bottom', icon: 'business-outline', padding: 8,
                 title: 'Tu dinero real',
-                description: 'Registrá aquí efectivo, cuentas bancarias, tarjetas de crédito, ahorros e inversiones. Con estos saldos la app calcula tu patrimonio exacto. Este módulo se abre desde el widget Cuentas del Inicio.',
+                description: 'Registrá aquí efectivo, cuentas bancarias, tarjetas de crédito, ahorros e inversiones. El saldo es opcional: en las cuentas que lo llevan la app calcula tu patrimonio; si una cuenta no lleva saldo, solo registra tus gastos. Este módulo se abre desde el widget Cuentas del Inicio.',
             },
             {
                 id: 'acc_2', elementId: 'accounts_summary', screen: 'accounts', position: 'bottom', icon: 'pie-chart-outline', padding: 8,
@@ -569,7 +569,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_3', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y, en su detalle, el «Estado al corte» (lo que debés pagar, en quetzales y dólares por separado, con la fecha límite de pago y si está pendiente, parcial, pagado o vencido) y el «Ciclo abierto»: lo que llevás gastado desde el último corte. El ciclo abierto se ve también sin SMS: la tarjeta funciona con gastos anotados a mano. Cada moneda se paga en su moneda.',
+                description: 'Cada cuenta muestra su tipo, banco y saldo (si lo lleva). Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y, en su detalle, el «Estado al corte» (lo que debés pagar, en quetzales y dólares por separado, con la fecha límite de pago y si está pendiente, parcial, pagado o vencido) y el «Ciclo abierto»: lo que llevás gastado desde el último corte. El ciclo abierto se ve también sin SMS: la tarjeta funciona con gastos anotados a mano. Cada moneda se paga en su moneda.',
                 emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
             },
             {
@@ -580,7 +580,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
                 title: 'Transferir entre cuentas',
-                description: 'Mové dinero entre tus cuentas, por ejemplo de BAC a efectivo. Si las monedas son distintas se convierte con el tipo de cambio actual, y la transferencia queda registrada en Movimientos. Necesitás al menos dos cuentas que no sean tarjeta de crédito.',
+                description: 'Mové dinero entre tus cuentas, por ejemplo de BAC a efectivo. No cuenta como gasto ni ingreso, y si una cuenta lleva saldo se ajusta. Si las monedas son distintas se convierte con el tipo de cambio actual, y la transferencia queda registrada en Movimientos. Necesitás al menos dos cuentas que no sean tarjeta de crédito.',
             },
             {
                 id: 'acc_6', elementId: 'accounts_tabs', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'bottom', icon: 'layers-outline', padding: 8,

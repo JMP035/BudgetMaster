@@ -14,6 +14,7 @@ import {
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
 import { isSmsFeatureOn } from "../services/features";
+import { withDerivedBalances } from "../services/Balances";
 import { maybeAutoSync } from "../services/SmsAutoSync";
 import { onSettingsChanged } from "../services/SettingsEvents";
 import { hasSomethingToShow } from "../services/SmsService";
@@ -402,6 +403,9 @@ function AppContent() {
     setShowAI(false);
   }, []);
 
+  // Cuentas tal como se muestran: las de saldo automático traen el saldo derivado de los movimientos (nunca se guarda).
+  const accountsView = useMemo(() => withDerivedBalances(accounts, txs), [accounts, txs]);
+
   // Requisitos de los pasos del tutorial: qué existe ya en los datos del usuario.
   const smsOnNow = isSmsFeatureOn(settings);
   const requirementFacts = useMemo(() => buildRequirementFacts({
@@ -455,7 +459,7 @@ function AppContent() {
               fixedExpenses={fixedExpenses}
               categoryBudgets={categoryBudgets}
               savingsGoals={savingsGoals}
-              accounts={accounts}
+              accounts={accountsView}
               creditInstallments={creditInstallments}
               onRefresh={hRefresh}
               refreshing={refreshing}
@@ -479,7 +483,7 @@ function AppContent() {
               onDelete={hDelete}
               onUpdate={hUpdate}
               onReplaceAll={setTxs}
-              accounts={accounts}
+              accounts={accountsView}
               onConvertToInstallment={hConvertToInstallment}
               fixedExpenses={fixedExpenses}
               onFixedExpensesChanged={setFixedExpenses}
@@ -489,7 +493,7 @@ function AppContent() {
             <AddScreen
               onAdd={hAdd}
               settings={settings}
-              accounts={accounts}
+              accounts={accountsView}
             />
           )}
           {tab === "budget" && !showAI && (
@@ -532,7 +536,7 @@ function AppContent() {
             <AIAdvisor
               transactions={txs}
               settings={settings}
-              accounts={accounts}
+              accounts={accountsView}
               fixedExpenses={fixedExpenses}
               categoryBudgets={categoryBudgets}
               savingsGoals={savingsGoals}
@@ -556,7 +560,7 @@ function AppContent() {
         {/* CUENTAS */}
         {showAccounts && (
           <AccountsScreen
-            accounts={accounts}
+            accounts={accountsView}
             setAccounts={setAccounts}
             creditInstallments={creditInstallments}
             setCreditInstallments={setCreditInstallments}

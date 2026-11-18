@@ -5,6 +5,7 @@ import {
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
     getDaysUntilNextPayment, parseAmount, parseDateOnly, storedDateToDateOnly,
 } from './storage';
+import { isBalanceTracked } from './Balances';
 import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
 import { fixedCycleConfig, fixedDueInfo } from './FixedCycle';
@@ -667,7 +668,10 @@ export function getLocalResponse(
                 const accMonthly = getAccountMonthlyInstallmentTotal(creditInstallments, a.id, m.settings.exchangeRate, 'Q');
                 return `${a.name}: ${accMonthly > 0 ? `${fmtQ(accMonthly)}/mes en cuotas` : 'sin cuotas activas'}`;
             });
-            const parts = [...nonCredit.map(a => `${a.name}: ${fmtQ(a.balance)}`), ...creditPart];
+            const parts = [
+                ...nonCredit.map(a => (isBalanceTracked(a) ? `${a.name}: ${fmtQ(a.balance)}` : `${a.name}: sin saldo registrado`)),
+                ...creditPart,
+            ];
             const variants9 = [
                 () => `Tus cuentas suman ${fmtQ(m.totalBalance)} en total (sin incluir tarjetas de crédito, que no tienen saldo propio). ${parts.join(', ')}.`,
                 () => `Patrimonio total en cuentas: ${fmtQ(m.totalBalance)}. Detalle: ${parts.join(', ')}.`,

@@ -224,6 +224,25 @@ export function extractMoneyTokens(raw: string): MoneyToken[] {
   return out;
 }
 
+/**
+ * El saldo que el mensaje dice tener la cuenta tras el movimiento: el primer monto marcado como balance, de la
+ * misma moneda que el monto principal, cuyo texto previo (hasta el monto anterior) dice «saldo». Solo informa:
+ * nunca cambia qué monto es el principal. null si el mensaje no trae saldo.
+ */
+export function extractBalanceAfter(
+  raw: string, tokens: MoneyToken[], primary: MoneyToken | null,
+): { amount: number; currency: Currency } | null {
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t.isBalance) continue;
+    if (primary && t.currency !== primary.currency) continue;
+    let start = Math.max(0, t.index - 45);
+    if (i > 0 && tokens[i - 1].index >= start) start = tokens[i - 1].index;
+    if (/\bsaldo\b/.test(flatOf(raw.slice(start, t.index)))) return { amount: t.value, currency: t.currency };
+  }
+  return null;
+}
+
 /** El primer monto que no sea saldo/límite/mínimo. null si todos lo son. */
 export function pickPrimaryAmount(tokens: MoneyToken[], _flat?: string): MoneyToken | null {
   for (const t of tokens) {
@@ -404,6 +423,8 @@ export interface SmsClassification {
   bankRef: string | null;
   cardLast4: string | null;
   fingerprint: string;
+  /** Saldo de la cuenta tras el movimiento, si el SMS lo trae («saldo ...»); concilia el saldo automático. */
+  balanceAfter: { amount: number; currency: Currency } | null;
 }
 
 export interface SmsInput { body: string; address?: string; receivedAt?: number }
@@ -560,6 +581,7 @@ export function classifyBankSms(input: SmsInput): SmsClassification {
   const base = {
     bank, amount, currency, merchant: info.merchant, location: info.location,
     occurredAt: td.date, dateSource: td.source, bankRef, cardLast4, fingerprint,
+    balanceAfter: extractBalanceAfter(raw, tokens, primary),
   };
   const reject = (kind: SmsKind, reason: string): SmsClassification => ({
     ...base, accepted: false, kind, reason, txType: null, category: null,
@@ -814,6 +836,7 @@ export function buildRecordFromClassification(
   if (c.location) transaction.location = c.location;
   if (c.merchant) transaction.merchant = c.merchant;
   if (c.bankRef) transaction.bankRef = c.bankRef;
+  if (c.balanceAfter) transaction.smsBalance = { amount: c.balanceAfter.amount, currency: c.balanceAfter.currency };
   return { kind: 'transaction', transaction };
 }
 

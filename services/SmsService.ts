@@ -488,11 +488,20 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       console.warn('SMS sync (pago de tarjeta) error:', e instanceof Error ? e.message : 'desconocido');
     }
 
+    // (d5) Saldo automático: las cuentas que concilian con el SMS se re-anclan con el saldo más reciente que traiga
+    // un mensaje. Va al lote para que «Deshacer» devuelva el ancla anterior.
+    let balanceAnchors: NonNullable<SmsBatchRecord['balanceAnchors']> = [];
+    try {
+      balanceAnchors = await StorageService.syncSmsBalances();
+    } catch (e) {
+      console.warn('SMS sync (saldos) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
     if (mutated) allTxs = await StorageService.getTransactions();
 
     // (f) Lote para "Deshacer".
     let batchId: string | null = null;
-    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0 || cardPayments.length > 0) {
+    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0 || cardPayments.length > 0 || balanceAnchors.length > 0) {
       batchId = `smsb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       await StorageService.recordSmsBatch({
         id: batchId,
@@ -504,6 +513,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
         ...(fixedMerges.length > 0 ? { fixedMerges } : {}),
         ...(incomeLinks.length > 0 ? { incomeLinks } : {}),
         ...(cardPayments.length > 0 ? { cardPayments } : {}),
+        ...(balanceAnchors.length > 0 ? { balanceAnchors } : {}),
       });
     }
 
