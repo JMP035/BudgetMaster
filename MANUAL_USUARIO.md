@@ -86,7 +86,7 @@ Tocá el **botón ➕** de la barra inferior.
 2. **Moneda** — Q, USD, EUR o £. La app lleva balances separados por moneda.
 3. **Monto** — obligatorio y mayor a 0.
 4. **Descripción** (opcional) — ej. "Almuerzo", "Uber", "Salario".
-5. **Categoría** — 20 categorías de gasto (Comida, Supermercado, Combustible, Streaming…) o 10 de ingreso (Salario, Pago Militar, Freelance…), más las personalizadas que crees en Ajustes.
+5. **Categoría** — 20 categorías de gasto (Comida, Supermercado, Combustible, Streaming…) o 9 de ingreso (Salario, Freelance…), más las personalizadas. Si ninguna te sirve, toca **+ Nueva categoría** (la última casilla de la lista) y la creas ahí mismo: queda elegida para ese movimiento. Las propias se editan tocándolas en Ajustes → Mis Categorías.
 6. Tocá **Guardar**.
 
 Al guardar un gasto en Q, la app evalúa tu presupuesto y te envía una notificación con tu situación actualizada (ver [sección 12](#12-notificaciones-y-alertas)).
@@ -289,7 +289,7 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 - **Seguridad biométrica** — ver [sección 11](#11-seguridad-biométrica). Solo aparece si tu teléfono tiene huella/rostro configurado.
 - **Sincronización SMS** — activar/desactivar la lectura automática.
 - **Inteligencia Artificial (Gemini)** — tu API Key.
-- **Mis Categorías** — creá categorías personalizadas: nombre, si aplica a gastos/ingresos/ambos, color e ícono. Aparecen junto a las predefinidas al registrar transacciones.
+- **Mis Categorías** — creá categorías personalizadas: nombre, si aplica a gastos/ingresos/ambos, color e ícono. Aparecen junto a las predefinidas al registrar transacciones. También puedes crearlas al vuelo con **+ Nueva categoría**, y para cambiar el nombre, color, ícono o tipo de una propia, tócala en esta lista.
 - **Academia** — reiniciar los tutoriales.
 - **Guardar Cambios** — 💾 **los cambios no se aplican hasta tocar este botón.**
 - **⚠️ Zona de Peligro — Borrar Todos los Datos** — elimina TODO permanentemente (transacciones, cuentas, configuración) y vuelve al onboarding. Pide confirmación y **no se puede deshacer**.

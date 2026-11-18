@@ -15,6 +15,7 @@ import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
 import { isSmsFeatureOn } from "../services/features";
 import { maybeAutoSync } from "../services/SmsAutoSync";
+import { onSettingsChanged } from "../services/SettingsEvents";
 import { hasSomethingToShow } from "../services/SmsService";
 import type { SyncResult } from "../services/SmsService";
 import { buildOnboardingCommit } from "../services/OnboardingPlan";
@@ -199,6 +200,9 @@ function AppContent() {
 
     return { ...data, settings: settingsToUse };
   }, []);
+
+  // Refresca el estado de settings cuando storage guarda desde un sheet suelto (p. ej. «+ Nueva categoría»).
+  useEffect(() => onSettingsChanged(setSettings), []);
 
   useEffect(() => {
     (async () => {

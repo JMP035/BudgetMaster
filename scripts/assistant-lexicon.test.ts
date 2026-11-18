@@ -174,7 +174,7 @@ const INCOME_CASES: [string, string][] = [
   ['mi salario', 'salary'],
   ['la quincena', 'salary'],
   ['planilla', 'salary'],
-  ['pago militar', 'military'],
+  ['pago militar', 'salary'],
   ['un freelance', 'freelance'],
   ['una chamba', 'freelance'],
   ['trabajo extra', 'freelance'],
@@ -310,7 +310,7 @@ check('CATEGORY_SYNONYMS: groceries incluye super', CATEGORY_SYNONYMS.groceries.
 check('CATEGORY_SYNONYMS: 20 categorías de gasto con sinónimos', Object.keys(CATEGORY_SYNONYMS).length === 20, String(Object.keys(CATEGORY_SYNONYMS).length));
 check('CATEGORY_SYNONYMS: sin «gas» suelto (es ambiguo)', Object.keys(CATEGORY_SYNONYMS).every(k => CATEGORY_SYNONYMS[k].indexOf('gas') < 0));
 check('INCOME_SYNONYMS: salary incluye sueldo', INCOME_SYNONYMS.salary.indexOf('sueldo') >= 0);
-check('INCOME_SYNONYMS: 8 categorías de ingreso con sinónimos', Object.keys(INCOME_SYNONYMS).length === 8);
+check('INCOME_SYNONYMS: 7 categorías de ingreso con sinónimos', Object.keys(INCOME_SYNONYMS).length === 7);
 check('sinónimos ya normalizados (minúsculas, sin tildes)', Object.keys(CATEGORY_SYNONYMS).every(k => CATEGORY_SYNONYMS[k].every(a => a === nn(a))));
 
 // ─────────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ check('guess: «gas» con personalizada «Gas» → la personalizada', g('gas') 
 check('guess ingreso: sueldo → salary', g('sueldo', 'income') === 'salary');
 check('guess ingreso: aguinaldo → bonus', g('Aguinaldo', 'income') === 'bonus');
 check('guess ingreso: propinas (personalizada) → custom_tips', g('propinas', 'income') === 'custom_tips');
-check('guess ingreso: Mindef → military (Categorizer)', g('Mindef', 'income') === 'military');
+check('guess ingreso: Mindef → salary (Categorizer)', g('Mindef', 'income') === 'salary');
 check('guess ingreso: sin pistas → other', g('deposito raro', 'income') === 'other');
 check('guess ingreso: no usa reglas de comercio', g('Tienda Juanita', 'income') === 'other');
 check('guess gasto: nunca devuelve categorías de ingreso', g('sueldo') !== 'salary');

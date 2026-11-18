@@ -202,8 +202,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'mov_7', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
                 title: 'Clasificá bien tus movimientos',
-                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez.',
-                noSmsDescription: 'Elegí la categoría según el tipo de gasto: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si te equivocaste, cambiala en el detalle del movimiento.',
+                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez. Si no hay una que te sirva, creá una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
+                noSmsDescription: 'Elegí la categoría según el tipo de gasto: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si te equivocaste, cambiala en el detalle del movimiento. Si no hay una que te sirva, creá una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
             },
         ],
     },
@@ -242,7 +242,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'add_6', elementId: 'add_category', screen: 'add', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Elegí la Categoría',
-                description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero. Podés crear categorías propias en Ajustes → Mis Categorías.',
+                description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero. Si no hay una que te sirva, creá una ahí mismo con «+ Nueva categoría» (la última casilla de la lista): queda elegida y disponible en toda la app. También podés administrarlas en Ajustes → Mis Categorías.',
             },
             {
                 id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'scan-outline', padding: 8, requiresSms: true,
@@ -560,7 +560,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_9', elementId: 'settings_categories', screen: 'settings', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Mis categorías',
-                description: 'Creá categorías propias con nombre, color, ícono y tipo (gastos, ingresos o ambos). Aparecen al registrar movimientos y en Presupuesto, y se guardan al crearlas.',
+                description: 'Creá categorías propias con nombre, color, ícono y tipo (gastos, ingresos o ambos). Aparecen al registrar movimientos y en Presupuesto, y se guardan al crearlas. También podés crearlas al vuelo con «+ Nueva categoría» al registrar o editar un movimiento. Para cambiar el nombre, el color, el ícono o el tipo de una categoría propia, tocala aquí en Ajustes; el basurero la elimina.',
             },
             {
                 id: 'set_10', elementId: 'settings_academy', screen: 'settings', position: 'top', icon: 'school-outline', padding: 8,

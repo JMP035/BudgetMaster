@@ -12,12 +12,11 @@ import { TutorialService } from "../services/TutorialService";
 import { buildSmsSampleReport } from "../services/SmsDiagnostics";
 import { openTutorialMenu } from "./TutorialOverlay";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
-import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
 import { GlassSegmented } from "./GlassSegmented";
-import { GlassSheet } from "./GlassSheet";
+import { NewCategorySheet } from "./NewCategorySheet";
 import { MerchantRulesSheet } from "./MerchantRulesSheet";
 import { SmsInboxModal } from "./SmsInboxModal";
 import { Money } from "./Money";
@@ -91,98 +90,6 @@ function Section({ icon, title, description, tutId, onLayoutY, children }: {
                 {children}
             </GlassCard>
         </View>
-    );
-}
-
-// ─────────────────────────────────────────────────────────────
-// MODAL NUEVA CATEGORÍA
-// ─────────────────────────────────────────────────────────────
-function NewCategoryModal({ onSave, onClose }: {
-    onSave: (cat: CustomCategory) => void;
-    onClose: () => void;
-}) {
-    const [label, setLabel] = useState("");
-    const [color, setColor] = useState(CATEGORY_COLORS[0]);
-    const [icon, setIcon] = useState(CATEGORY_ICONS[0]);
-    const [type, setType] = useState<'expense' | 'income' | 'both'>('expense');
-    const [error, setError] = useState<string | null>(null);
-
-    const handleSave = () => {
-        if (!label.trim()) { setError("Ingresá un nombre para la categoría."); return; }
-        onSave({
-            id: `custom_${Date.now()}`,
-            label: label.trim(),
-            icon,
-            color,
-            type,
-        });
-        onClose();
-    };
-
-    return (
-        <GlassSheet
-            onClose={onClose}
-            title="Nueva categoría"
-            footer={
-                <View style={nc.footer}>
-                    {!!error && <InlineNotice variant="error" text={error} style={{ marginBottom: 10 }} />}
-                    <GlassButton label="Crear categoría" icon="add-circle-outline" onPress={handleSave} />
-                </View>
-            }
-        >
-            <Text style={nc.lbl}>NOMBRE</Text>
-            <TextInput
-                style={nc.input}
-                value={label}
-                onChangeText={(v) => { setError(null); setLabel(v); }}
-                placeholder="Ej: Mascotas, Gym..."
-                placeholderTextColor={C.textMuted}
-                autoFocus
-            />
-
-            <Text style={nc.lbl}>APLICA PARA</Text>
-            <GlassSegmented
-                options={[
-                    { value: "expense" as const, label: "Gastos" },
-                    { value: "income" as const, label: "Ingresos" },
-                    { value: "both" as const, label: "Ambos" },
-                ]}
-                value={type}
-                onChange={setType}
-            />
-
-            <Text style={nc.lbl}>COLOR</Text>
-            <View style={nc.colorGrid}>
-                {CATEGORY_COLORS.map(c => (
-                    <TouchableOpacity
-                        key={c}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Color ${c}`}
-                        style={[nc.colorDot, { backgroundColor: c }, color === c && nc.colorDotActive]}
-                        onPress={() => setColor(c)}
-                    >
-                        {color === c && <Ionicons name="checkmark" size={14} color={C.text} />}
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            <Text style={nc.lbl}>ÍCONO</Text>
-            <View style={nc.iconGrid}>
-                {CATEGORY_ICONS.map(ic => (
-                    <TouchableOpacity key={ic} style={[nc.iconBtn, icon === ic && { borderColor: color, backgroundColor: color + "22" }]} onPress={() => setIcon(ic as any)}>
-                        <Ionicons name={ic} size={22} color={icon === ic ? color : C.textSub} />
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            {/* Preview */}
-            <View style={[nc.preview, { borderColor: color + "55", backgroundColor: color + "11" }]}>
-                <View style={[nc.previewIcon, { backgroundColor: color + "22", borderColor: color + "44" }]}>
-                    <Ionicons name={icon as any} size={24} color={color} />
-                </View>
-                <Text style={[nc.previewLabel, { color }]} numberOfLines={1}>{label || "Vista previa"}</Text>
-            </View>
-        </GlassSheet>
     );
 }
 
@@ -262,7 +169,10 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const [saved, setSaved] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [showNewCat, setShowNewCat] = useState(false);
+    const [editingCat, setEditingCat] = useState<CustomCategory | null>(null);
     const [customCats, setCustomCats] = useState<CustomCategory[]>(settings.customCategories || []);
+    // Si otra pantalla (sheet suelto) guarda categorías, el estado local se refresca.
+    useEffect(() => { setCustomCats(settings.customCategories || []); }, [settings.customCategories]);
 
     // ── Tutorial y teclado ───────────────────────────────────
     const scrollRef = useRef<ScrollView>(null);
@@ -495,12 +405,12 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         onOpenGuide?.();
     };
 
-    const handleAddCustomCat = async (cat: CustomCategory) => {
-        const updated = [...customCats, cat];
+    /** El sheet ya guardó en storage (alta o edición); aquí solo se refleja en la pantalla. */
+    const handleCustomCatSaved = (cat: CustomCategory) => {
+        const exists = customCats.some(c => c.id === cat.id);
+        const updated = exists ? customCats.map(c => (c.id === cat.id ? cat : c)) : [...customCats, cat];
         setCustomCats(updated);
-        const newSettings: UserSettings = { ...settings, customCategories: updated };
-        await StorageService.saveSettings(newSettings);
-        onSave(newSettings);
+        onSave({ ...settings, customCategories: updated });
     };
 
     const handleDeleteCustomCat = async (id: string) => {
@@ -870,13 +780,21 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                         <View style={s.catList}>
                             {customCats.map(cat => (
                                 <View key={cat.id} style={s.catRow}>
-                                    <View style={[s.catIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44" }]}>
-                                        <Ionicons name={cat.icon as any} size={18} color={cat.color} />
-                                    </View>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={s.catLabel} numberOfLines={1}>{cat.label}</Text>
-                                        <Text style={s.catType}>{cat.type === 'expense' ? 'Gastos' : cat.type === 'income' ? 'Ingresos' : 'Ambos'}</Text>
-                                    </View>
+                                    <TouchableOpacity
+                                        style={s.catEditArea}
+                                        onPress={() => setEditingCat(cat)}
+                                        accessibilityRole="button"
+                                        accessibilityLabel={`Editar categoría ${cat.label}`}
+                                    >
+                                        <View style={[s.catIcon, { backgroundColor: cat.color + "22", borderColor: cat.color + "44" }]}>
+                                            <Ionicons name={cat.icon as any} size={18} color={cat.color} />
+                                        </View>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={s.catLabel} numberOfLines={1}>{cat.label}</Text>
+                                            <Text style={s.catType}>{cat.type === 'expense' ? 'Gastos' : cat.type === 'income' ? 'Ingresos' : 'Ambos'}</Text>
+                                        </View>
+                                        <Ionicons name="create-outline" size={16} color={C.textSub} />
+                                    </TouchableOpacity>
                                     <TouchableOpacity
                                         onPress={() => handleDeleteCustomCat(cat.id)}
                                         style={s.catDeleteBtn}
@@ -927,7 +845,10 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
             </ScrollView>
 
             {showNewCat && (
-                <NewCategoryModal onSave={handleAddCustomCat} onClose={() => setShowNewCat(false)} />
+                <NewCategorySheet onSaved={handleCustomCatSaved} onClose={() => setShowNewCat(false)} />
+            )}
+            {editingCat && (
+                <NewCategorySheet existing={editingCat} onSaved={handleCustomCatSaved} onClose={() => setEditingCat(null)} />
             )}
             {showRules && (
                 <MerchantRulesSheet
@@ -986,6 +907,7 @@ const s = StyleSheet.create({
     switchLabel: { color: C.text, fontSize: 14, fontWeight: "700" },
     geminiOk: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
     catList: { marginBottom: 12 },
+    catEditArea: { flex: 1, flexDirection: "row", alignItems: "center" },
     catRow: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: C.separator },
     catIcon: { width: 36, height: 36, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center", marginRight: 12 },
     catLabel: { color: C.text, fontSize: 14, fontWeight: "700" },
@@ -1000,16 +922,3 @@ const s = StyleSheet.create({
     dangerDesc: { color: C.textSub, fontSize: 13, lineHeight: 19, marginBottom: 16 },
 });
 
-const nc = StyleSheet.create({
-    footer: { marginTop: 12 },
-    lbl: { color: C.textSub, fontSize: 11, fontWeight: "700", letterSpacing: 1.2, marginBottom: 10, marginTop: 16 },
-    input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 14, color: C.text, fontSize: 15 },
-    colorGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-    colorDot: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-    colorDotActive: { borderWidth: 3, borderColor: C.text },
-    iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
-    iconBtn: { width: 44, height: 44, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
-    preview: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 14, borderWidth: 1, marginTop: 8, marginBottom: 8, gap: 14 },
-    previewIcon: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
-    previewLabel: { fontSize: 18, fontWeight: "800", flexShrink: 1 },
-});

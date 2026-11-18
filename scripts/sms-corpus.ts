@@ -133,7 +133,7 @@ export const SMS_CORPUS: SmsCase[] = [
   { id: 'S17', origin: 'sintetico', body: 'BAC: Se acredito Q 8,500.00 a tu cuenta ****1234 por PAGO DE PLANILLA',
     receivedAt: oct(1, 7, 0), expect: { accepted: true, kind: 'payroll', amount: 8500, txType: 'income', category: 'salary' } },
   { id: 'S18', origin: 'sintetico', body: 'BANRURAL: Se acredito Q.6,200.00 a tu cuenta ***5678 PLANILLA MINDEF',
-    receivedAt: oct(1, 7, 5), expect: { accepted: true, kind: 'payroll', amount: 6200, txType: 'income', category: 'military' } },
+    receivedAt: oct(1, 7, 5), expect: { accepted: true, kind: 'payroll', amount: 6200, txType: 'income', category: 'salary' } },
   { id: 'S19', origin: 'sintetico', body: 'Banrural: Se acredito Q.3,250.00 a tu cuenta ****5678 por transferencia',
     receivedAt: oct(2, 9, 0), expect: { accepted: true, kind: 'transfer_in', amount: 3250, txType: 'income', category: 'transfer_in' } },
   { id: 'S20', origin: 'sintetico', body: 'BI: Recibiste una transferencia de Q 500.00 de JUAN PEREZ a tu cuenta ****9012',

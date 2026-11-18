@@ -45,8 +45,7 @@ export const CATEGORY_SYNONYMS: Record<string, string[]> = {
 
 /** Sinónimos de categorías de ingreso. */
 export const INCOME_SYNONYMS: Record<string, string[]> = {
-  salary: ['salario', 'sueldo', 'quincena', 'planilla', 'nomina'],
-  military: ['pago militar'],
+  salary: ['salario', 'sueldo', 'quincena', 'planilla', 'nomina', 'pago militar'],
   freelance: ['freelance', 'chamba', 'trabajo extra', 'honorarios'],
   bonus: ['bono', 'aguinaldo', 'bono 14', 'bonificacion'],
   gift: ['regalo'],

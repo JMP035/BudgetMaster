@@ -17,6 +17,7 @@ import { GlassButton } from "./GlassButton";
 import { ScreenHeader } from "./ScreenHeader";
 import { HelpButton } from "./HelpButton";
 import { useKeyboardHeight } from "./useKeyboardHeight";
+import { NewCategorySheet } from "./NewCategorySheet";
 import { formatMoney } from "../services/format";
 import { isSmsFeatureOn } from "../services/features";
 
@@ -38,6 +39,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [dialog, setDialog] = useState<Omit<GlassDialogProps, "visible" | "onClose"> | null>(null);
     const [dateStr, setDateStr] = useState(formatDateOnly(new Date()));
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [showNewCat, setShowNewCat] = useState(false);
     const kb = useKeyboardHeight();
     const tutScroll = useTutorialScroll('add');
     const smsOn = isSmsFeatureOn(settings);
@@ -370,6 +372,15 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                                     </Text>
                                 </TouchableOpacity>
                             ))}
+                            <TouchableOpacity
+                                onPress={() => setShowNewCat(true)}
+                                style={[s.catItem, s.catItemNew]}
+                                accessibilityRole="button"
+                                accessibilityLabel="Nueva categoría"
+                            >
+                                <Ionicons name="add-circle-outline" size={24} color={C.primaryLight} />
+                                <Text style={[s.catLbl, { color: C.primaryLight }]} numberOfLines={1}>+ Nueva categoría</Text>
+                            </TouchableOpacity>
                         </View>
                     </GlassCard>
                 </View>
@@ -388,6 +399,13 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 <View style={{ height: 140 + kb }} />
             </ScrollView>
             {dialog && <GlassDialog visible onClose={() => setDialog(null)} {...dialog} />}
+            {showNewCat && (
+                <NewCategorySheet
+                    initialType={type}
+                    onSaved={cat => setCategory(cat.id)}
+                    onClose={() => setShowNewCat(false)}
+                />
+            )}
         </KeyboardAvoidingView>
     );
 }
@@ -420,6 +438,7 @@ const s = StyleSheet.create({
     txtInput: { flex: 1, color: C.text, fontSize: 16, paddingVertical: 10 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8 },
     catItem: { width: "31%", alignItems: "center", paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput, marginBottom: 8 },
+    catItemNew: { borderStyle: "dashed", borderColor: C.glassActiveBorder },
     catLbl: { color: C.textSub, fontSize: 10, marginTop: 6, fontWeight: "600", textAlign: "center" },
     btn: { marginTop: 6, paddingVertical: 18 },
 });

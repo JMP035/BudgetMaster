@@ -22,6 +22,10 @@ import { ScreenHeader } from "./ScreenHeader";
 import { HelpButton } from "./HelpButton";
 import InstallmentModal from "./InstallmentModal";
 import FixedExpenseLinkSheet from "./FixedExpenseLinkSheet";
+import { NewCategorySheet } from "./NewCategorySheet";
+
+/** Pausa entre cerrar un sheet y abrir otro (Android no admite dos modales a la vez). */
+const SWITCH_DELAY_MS = 250;
 
 const DELETE_CONFIRM = {
     title: "Eliminar movimiento",
@@ -62,6 +66,16 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
     const [remember, setRemember] = useState(true);
     const [applyPast, setApplyPast] = useState(true);
     const [accountId, setAccountId] = useState<string | null>(tx.accountId ?? null);
+
+    // Una sola ventana a la vez: el detalle y «Nueva categoría» se alternan con una pausa ('none' = entre ambos).
+    const [phase, setPhase] = useState<'detail' | 'newCat' | 'none'>('detail');
+    const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => () => { if (phaseTimer.current) clearTimeout(phaseTimer.current); }, []);
+    const goPhase = (next: 'detail' | 'newCat') => {
+        if (phaseTimer.current) clearTimeout(phaseTimer.current);
+        setPhase('none');
+        phaseTimer.current = setTimeout(() => { setPhase(next); phaseTimer.current = null; }, SWITCH_DELAY_MS);
+    };
 
     // Cuenta: solo se ofrece con SMS activo o si el movimiento ya tiene cuenta
     const showAccount = smsOn || !!tx.accountId;
@@ -210,6 +224,17 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
         }
     };
 
+    if (phase === 'none') return null;
+    if (phase === 'newCat') {
+        return (
+            <NewCategorySheet
+                initialType={tx.type === 'expense' ? 'expense' : 'income'}
+                onSaved={cat => setCategory(cat.id)}
+                onClose={() => goPhase('detail')}
+            />
+        );
+    }
+
     return (
         <GlassSheet title="Detalle del movimiento" onClose={onClose} maxHeightRatio={0.94}
             footer={
@@ -342,6 +367,15 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                             </Text>
                         </TouchableOpacity>
                     ))}
+                    <TouchableOpacity
+                        style={[m.catItem, m.catItemNew, { width: cols === 4 ? "22.5%" : "30%" }]}
+                        onPress={() => goPhase('newCat')}
+                        accessibilityRole="button"
+                        accessibilityLabel="Nueva categoría"
+                    >
+                        <Ionicons name="add-circle-outline" size={20} color={C.primaryLight} />
+                        <Text style={[m.catLabel, { color: C.primaryLight }]} numberOfLines={1}>+ Nueva categoría</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* APRENDIZAJE POR COMERCIO */}
@@ -880,6 +914,7 @@ const m = StyleSheet.create({
     input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 12, color: C.text, fontSize: 14 },
     catGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     catItem: { flexGrow: 1, alignItems: "center", paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    catItemNew: { borderStyle: "dashed", borderColor: C.glassActiveBorder },
     catItemActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catLabel: { color: C.textSub, fontSize: 10, marginTop: 4, fontWeight: "600", textAlign: "center" },
     smsToggle: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, backgroundColor: C.accent + "11", borderRadius: 10, borderWidth: 1, borderColor: C.accent + "33" },

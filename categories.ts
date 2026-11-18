@@ -37,11 +37,10 @@ export const EXPENSE_CATEGORIES: Category[] = [
 ];
 
 // ─────────────────────────────────────────────────────────────
-// CATEGORÍAS DE INGRESOS (10)
+// CATEGORÍAS DE INGRESOS (9)
 // ─────────────────────────────────────────────────────────────
 export const INCOME_CATEGORIES: Category[] = [
     { id: "salary", label: "Salario", icon: "briefcase-outline", color: "#D4882A" },
-    { id: "military", label: "Pago Militar", icon: "shield-outline", color: "#6B8E23" },
     { id: "freelance", label: "Freelance", icon: "laptop-outline", color: "#9B59B6" },
     { id: "investment", label: "Inversiones", icon: "trending-up-outline", color: "#2ECC71" },
     { id: "rental", label: "Alquiler", icon: "key-outline", color: "#F39C12" },
@@ -66,8 +65,12 @@ export function customToCategory(c: CustomCategory): Category {
     };
 }
 
+/** Ids de categorías que ya no existen y a cuál equivalen (datos viejos que aún guardan «military»). */
+export const LEGACY_CATEGORY_ALIASES: Record<string, string> = { military: 'salary' };
+
 /** Busca una categoría en predefinidas + custom */
 export const getCat = (id: string, customCategories: CustomCategory[] = [], type?: 'income' | 'expense' | 'transfer'): Category => {
+    id = LEGACY_CATEGORY_ALIASES[id] ?? id;
     // Buscar en predefinidas primero (el orden depende del tipo de transacción, ya que algunos ids como "other" existen en ambas listas)
     const predefinedOrder = type === 'income' ? [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES] : [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES];
     const predefined = predefinedOrder.find(c => c.id === id);

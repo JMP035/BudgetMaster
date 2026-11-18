@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Share, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
@@ -13,6 +13,7 @@ import { GlassSegmented } from "./GlassSegmented";
 import { InlineNotice } from "./InlineNotice";
 import Money from "./Money";
 import { useGlassDialog } from "./GlassDialogProvider";
+import { NewCategorySheet } from "./NewCategorySheet";
 
 export interface SmsInboxModalProps {
     visible: boolean;
@@ -22,6 +23,9 @@ export interface SmsInboxModalProps {
 }
 
 type EntryType = "expense" | "income";
+
+/** Pausa entre cerrar un sheet y abrir otro (Android no admite dos modales a la vez). */
+const SWITCH_DELAY_MS = 250;
 
 const TYPE_OPTIONS: { value: EntryType; label: string }[] = [
     { value: "expense", label: "Gasto" },
@@ -58,6 +62,20 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
     const [error, setError] = useState("");
     const [saving, setSaving] = useState(false);
 
+    // Una sola ventana a la vez: el formulario y «Nueva categoría» se alternan con una pausa ('none' = entre ambos).
+    const [phase, setPhase] = useState<'form' | 'newCat' | 'none'>('form');
+    const phaseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const resetPhase = () => {
+        if (phaseTimer.current) { clearTimeout(phaseTimer.current); phaseTimer.current = null; }
+        setPhase('form');
+    };
+    useEffect(() => () => { if (phaseTimer.current) clearTimeout(phaseTimer.current); }, []);
+    const goPhase = (next: 'form' | 'newCat') => {
+        if (phaseTimer.current) clearTimeout(phaseTimer.current);
+        setPhase('none');
+        phaseTimer.current = setTimeout(() => { setPhase(next); phaseTimer.current = null; }, SWITCH_DELAY_MS);
+    };
+
     const reload = useCallback(async () => {
         const next = await StorageService.getSmsInbox();
         setItems(next);
@@ -67,6 +85,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
 
     useEffect(() => {
         if (!visible) return;
+        resetPhase();
         setRegistering(null);
         setExpanded(new Set());
         setLoading(true);
@@ -127,6 +146,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         setCategory("other");
         setError("");
         setSaving(false);
+        resetPhase();
         setRegistering(item);
     };
 
@@ -186,6 +206,16 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         const cats = type === "expense"
             ? getAllExpenseCategories(settings.customCategories)
             : getAllIncomeCategories(settings.customCategories);
+        if (phase === 'none') return null;
+        if (phase === 'newCat') {
+            return (
+                <NewCategorySheet
+                    initialType={type}
+                    onSaved={cat => setCategory(cat.id)}
+                    onClose={() => goPhase('form')}
+                />
+            );
+        }
         return (
             <GlassSheet
                 title="Registrar movimiento"
@@ -260,6 +290,15 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                                 </TouchableOpacity>
                             );
                         })}
+                        <TouchableOpacity
+                            style={[s.catItem, s.catItemNew, { width: cols === 4 ? "22.5%" : "30%" }]}
+                            onPress={() => goPhase('newCat')}
+                            accessibilityRole="button"
+                            accessibilityLabel="Nueva categoría"
+                        >
+                            <Ionicons name="add-circle-outline" size={20} color={C.primaryLight} />
+                            <Text style={[s.catLabel, { color: C.primaryLight }]} numberOfLines={1}>+ Nueva categoría</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -405,6 +444,7 @@ const s = StyleSheet.create({
         flexGrow: 1, alignItems: "center", paddingVertical: 10, borderRadius: 12, borderWidth: 1,
         borderColor: C.glassInputBorder, backgroundColor: C.glassInput,
     },
+    catItemNew: { borderStyle: "dashed", borderColor: C.glassActiveBorder },
     catItemActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catLabel: { color: C.textSub, fontSize: 10, marginTop: 4, fontWeight: "600", textAlign: "center" },
     readonlyBox: {

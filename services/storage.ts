@@ -17,6 +17,8 @@ import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 import { sanitizeDraft } from './OnboardingPlan';
 import type { OnboardingCommit, OnboardingDraft } from './OnboardingPlan';
 import { sanitizeGettingStarted } from './GettingStarted';
+import { migrateMilitaryToSalary } from './CategoryMigration';
+import { emitSettingsChanged } from './SettingsEvents';
 import type { GettingStartedState } from './GettingStarted';
 // Chat del asistente: validación/recorte puros en ChatStore (solo tipos de ./assistant/types).
 import type { StoredAssistantChat } from './assistant/types';
@@ -302,6 +304,7 @@ const K = {
   ONBOARDING_DRAFT: '@bm_onboarding_draft',
   GETTING_STARTED: '@bm_getting_started',
   ASSISTANT_CHAT: '@bm_assistant_chat',
+  MIGRATIONS: '@bm_migrations',
 };
 
 /** Lista JSON guardada; [] si no hay nada. A diferencia de los getters, propaga los errores (commitOnboarding). */
@@ -1571,6 +1574,70 @@ export const StorageService = {
 
   async saveSettings(s: UserSettings): Promise<void> {
     try { await AsyncStorage.setItem(K.SETTINGS, JSON.stringify(s)); } catch { }
+    emitSettingsChanged(s);
+  },
+
+  /** Agrega una categoría propia y devuelve los ajustes ya guardados. */
+  async addCustomCategory(cat: CustomCategory): Promise<UserSettings> {
+    const s = await this.getSettings();
+    const next: UserSettings = { ...s, customCategories: [...(s.customCategories ?? []), cat] };
+    await this.saveSettings(next);
+    return next;
+  },
+
+  /** Reemplaza (por id) una categoría propia y devuelve los ajustes ya guardados. */
+  async updateCustomCategory(cat: CustomCategory): Promise<UserSettings> {
+    const s = await this.getSettings();
+    const next: UserSettings = {
+      ...s, customCategories: (s.customCategories ?? []).map(c => (c.id === cat.id ? cat : c)),
+    };
+    await this.saveSettings(next);
+    return next;
+  },
+
+  // ── Migraciones de datos ──────────────────────────────────
+  /**
+   * Corre las migraciones pendientes (una vez cada una, idempotentes). Cada migración escribe SOLO lo que
+   * cambió y, al final, registra su marca en K.MIGRATIONS: si algo falla a medias la marca no se escribe y
+   * se reintenta en el siguiente arranque (los pasos son idempotentes). Para agregar otra migración, suma
+   * una entrada a la lista `steps` con su id de marca.
+   */
+  async runMigrations(): Promise<void> {
+    try {
+      let done: string[] = [];
+      try {
+        const raw = await AsyncStorage.getItem(K.MIGRATIONS);
+        const parsed = raw ? JSON.parse(raw) : [];
+        done = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      } catch { done = []; }
+
+      const steps: Array<{ id: string; run: () => Promise<void> }> = [
+        {
+          id: 'military_to_salary_v1',
+          run: async () => {
+            const [transactions, fixedExpenses, categoryBudgets, merchantRules, installments] = await Promise.all([
+              this.getTransactions(), this.getFixedExpenses(), this.getCategoryBudgets(),
+              this.getMerchantRules(), this.getCreditInstallments(),
+            ]);
+            const r = migrateMilitaryToSalary({ transactions, fixedExpenses, categoryBudgets, merchantRules, installments });
+            if (!r.changed) return;
+            // Escrituras directas (sin tragar errores): si una falla, la marca no se registra.
+            if (r.changedKeys.includes('transactions')) await AsyncStorage.setItem(K.TRANSACTIONS, JSON.stringify(r.transactions));
+            if (r.changedKeys.includes('fixedExpenses')) await AsyncStorage.setItem(K.FIXED_EXPENSES, JSON.stringify(r.fixedExpenses));
+            if (r.changedKeys.includes('categoryBudgets')) await AsyncStorage.setItem(K.CATEGORY_BUDGETS, JSON.stringify(r.categoryBudgets));
+            if (r.changedKeys.includes('merchantRules')) await AsyncStorage.setItem(K.MERCHANT_RULES, JSON.stringify(r.merchantRules));
+            if (r.changedKeys.includes('installments')) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
+          },
+        },
+      ];
+
+      for (const step of steps) {
+        if (done.includes(step.id)) continue;
+        await step.run();
+        done = [...done, step.id];
+        await AsyncStorage.setItem(K.MIGRATIONS, JSON.stringify(done));
+      }
+    } catch { /* se reintenta en el próximo arranque */ }
   },
 
   // ── Gastos Fijos ──────────────────────────────────────────
@@ -1877,6 +1944,7 @@ export const StorageService = {
 
   // ── Cargar TODO ───────────────────────────────────────────
   async loadAllData(): Promise<AppData> {
+    await this.runMigrations();
     const [
       transactions, settings, fixedExpenses,
       categoryBudgets, savingsGoals, accounts,

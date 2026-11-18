@@ -161,8 +161,7 @@ export function categorizeExpense(merchant: string | null, location: string | nu
  * tildes). Nunca devuelve 'salary' por defecto: solo si el texto lo dice.
  */
 export function categorizeIncome(flat: string, kind: "deposit" | "transfer_in" | "payroll" | "refund"): string {
-  if (/\b(?:mindef|ministerio de la defensa|ejercito|militar)\b/.test(flat)) return "military";
-  if (/\b(?:planilla|nomina|salario|sueldo)\b/.test(flat)) return "salary";
+  if (/\b(?:mindef|ministerio de la defensa|ejercito|militar|planilla|nomina|salario|sueldo)\b/.test(flat)) return "salary";
   if (/\b(?:aguinaldo|bono ?14|bonificacion|bono)\b/.test(flat)) return "bonus";
   if (kind === "transfer_in") return "transfer_in";
   if (/\b(?:honorarios|freelance)\b/.test(flat)) return "freelance";
