@@ -102,7 +102,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_1', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Tu período financiero',
-                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
+                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
             },
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,

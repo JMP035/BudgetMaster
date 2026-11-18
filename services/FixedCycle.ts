@@ -25,8 +25,31 @@ export interface FixedCycleConfig { anchorDay: number; }
 /** Mes calendario (período que arranca el día 1). */
 export const CALENDAR_CYCLE: FixedCycleConfig = { anchorDay: 1 };
 
-/** Período de presupuesto: `start` 00:00:00.000 local; `end` 23:59:59.999 del día anterior al próximo inicio. */
-export interface FixedPeriod { key: string; start: Date; end: Date; }
+/** De dónde sale el inicio efectivo de un período: ancla manual, sueldo real, fecha esperada por regla o el día nominal. */
+export type StartSource = 'manual' | 'salary' | 'expected' | 'nominal';
+
+/**
+ * Inicio efectivo de un período dada su clave NOMINAL ('YYYY-MM-DD' del día de pago). null = sin ajuste
+ * (el período arranca el día nominal). Lo arma services/PeriodAnchors.buildStartResolver.
+ */
+export type PeriodStartResolver = (nominalKey: string) => { date: Date; source: StartSource } | null;
+
+/**
+ * Período de presupuesto: `start` 00:00:00.000 local; `end` 23:59:59.999 del día anterior al próximo inicio.
+ * `key` es SIEMPRE el inicio nominal (no cambia aunque el inicio real se mueva por fin de semana o sueldo
+ * adelantado/atrasado); `start` es el inicio efectivo.
+ */
+export interface FixedPeriod {
+  key: string; start: Date; end: Date;
+  nominalStart?: Date; startSource?: StartSource; nextStart?: Date;
+}
+
+let startResolver: PeriodStartResolver | null = null;
+
+/** Fija (o quita) el resolvedor global del inicio real del período. Sin resolvedor todo es nominal. */
+export function setPeriodStartResolver(fn: PeriodStartResolver | null): void {
+  startResolver = fn;
+}
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -113,15 +136,39 @@ function startIn(cfg: FixedCycleConfig, year: number, month: number): Date {
   return new Date(y, m, effectiveDay(cfg.anchorDay, y, m), 0, 0, 0, 0);
 }
 
-/** Período de presupuesto que contiene a `date`. */
-export function periodFor(cfg: FixedCycleConfig, date: Date): FixedPeriod {
+function effectiveStartOf(nominal: Date, resolve: PeriodStartResolver | null): { start: Date; source: StartSource } {
+  if (resolve) {
+    const r = resolve(ymdKey(nominal));
+    if (r) return { start: new Date(r.date.getFullYear(), r.date.getMonth(), r.date.getDate(), 0, 0, 0, 0), source: r.source };
+  }
+  return { start: nominal, source: 'nominal' };
+}
+
+/**
+ * Período de presupuesto que contiene a `date` con un resolvedor explícito (null = solo nominal).
+ * Se miran el período nominal anterior, el actual y el siguiente, cada uno con su inicio efectivo, y se
+ * elige el último cuyo inicio efectivo sea <= la fecha. `end` = día anterior al inicio efectivo del siguiente.
+ */
+export function periodForWith(cfg: FixedCycleConfig, date: Date, resolve: PeriodStartResolver | null): FixedPeriod {
   const y = date.getFullYear();
   const m = date.getMonth();
   const d = date.getDate();
-  const start = d >= effectiveDay(cfg.anchorDay, y, m) ? startIn(cfg, y, m) : startIn(cfg, y, m - 1);
-  const nextStart = startIn(cfg, start.getFullYear(), start.getMonth() + 1);
+  const curNom = d >= effectiveDay(cfg.anchorDay, y, m) ? startIn(cfg, y, m) : startIn(cfg, y, m - 1);
+  const noms = [-1, 0, 1, 2].map(k => startIn(cfg, curNom.getFullYear(), curNom.getMonth() + k));
+  const effs = noms.map(n => effectiveStartOf(n, resolve));
+  const today = dayNumOf(date);
+  let idx = 0;
+  for (let i = 0; i <= 2; i++) if (dayNumOf(effs[i].start) <= today) idx = i;
+  const start = effs[idx].start;
+  let nextStart = effs[idx + 1].start;
+  if (dayNumOf(nextStart) <= dayNumOf(start)) nextStart = noms[idx + 1];
   const end = new Date(nextStart.getFullYear(), nextStart.getMonth(), nextStart.getDate() - 1, 23, 59, 59, 999);
-  return { key: ymdKey(start), start, end };
+  return { key: ymdKey(noms[idx]), start, end, nominalStart: noms[idx], startSource: effs[idx].source, nextStart };
+}
+
+/** Período de presupuesto que contiene a `date` (con el inicio real si hay resolvedor global). */
+export function periodFor(cfg: FixedCycleConfig, date: Date): FixedPeriod {
+  return periodForWith(cfg, date, startResolver);
 }
 
 /** Período de un valor guardado (la fecha de un movimiento); null si es inválido. */
@@ -146,8 +193,10 @@ export function cycleKeyFor(cfg: FixedCycleConfig, stored: string): string | nul
  * a [p.start, p.end] (meses cortos).
  */
 export function dueDateInPeriod(dayOfMonth: number, p: FixedPeriod, cfg: FixedCycleConfig): Date {
-  const M = p.start.getMonth();
-  const Y = p.start.getFullYear();
+  // El mes de referencia es el del inicio NOMINAL (la clave): el inicio real puede caer en el mes anterior.
+  const hasKey = KEY_DAY_RE.test(p.key);
+  const M = hasKey ? Number(p.key.slice(5, 7)) - 1 : p.start.getMonth();
+  const Y = hasKey ? Number(p.key.slice(0, 4)) : p.start.getFullYear();
   const day = Math.round(dayOfMonth);
   const ref = new Date(Y, day >= cfg.anchorDay ? M : M + 1, 1);
   const yy = ref.getFullYear();
@@ -181,9 +230,10 @@ export function normalizeCycleKey(key: string, dayOfMonth: number, cfg: FixedCyc
     const d = Number(key.slice(8, 10));
     const at = new Date(y, m - 1, d, 12, 0, 0, 0);
     if (isNaN(at.getTime())) return null;
-    if (periodFor(cfg, at).key === key) return key;
+    // Las claves son nominales: la validación y el período viejo se calculan sin el inicio real.
+    if (periodForWith(cfg, at, null).key === key) return key;
     const old: FixedCycleConfig = { anchorDay: d };
-    const pOld = periodFor(old, at);
+    const pOld = periodForWith(old, at, null);
     return periodFor(cfg, dueDateInPeriod(dayOfMonth, pOld, old)).key;
   }
   if (KEY_MONTH_RE.test(key)) {

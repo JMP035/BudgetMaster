@@ -7,7 +7,8 @@ import {
     Animated, Easing, Keyboard, KeyboardTypeOptions, StyleProp, StyleSheet, Switch, Text, TextInput,
     TouchableOpacity, View, ViewStyle,
 } from "react-native";
-import { fixedCycleConfig, periodFor } from "../../services/FixedCycle";
+import { fixedCycleConfig, periodForWith } from "../../services/FixedCycle";
+import { buildStartResolver } from "../../services/PeriodAnchors";
 import { formatPeriodRange } from "../../services/BudgetBreakdown";
 import type { OnboardingDraft } from "../../services/OnboardingPlan";
 import { DEFAULT_SETTINGS, getCurrentFinancialPeriod } from "../../services/storage";
@@ -71,7 +72,8 @@ export function cycleSettingsOf(d: OnboardingDraft): Pick<UserSettings, "payment
 export function periodRanges(d: OnboardingDraft, now: Date = new Date()): { budget: string; fixed: string } {
     const cs = cycleSettingsOf(d);
     const fin = getCurrentFinancialPeriod({ ...DEFAULT_SETTINGS, ...cs });
-    const fx = periodFor(fixedCycleConfig(cs), now);
+    // Mismo inicio real que el presupuesto (las reglas por defecto del borrador), no el resolvedor global.
+    const fx = periodForWith(fixedCycleConfig(cs), now, buildStartResolver({ ...DEFAULT_SETTINGS, ...cs }, []));
     return {
         budget: formatPeriodRange({ start: fin.start, end: fin.end }),
         fixed: formatPeriodRange(fx),

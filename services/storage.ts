@@ -9,9 +9,15 @@ import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule
 import { planSmsUndo } from './SmsUndoPlan';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
-  periodFor, planFixedPeriodReset, storedToLocalDate,
+  periodFor, planFixedPeriodReset, setPeriodStartResolver, storedToLocalDate,
 } from './FixedCycle';
 import type { FixedCycleConfig } from './FixedCycle';
+import { DEFAULT_PAY_RULES, sanitizePayRules } from './PayCalendar';
+import type { PayRules } from './PayCalendar';
+import { buildStartResolver, clearManualAnchor, sanitizeAnchors, setManualAnchor } from './PeriodAnchors';
+import type { PeriodAnchor } from './PeriodAnchors';
+import { computeFinancialPeriod, daysUntilNextPay } from './FinancialPeriod';
+import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 // Módulos puros del onboarding: de ellos solo se importan valores sin dependencia de storage en runtime
 // (sanitizeDraft / sanitizeGettingStarted); los tipos van con `import type`.
@@ -237,6 +243,8 @@ export interface UserSettings {
   activeDebtsList?: any[];
   /** Sincronizar SMS al abrir la app (default true). Nunca pide permisos por su cuenta. */
   smsAutoSync?: boolean;
+  /** Reglas del día de pago: fin de semana, feriados, tolerancia y ancla automática (ver services/PayCalendar.ts). */
+  payRules?: PayRules;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -284,6 +292,8 @@ export interface AppData {
 export interface NotificationState {
   weeklySummaryFireAt?: string;   // ISO
   setupNudgesShown: string[];
+  /** Ya se avisó que el período ahora arranca el día que cae el sueldo (ver B3b). */
+  periodRulesNoticeShown?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -303,6 +313,7 @@ const K = {
   SMS_REVIEW_KEPT: '@bm_sms_review_kept',
   MERCHANT_RULES: '@bm_merchant_rules',
   INCOME_RULES: '@bm_income_rules',
+  PERIOD_ANCHORS: '@bm_period_anchors',
   SMS_INBOX: '@bm_sms_inbox',
   SMS_INBOX_IGNORED: '@bm_sms_inbox_ignored',
   SMS_SYNC_STATE: '@bm_sms_sync_state',
@@ -366,7 +377,14 @@ export const DEFAULT_SETTINGS: UserSettings = {
   financialScoreHistory: [],
   activeDebtsList: [],
   smsAutoSync: true,
+  payRules: DEFAULT_PAY_RULES,
 };
+
+/** Ajustes guardados + defaults; `payRules` siempre completo y válido (ajustes viejos no lo traen). */
+function withSettingsDefaults(parsed: unknown): UserSettings {
+  const base = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<UserSettings>;
+  return { ...DEFAULT_SETTINGS, ...base, payRules: sanitizePayRules(base.payRules) };
+}
 
 /**
  * Equivalente en USD del presupuesto mensual. En modo 'manual' se respeta el valor
@@ -399,11 +417,6 @@ export function isFixedExpenseOverdue(expense: FixedExpense, cycle: FixedCycleCo
   return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) > Date.UTC(due.getFullYear(), due.getMonth(), due.getDate());
 }
 
-/** Último instante (23:59:59) del día anterior a la fecha dada */
-function dayBefore(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - 1, 23, 59, 59);
-}
-
 /**
  * Indica si existe una tasa de cambio confiable entre dos monedas.
  * La app solo tiene tasa real Q↔USD; cualquier conversión USD↔EUR/£ no es
@@ -431,160 +444,27 @@ export function storedDateToDateOnly(stored: string): string {
   return isNaN(d.getTime()) ? formatDateOnly(new Date()) : formatDateOnly(d);
 }
 
-/** Días hasta próximo pago */
-export function getDaysUntilNextPayment(settings: UserSettings): number {
-  const now = new Date();
-  const today = now.getDate();
-  const month = now.getMonth();
-  const year = now.getFullYear();
+// Anclas del inicio real del período en memoria (se cargan en loadAllData / getPeriodAnchors).
+let anchorsCache: PeriodAnchor[] = [];
 
-  if (settings.paymentCycle === 'weekly') return 7 - now.getDay();
+/** Reconstruye el resolvedor global de FixedCycle.periodFor con los ajustes y las anclas actuales. */
+export function refreshPeriodResolver(settings: UserSettings): void {
+  setPeriodStartResolver(buildStartResolver(settings, anchorsCache));
+}
 
-  if (settings.paymentCycle === 'biweekly') {
-    const sortedRaw = [...settings.paymentDays].sort((a, b) => a - b);
-    const days = sortedRaw.map(d => getEffectivePaymentDay(d, year, month));
-    const next = days.find(d => d > today);
-    if (next) return next - today;
-    const firstNext = new Date(year, month + 1, getEffectivePaymentDay(sortedRaw[0], year, month + 1));
-    return Math.ceil((firstNext.getTime() - now.getTime()) / 86400000);
-  }
-
-  if (settings.paymentCycle === 'monthly') {
-    const eff = getEffectivePaymentDay(settings.paymentDay, year, month);
-    if (today < eff) return eff - today;
-    const nextPay = new Date(year, month + 1, getEffectivePaymentDay(settings.paymentDay, year, month + 1));
-    return Math.ceil((nextPay.getTime() - now.getTime()) / 86400000);
-  }
-  return 0;
+/** Días hasta próximo pago (inicio real del período siguiente: sueldo, fin de semana o feriado incluidos). */
+export function getDaysUntilNextPayment(settings: UserSettings, now: Date = new Date()): number {
+  return daysUntilNextPay(settings, now, buildStartResolver(settings, anchorsCache));
 }
 
 // ─────────────────────────────────────────────────────────────
 // PERÍODO FINANCIERO (basado en día de pago, no mes calendario)
 // ─────────────────────────────────────────────────────────────
-export interface FinancialPeriod {
-  start: Date;
-  end: Date;
-  label: string;        // Ej: "15 May – 14 Jun 2026"
-  prevStart: Date;
-  prevEnd: Date;
-  prevLabel: string;    // Ej: "15 Abr – 14 May 2026"
-  daysPassed: number;   // Días transcurridos en el período actual
-  daysTotal: number;    // Duración total del período en días
-}
+export type { FinancialPeriod } from './FinancialPeriod';
 
-const fmt_d = (d: Date) =>
-  d.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' });
-
-/** Calcula el período financiero actual y el anterior según el ciclo de pago */
-export function getCurrentFinancialPeriod(settings: UserSettings): FinancialPeriod {
-  const now = new Date();
-  const today = now.getDate();
-  const m = now.getMonth();
-  const y = now.getFullYear();
-  // Medianoche de "hoy" en hora local — se usa para contar días transcurridos
-  // sin que el resultado cambie según la hora del día en que se consulte.
-  const todayMidnight = new Date(y, m, today);
-
-  // ── Ciclo irregular → usa mes calendario ────────────────────
-  if (settings.paymentCycle === 'irregular') {
-    const start = new Date(y, m, 1);
-    const end = new Date(y, m + 1, 0, 23, 59, 59);
-    const prevStart = new Date(y, m - 1, 1);
-    const prevEnd = new Date(y, m, 0, 23, 59, 59);
-    return {
-      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
-      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
-      daysPassed: today, daysTotal: new Date(y, m + 1, 0).getDate(),
-    };
-  }
-
-  // ── Ciclo semanal ────────────────────────────────────────────
-  if (settings.paymentCycle === 'weekly') {
-    const dayOfWeek = now.getDay(); // 0=dom
-    const start = new Date(now); start.setDate(today - dayOfWeek); start.setHours(0, 0, 0, 0);
-    const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59);
-    const prevStart = new Date(start); prevStart.setDate(start.getDate() - 7);
-    const prevEnd = new Date(start); prevEnd.setDate(start.getDate() - 1); prevEnd.setHours(23, 59, 59);
-    return {
-      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
-      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
-      daysPassed: dayOfWeek + 1, daysTotal: 7,
-    };
-  }
-
-  // ── Ciclo quincenal ──────────────────────────────────────────
-  if (settings.paymentCycle === 'biweekly') {
-    const days = [...settings.paymentDays].sort((a, b) => a - b); // Ej: [15, 30]
-    const d1 = days[0] ?? 15;
-    const d2 = days[1] ?? 30;
-    const D = (yy: number, mm: number, dd: number) => new Date(yy, mm, dd);
-    const e1 = (mo: number) => getEffectivePaymentDay(d1, y, mo);
-    const e2 = (mo: number) => getEffectivePaymentDay(d2, y, mo);
-    let start: Date, end: Date, prevStart: Date, prevEnd: Date;
-
-    if (today >= e2(m)) {
-      // Segunda quincena: e2(m) → e1(m+1) del mes siguiente
-      start = D(y, m, e2(m));
-      end = dayBefore(D(y, m + 1, e1(m + 1)));
-      prevStart = D(y, m, e1(m));
-      prevEnd = dayBefore(start);
-    } else if (today >= e1(m)) {
-      // Primera quincena: e1(m) → e2(m)-1
-      start = D(y, m, e1(m));
-      end = dayBefore(D(y, m, e2(m)));
-      prevStart = D(y, m - 1, e2(m - 1));
-      prevEnd = dayBefore(start);
-    } else {
-      // Antes del e1(m): última quincena del mes pasado
-      start = D(y, m - 1, e2(m - 1));
-      end = dayBefore(D(y, m, e1(m)));
-      prevStart = D(y, m - 1, e1(m - 1));
-      prevEnd = dayBefore(start);
-    }
-    // `end` ya está fijado a las 23:59:59 del último día (dayBefore), así que
-    // el redondeo de (end-start) ya da el total de días inclusive — sumarle 1
-    // lo contaba doble. `daysPassed` se calcula contra la medianoche de hoy
-    // (no la hora exacta) para que no salte un día de más pasado el mediodía.
-    const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000);
-    const daysPassed = Math.min(Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
-    return {
-      start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
-      prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
-      daysPassed, daysTotal,
-    };
-  }
-
-  // ── Ciclo mensual (default) ──────────────────────────────────
-  const P = settings.paymentDay;
-  const e = (mo: number) => getEffectivePaymentDay(P, y, mo);
-
-  let start: Date, end: Date, prevStart: Date, prevEnd: Date, nextStart: Date;
-
-  if (today >= e(m)) {
-    // Estamos dentro del período: desde e(m) de este mes
-    start = new Date(y, m, e(m));
-    nextStart = new Date(y, m + 1, e(m + 1));
-    prevStart = new Date(y, m - 1, e(m - 1));
-  } else {
-    // Antes de e(m): período empezó el mes pasado
-    start = new Date(y, m - 1, e(m - 1));
-    nextStart = new Date(y, m, e(m));
-    prevStart = new Date(y, m - 2, e(m - 2));
-  }
-  end = dayBefore(nextStart);
-  prevEnd = dayBefore(start);
-
-  // Mismo criterio que en el ciclo quincenal: `end` ya incluye el día
-  // completo (23:59:59), y `daysPassed` usa la medianoche de hoy para no
-  // saltar un día de más pasado el mediodía.
-  const daysTotal = Math.round((end.getTime() - start.getTime()) / 86400000);
-  const daysPassed = Math.min(Math.floor((todayMidnight.getTime() - start.getTime()) / 86400000) + 1, daysTotal);
-
-  return {
-    start, end, label: fmt_d(start) + ' – ' + fmt_d(end),
-    prevStart, prevEnd, prevLabel: fmt_d(prevStart) + ' – ' + fmt_d(prevEnd),
-    daysPassed, daysTotal,
-  };
+/** Calcula el período financiero actual y el anterior según el ciclo de pago (ver services/FinancialPeriod.ts). */
+export function getCurrentFinancialPeriod(settings: UserSettings, now: Date = new Date()): FinancialPeriod {
+  return computeFinancialPeriod(settings, now, buildStartResolver(settings, anchorsCache));
 }
 
 /** Score financiero 0-100 */
@@ -1620,7 +1500,7 @@ export const StorageService = {
   async getSettings(): Promise<UserSettings> {
     try {
       const data = await AsyncStorage.getItem(K.SETTINGS);
-      return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+      return data ? withSettingsDefaults(JSON.parse(data)) : DEFAULT_SETTINGS;
     } catch { return DEFAULT_SETTINGS; }
   },
 
@@ -1631,11 +1511,12 @@ export const StorageService = {
    */
   async getSettingsOrThrow(): Promise<UserSettings> {
     const data = await AsyncStorage.getItem(K.SETTINGS);
-    return data ? { ...DEFAULT_SETTINGS, ...JSON.parse(data) } : DEFAULT_SETTINGS;
+    return data ? withSettingsDefaults(JSON.parse(data)) : DEFAULT_SETTINGS;
   },
 
   async saveSettings(s: UserSettings): Promise<void> {
     try { await AsyncStorage.setItem(K.SETTINGS, JSON.stringify(s)); } catch { }
+    refreshPeriodResolver(s);
     emitSettingsChanged(s);
   },
 
@@ -1655,6 +1536,36 @@ export const StorageService = {
     };
     await this.saveSettings(next);
     return next;
+  },
+
+  // ── Anclas del inicio real del período ────────────────────
+  async getPeriodAnchors(): Promise<PeriodAnchor[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.PERIOD_ANCHORS);
+      anchorsCache = sanitizeAnchors(data ? JSON.parse(data) : []);
+    } catch { /* se conserva lo que haya en memoria */ }
+    return anchorsCache;
+  },
+
+  /** Guarda las anclas, actualiza la memoria y reconstruye el resolvedor del período. */
+  async savePeriodAnchors(list: PeriodAnchor[]): Promise<void> {
+    anchorsCache = sanitizeAnchors(list);
+    try { await AsyncStorage.setItem(K.PERIOD_ANCHORS, JSON.stringify(anchorsCache)); } catch { }
+    refreshPeriodResolver(await this.getSettings());
+  },
+
+  /** El usuario fija a mano el inicio real del período `key` (inicio nominal): la automatización no lo revierte. */
+  async setManualPeriodStart(key: string, start: string): Promise<PeriodAnchor[]> {
+    const list = setManualAnchor(await this.getPeriodAnchors(), key, start, new Date().toISOString());
+    await this.savePeriodAnchors(list);
+    return anchorsCache;
+  },
+
+  /** Quita el inicio manual del período `key`: vuelve a regir el sueldo detectado o la fecha esperada. */
+  async clearManualPeriodStart(key: string): Promise<PeriodAnchor[]> {
+    const list = clearManualAnchor(await this.getPeriodAnchors(), key);
+    await this.savePeriodAnchors(list);
+    return anchorsCache;
   },
 
   // ── Migraciones de datos ──────────────────────────────────
@@ -2010,7 +1921,7 @@ export const StorageService = {
     const [
       transactions, settings, fixedExpenses,
       categoryBudgets, savingsGoals, accounts,
-      creditInstallments, lastResetDate,
+      creditInstallments, lastResetDate, periodAnchors,
     ] = await Promise.all([
       this.getTransactions(),
       this.getSettings(),
@@ -2020,7 +1931,10 @@ export const StorageService = {
       this.getAccounts(),
       this.getCreditInstallments(),
       this.getLastResetDate(),
+      this.getPeriodAnchors(),
     ]);
+    void periodAnchors; // getPeriodAnchors ya dejó las anclas en memoria
+    refreshPeriodResolver(settings);
 
     const now = new Date();
     const currentMonth = now.getMonth();
@@ -2098,6 +2012,7 @@ export const StorageService = {
     const inst = upsertById(await readListStrict<CreditInstallment>(K.CREDIT_INSTALLMENTS), c.installments);
     await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(inst));
     await AsyncStorage.setItem(K.SETTINGS, JSON.stringify({ ...c.settings, onboardingComplete: true }));
+    refreshPeriodResolver({ ...c.settings, onboardingComplete: true });
     await this.clearOnboardingDraft();
   },
 
@@ -2119,5 +2034,7 @@ export const StorageService = {
   // ── Limpiar todo ──────────────────────────────────────────
   async clearAllData(): Promise<void> {
     try { await AsyncStorage.multiRemove(Object.values(K)); } catch { }
+    anchorsCache = [];
+    setPeriodStartResolver(null);
   },
 };
