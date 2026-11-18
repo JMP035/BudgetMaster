@@ -51,7 +51,7 @@ Al terminar, se lanza el **Tour Inicial** de 7 pasos que te muestra las funcione
 
 Es tu centro de mando. De arriba hacia abajo:
 
-- **Encabezado** — tu nombre, el rango del período financiero actual (ej. "30 Jun – 29 Jul 2026"), el día del período en que vas, y un contador de días hasta tu próximo pago (se pone rojo cuando faltan 3 o menos).
+- **Encabezado** — tu nombre, el rango del período financiero actual (ej. "30 Jun – 29 Jul 2026"), el día del período en que vas, y un contador de días hasta tu próximo pago (se pone rojo cuando faltan 3 o menos). El período empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado de Guatemala, arranca el día hábil en que de verdad te pagan. **Tocá el rango del período** para ver de dónde sale su inicio («Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago»), elegir otra fecha de inicio con **Guardar**, volver a lo automático con **Volver a automático** y ajustar las reglas (ver [sección 10](#10-ajustes)). La primera vez que tu período empieza antes o después de tu día de pago, la app te lo avisa una sola vez.
 - **Botón de sincronización SMS** (⟳, esquina superior derecha) — lee tus SMS bancarios e importa transacciones automáticamente. Ver [sección 4](#4-sincronización-automática-por-sms-android).
 - **CFO Intelligence (briefing)** — resumen diario de tu situación: porcentaje de presupuesto usado, dinero restante, gastos fijos pendientes y una frase motivacional. Con API Key de Gemini el briefing es generado por IA con tus datos reales.
 - **Score Financiero (0–100)** — tu termómetro de disciplina. Sube si ahorrás (tasa ≥ 10–20 %), te mantenés dentro del presupuesto, pagás todos tus gastos fijos y tenés cuentas registradas. 80+ Excelente · 60+ Bueno · 40+ Regular · <40 Crítico.
@@ -285,6 +285,10 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 
 - **Tu Perfil** — tu nombre.
 - **Presupuesto mensual** — límite de gasto en Q (obligatorio, > 0) y opcional en USD.
+- **Ingresos y período** — muestra tu día de pago y el período actual. El botón **Cuándo empieza mi período** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
+  - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia). **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijás a mano siempre gana*: la app no lo cambia sola.
+  - **Reglas** — qué hacer si el día de pago cae en fin de semana o feriado (**Viernes antes**, **Lunes después** o **Día exacto**), si cuentan los **feriados de Guatemala**, la **tolerancia** (de 1 a 7 días de diferencia máxima con el día de pago) y **Adelantar el período cuando llega el sueldo** (si el sueldo cae antes o después de lo esperado, el período empieza ese día). Se guardan con **Guardar reglas**, no con *Guardar Cambios*.
+  - Solo aplica a ciclos **mensual** y **quincenal**; con ciclo semanal o irregular el inicio del período es fijo.
 - **Moneda principal** — Q, $, € o £.
 - **Tipo de cambio USD → Q** — se actualiza solo cada 6 horas desde el **Banco de Guatemala (Banguat)**, con respaldo del mercado internacional. Podés forzar la actualización con ⟳ o escribirlo manualmente.
 - **Ahorros externos** — dinero guardado fuera de la app (Q y USD); se suma al Patrimonio Total.
@@ -326,7 +330,7 @@ Las alertas incluyen una frase de disciplina financiera (Hill, Kiyosaki, Ramsey,
 
 ## 13. Academia (tutoriales)
 
-7 tutoriales interactivos con "spotlight" sobre la pantalla real:
+Tutoriales interactivos con "spotlight" sobre la pantalla real:
 
 1. **Tour Inicial** (7 pasos) — se lanza solo la primera vez.
 2. Registrar un gasto o ingreso.
@@ -335,6 +339,7 @@ Las alertas incluyen una frase de disciplina financiera (Hill, Kiyosaki, Ramsey,
 5. Asesor IA.
 6. Módulo de Cuentas.
 7. Estadísticas.
+8. **Cómo se mide tu período** (también en la guía del Inicio como «Tu período») — tu día de pago, fin de semana y feriados, el sueldo que llega antes y la edición a mano.
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 
@@ -343,7 +348,7 @@ En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los v
 ## 14. Preguntas frecuentes
 
 **¿Por qué el "período" no coincide con el mes calendario?**
-Porque la app trabaja de pago a pago según tu ciclo (ej. si te pagan el 15, tu período va del 15 al 14 del mes siguiente). Así el presupuesto refleja tu realidad. Si tu ciclo es "irregular", sí se usa el mes calendario.
+Porque la app trabaja de pago a pago según tu ciclo (ej. si te pagan el 15, tu período va del 15 al 14 del mes siguiente). Así el presupuesto refleja tu realidad. Si tu ciclo es "irregular", sí se usa el mes calendario. Además, el período empieza el día en que de verdad te pagan: si tu día de pago cae en fin de semana o feriado, arranca el día hábil anterior o siguiente según tus reglas, y siempre podés fijarlo a mano (tocá el rango del período en el Inicio).
 
 **La sincronización SMS no importa nada.**
 1) Verificá que diste el permiso de SMS a la app (Ajustes de Android → Apps → BudgetMaster → Permisos). 2) Solo funciona en Android. 3) Solo lee SMS de los últimos 3 meses con palabras bancarias. 4) Los ya importados se saltan (verás "Ya registrados" en el resumen).

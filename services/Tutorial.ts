@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { C } from '../theme';
+import type { TutorialRequirement } from './TutorialRequirements';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -26,6 +27,9 @@ export interface TutorialStep {
     emptyHint?: string;
     // el paso se omite cuando la sincronización SMS está desactivada en Ajustes
     requiresSms?: boolean;
+    // algo que debe existir antes de este paso (cuenta, tarjeta, fuente de ingreso, SMS activos): si falta,
+    // el overlay lo avisa y ofrece crearlo en ese momento en vez de señalar una pantalla vacía
+    requires?: TutorialRequirement;
     // descripción alternativa (sin mención a SMS) cuando la sincronización SMS está desactivada
     noSmsDescription?: string;
     // emptyHint alternativo (sin mención a SMS) cuando la sincronización SMS está desactivada
@@ -102,7 +106,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_1', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Tu período financiero',
-                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
+                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. Tocá el rango del período para ver de dónde sale su inicio y cambiarlo. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
             },
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
@@ -155,6 +159,38 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'ini_10', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
                 title: 'Sincronizar SMS',
                 description: 'Lee tus SMS bancarios y registra los movimientos detectados, sin duplicar los que ya importaste. Solo funciona en Android y necesita el permiso de SMS. Deslizá hacia abajo en el Inicio para recargar los datos.',
+            },
+        ],
+    },
+
+    // ── Cómo se mide tu período (tutorial de proceso) ─────────
+    {
+        id: 'tutorial_periodo', title: 'Cómo se mide tu período',
+        description: 'Tu día de pago, fines de semana, feriados y sueldo adelantado.',
+        icon: 'calendar-outline', color: C.accent,
+        steps: [
+            {
+                id: 'per_1', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,
+                title: 'Tu día de pago',
+                description: 'Todo parte de tu día de pago (por ejemplo el 27): tu período va de un pago al siguiente, no del 1 al 30. Esta sección de Ajustes lo muestra junto con el período actual, y ahí mismo está el botón «Cuándo empieza mi período». Si tu ciclo es semanal o irregular el inicio es fijo y no hay nada que ajustar.',
+            },
+            {
+                id: 'per_2', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'sunny-outline', padding: 8,
+                title: 'Fin de semana y feriados',
+                description: 'Si tu día de pago cae sábado, domingo o feriado de Guatemala, el sueldo llega otro día. Tocá «Cuándo empieza mi período» y, en Reglas, elegí qué hacer: Viernes antes, Lunes después o Día exacto. También decidís si cuentan los feriados y cuántos días de tolerancia aceptás (de 1 a 7). El período arranca el día en que de verdad te pagan.',
+            },
+            {
+                id: 'per_3', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'cash-outline', padding: 8,
+                requires: 'income_source',
+                title: 'El sueldo que llega antes',
+                description: 'Con «Adelantar el período cuando llega el sueldo» activado, si tu sueldo cae antes o después de lo esperado (dentro de la tolerancia), el período empieza ese día. Arriba ves el rango del período y, al tocarlo, de dónde sale su inicio: «Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago».',
+                emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
+            },
+            {
+                id: 'per_4', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'hand-left-outline', padding: 8,
+                title: 'Editarlo a mano siempre gana',
+                description: 'Tocá el rango del período para abrir «Cuándo empieza tu período»: elegí la fecha en que de verdad te pagaron y tocá Guardar. Lo que fijás a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.',
+                emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
             },
         ],
     },
@@ -530,6 +566,11 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'set_2', elementId: 'settings_budget', screen: 'settings', position: 'bottom', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto mensual',
                 description: 'Lo máximo que planeás gastar por período, en quetzales. Con este número se calculan las alertas, el presupuesto diario ideal y parte de tu score. El equivalente en dólares se calcula solo con el tipo de cambio; si preferís, podés fijarlo a mano.',
+            },
+            {
+                id: 'set_period', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,
+                title: 'Ingresos y período',
+                description: 'Muestra tu día de pago y el período actual. «Cuándo empieza mi período» abre el detalle: de dónde sale el inicio (tu sueldo, un fin de semana o feriado, o lo que fijaste a mano), las fechas para elegir otro inicio y las reglas de fin de semana, feriados, tolerancia y sueldo adelantado. Esos cambios se guardan con los botones del propio detalle, no con Guardar Cambios.',
             },
             {
                 id: 'set_3', elementId: 'settings_currency', screen: 'settings', position: 'bottom', icon: 'cash-outline', padding: 8,

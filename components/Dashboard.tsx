@@ -34,6 +34,7 @@ import SmsPendingSheet, { countPending } from "./SmsPendingSheet";
 import { InlineNotice } from "./InlineNotice";
 import { useGlassDialog } from "./GlassDialogProvider";
 import { useUndoLastSync } from "./useUndoLastSync";
+import PeriodStartSheet from "./PeriodStartSheet";
 
 type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
 
@@ -573,6 +574,23 @@ export default function DashboardScreen({
     const [pendingResult, setPendingResult] = useState<SyncResult | null>(null);
     const [showInbox, setShowInbox] = useState(false);
     const [inboxCount, setInboxCount] = useState(0);
+    const [showPeriodSheet, setShowPeriodSheet] = useState(false);
+    const [showPeriodNotice, setShowPeriodNotice] = useState(false);
+
+    // Aviso único: el período ahora puede empezar antes (fin de semana, feriado o sueldo adelantado).
+    // Solo mensual/quincenal y solo si el inicio efectivo del período actual difiere del nominal.
+    const periodShifted = (settings.paymentCycle === "monthly" || settings.paymentCycle === "biweekly")
+        && period.startSource !== "nominal";
+    useEffect(() => {
+        if (!periodShifted) return;
+        let cancelled = false;
+        StorageService.getNotificationState().then(async st => {
+            if (cancelled || st.periodRulesNoticeShown) return;
+            setShowPeriodNotice(true);
+            await StorageService.markPeriodRulesNoticeShown();
+        }).catch(() => { });
+        return () => { cancelled = true; };
+    }, [periodShifted]);
 
     useEffect(() => {
         const load = async () => {
@@ -856,13 +874,22 @@ export default function DashboardScreen({
                     <View style={s.logoBox}>
                         <Ionicons name="wallet-outline" size={26} color={C.onPrimary} />
                     </View>
-                    <View style={{ flex: 1, minWidth: 110 }}>
+                    <TouchableOpacity
+                        style={{ flex: 1, minWidth: 110 }}
+                        onPress={() => setShowPeriodSheet(true)}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Período ${period.label}. Tocá para ver cuándo empieza`}
+                    >
                         <Text style={s.greeting} numberOfLines={1}>Hola, {settings.userName}</Text>
-                        <Text style={s.month}>{period.label.toUpperCase()}</Text>
+                        <View style={s.monthRow}>
+                            <Text style={s.month}>{period.label.toUpperCase()}</Text>
+                            <Ionicons name="create-outline" size={13} color={C.primaryLight} />
+                        </View>
                         <Text style={s.periodProgress}>
                             Día {period.daysPassed} de {period.daysTotal} del período
                         </Text>
-                    </View>
+                    </TouchableOpacity>
                     <HelpButton tutorialId="tutorial_inicio" />
                 </View>
                 <View style={{ flexDirection: "row", gap: 8, flexShrink: 0 }}>
@@ -931,6 +958,29 @@ export default function DashboardScreen({
                     />
                     <TouchableOpacity
                         onPress={() => onDismissSmsAuto?.()}
+                        style={s.autoNoticeClose}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Descartar aviso"
+                    >
+                        <Ionicons name="close" size={18} color={C.textMuted} />
+                    </TouchableOpacity>
+                </View>
+            )}
+
+            {/* AVISO ÚNICO: EL PERÍODO PUEDE EMPEZAR ANTES */}
+            {showPeriodNotice && (
+                <View style={s.autoNoticeRow}>
+                    <InlineNotice
+                        variant="info"
+                        text="Ahora tu período puede empezar antes si tu día de pago cae en fin de semana o feriado. Puedes cambiarlo tocando las fechas de arriba."
+                        icon="calendar-outline"
+                        actionLabel="Ver"
+                        onAction={() => { setShowPeriodNotice(false); setShowPeriodSheet(true); }}
+                        style={s.autoNotice}
+                    />
+                    <TouchableOpacity
+                        onPress={() => setShowPeriodNotice(false)}
                         style={s.autoNoticeClose}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         accessibilityRole="button"
@@ -1101,6 +1151,13 @@ export default function DashboardScreen({
             </ScrollView>
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
             {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
+            {showPeriodSheet && (
+                <PeriodStartSheet
+                    settings={settings}
+                    onClose={() => setShowPeriodSheet(false)}
+                    onChanged={() => onRefresh()}
+                />
+            )}
             {smsOn && (
                 <SmsPendingSheet
                     visible={showPending}
@@ -1139,7 +1196,8 @@ const s = StyleSheet.create({
     periodProgress: { color: C.accent, fontSize: 9, marginTop: 1, fontWeight: "700", letterSpacing: 0.5 },
     periodBadge: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 14, flexWrap: "wrap" },
     greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
-    month: { color: C.textPrimary, fontSize: 11, marginTop: 2, letterSpacing: 1.5, fontWeight: "700" },
+    monthRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 2 },
+    month: { color: C.textPrimary, fontSize: 11, letterSpacing: 1.5, fontWeight: "700", flexShrink: 1 },
     daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.glassFill },
     daysBadgeTxt: { fontSize: 11, fontWeight: "700" },
     inboxRow: { flexDirection: "row", marginTop: -8, marginBottom: 14 },

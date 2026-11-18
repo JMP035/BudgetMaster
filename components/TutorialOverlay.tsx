@@ -8,6 +8,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTutorial } from "../context/TutorialContext";
 import { Tutorial, TutorialScreen, TutorialService, TutorialStep } from "../services/TutorialService";
+import { missingRequirement, requirementNoticeText } from "../services/TutorialRequirements";
+import type { RequirementFacts, TutorialRequirement } from "../services/TutorialRequirements";
 import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
@@ -118,9 +120,12 @@ interface StepCardProps {
     stepIndex: number;
     rect: Rect | null;
     fallback: boolean;
+    /** Requisito del paso que falta (cuenta, tarjeta, fuente de ingreso, SMS); null si no falta nada. */
+    missing: TutorialRequirement | null;
     containerHeight: number;
     onNext: () => void;
     onSkip: () => void;
+    onFulfill: (req: TutorialRequirement) => void;
 }
 
 const CARD_MAX_WIDTH = 440;
@@ -140,7 +145,7 @@ interface CardMeasure { key: string; naturalH: number; bodyH: number; iconBlockH
  *     con scroll interno o superpuesta) sin retroalimentarse del alto ya ubicado.
  * Cabecera y pie (contador + botones) son fijos; solo el cuerpo hace scroll.
  */
-function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, onNext, onSkip }: StepCardProps) {
+function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containerHeight, onNext, onSkip, onFulfill }: StepCardProps) {
     const insets = useSafeAreaInsets();
     const { width: winW, fontScale } = useWindowDimensions();
     const slideAnim = useRef(new Animated.Value(40)).current;
@@ -150,7 +155,7 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, 
 
     const sideMargin = Math.max(20, (winW - CARD_MAX_WIDTH) / 2);
 
-    const measureKey = `${winW}:${fontScale}:${fallback}`;
+    const measureKey = `${winW}:${fontScale}:${fallback}:${missing ?? ''}`;
     const [measured, setMeasured] = useState<CardMeasure | null>(null);
     const partsRef = useRef<{ key?: string; naturalH?: number; bodyH?: number; iconBlockH?: number }>({});
     const prevKeyRef = useRef(measureKey);
@@ -210,7 +215,18 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, containerHeight, 
         <>
             <Text style={card.title}>{step.title}</Text>
             <Text style={card.desc}>{step.description}</Text>
-            {fallback && (
+            {missing ? (
+                <>
+                    <InlineNotice variant="warning" text={requirementNoticeText(missing)} style={card.notice} />
+                    <GlassButton
+                        kind="secondary"
+                        icon="add-circle-outline"
+                        label="Crearlo ahora"
+                        onPress={() => onFulfill(missing)}
+                        style={card.fulfillBtn}
+                    />
+                </>
+            ) : fallback && (
                 <InlineNotice variant="info" text={step.emptyHint ?? DEFAULT_EMPTY_HINT} style={card.notice} />
             )}
         </>
@@ -451,9 +467,13 @@ interface Props {
     currentScreen?: TutorialScreen;
     onNavigateToScreen?: (screen: TutorialScreen) => void;
     smsEnabled?: boolean;
+    /** Lo que ya existe en los datos del usuario; con esto los pasos con `requires` saben si falta algo. */
+    requirementFacts?: RequirementFacts;
+    /** El usuario tocó «Crearlo ahora»: la pantalla dueña abre lo que falta (el tutorial ya se cerró). */
+    onFulfillRequirement?: (req: TutorialRequirement) => void;
 }
 
-export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu, currentScreen, onNavigateToScreen, smsEnabled = true }: Props) {
+export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showMenu, onCloseMenu, currentScreen, onNavigateToScreen, smsEnabled = true, requirementFacts, onFulfillRequirement }: Props) {
     const { measureElement, ensureVisible, runAction } = useTutorial();
 
     const [activeTutorial, setActiveTutorial] = useState<Tutorial | null>(null);
@@ -473,6 +493,10 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     onNavigateRef.current = onNavigateToScreen;
     const smsEnabledRef = useRef(smsEnabled);
     smsEnabledRef.current = smsEnabled;
+    const factsRef = useRef(requirementFacts);
+    factsRef.current = requirementFacts;
+    const onFulfillRef = useRef(onFulfillRequirement);
+    onFulfillRef.current = onFulfillRequirement;
     const overlayRootRef = useRef<View>(null);
 
     const win = useWindowDimensions();
@@ -575,6 +599,15 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
             // 1. Teclado fuera (esperando a que el layout se reacomode)
             await ensureKeyboardHidden();
             if (stale()) return;
+
+            // 1b. Si falta lo que el paso necesita (cuenta, tarjeta, ingreso, SMS) no se señala nada:
+            // tarjeta centrada con el aviso y el botón «Crearlo ahora».
+            if (factsRef.current && missingRequirement(step, factsRef.current)) {
+                setSpotlightRect(null);
+                setFallback(false);
+                setMeasuredKey(key);
+                return;
+            }
 
             // 2. Navegar si el paso pertenece a otra pantalla
             let navigated = false;
@@ -715,6 +748,19 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
         onTutorialEnd?.();
     };
 
+    // «Crearlo ahora»: el overlay bloquea los toques, así que el tutorial se cierra SIN marcarse como visto
+    // y la pantalla dueña abre lo que falta (cuenta, tarjeta, ajustes de SMS…).
+    const fulfillRequirement = (req: TutorialRequirement) => {
+        _activeFlag = false;
+        setActiveTutorial(null);
+        setStepIndex(0);
+        setSpotlightRect(null);
+        setFallback(false);
+        setMeasuredKey(null);
+        onTutorialEnd?.();
+        onFulfillRef.current?.(req);
+    };
+
     // El botón Atrás de Android cierra el tutorial en vez de salir de la pantalla
     // en la que el tutorial nos dejó (incluido el módulo de Cuentas).
     useEffect(() => {
@@ -729,6 +775,7 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
     const currentStep = activeTutorial?.steps[stepIndex];
     const currentKey = activeTutorial ? `${activeTutorial.id}:${stepIndex}` : null;
     const cardReady = !!currentStep && (!currentStep.elementId || measuredKey === currentKey);
+    const currentMissing = currentStep && requirementFacts ? missingRequirement(currentStep, requirementFacts) : null;
 
     return (
         <>
@@ -769,9 +816,11 @@ export default function TutorialOverlay({ activeTutorialId, onTutorialEnd, showM
                             stepIndex={stepIndex}
                             rect={spotlightRect}
                             fallback={fallback}
+                            missing={currentMissing}
                             containerHeight={overlaySize.height}
                             onNext={handleNext}
                             onSkip={endTutorial}
+                            onFulfill={fulfillRequirement}
                         />
                     )}
                 </View>
@@ -857,6 +906,7 @@ const card = StyleSheet.create({
     title: { color: C.textPrimary, fontSize: 19, fontWeight: "900", marginBottom: 8, lineHeight: 26 },
     desc: { color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 14 },
     notice: { marginBottom: 14 },
+    fulfillBtn: { marginBottom: 14 },
     counter: { color: C.textSub, fontSize: 11, letterSpacing: 1, marginBottom: 14 },
     btnRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     skipBtn: { flex: 1, paddingHorizontal: 4 },

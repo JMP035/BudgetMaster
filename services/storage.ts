@@ -1864,6 +1864,13 @@ export const StorageService = {
     await this.saveNotificationState({ ...prev, setupNudgesShown });
   },
 
+  /** Marca que ya se mostró el aviso único «tu período ahora puede empezar antes» (ver B3b). */
+  async markPeriodRulesNoticeShown(): Promise<void> {
+    const prev = await this.getNotificationState();
+    if (prev.periodRulesNoticeShown) return;
+    await this.saveNotificationState({ ...prev, periodRulesNoticeShown: true });
+  },
+
   async setWeeklySummaryFireAt(iso: string): Promise<void> {
     const prev = await this.getNotificationState();
     await this.saveNotificationState({ ...prev, weeklySummaryFireAt: iso });

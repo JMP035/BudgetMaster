@@ -5,7 +5,8 @@ import {
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { Account, Currency, CustomCategory, FixedExpense, StorageService, Transaction, UserSettings, parseAmount } from "../services/storage";
+import { Account, Currency, CustomCategory, FixedExpense, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
+import { PeriodStartSheet, payDayText } from "./PeriodStartSheet";
 import SmsPendingSheet from "./SmsPendingSheet";
 import { ExchangeRateService, RateResult } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
@@ -168,6 +169,9 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const [apiKey, setApiKey] = useState(settings.geminiApiKey || "");
     const [saved, setSaved] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
+    const [showPeriod, setShowPeriod] = useState(false);
+    // Sube cuando el sheet del período guarda algo: el resumen de «Ingresos y período» se relee.
+    const [, setPeriodTick] = useState(0);
     const [showNewCat, setShowNewCat] = useState(false);
     const [editingCat, setEditingCat] = useState<CustomCategory | null>(null);
     const [customCats, setCustomCats] = useState<CustomCategory[]>(settings.customCategories || []);
@@ -647,6 +651,19 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     )}
                 </Section>
 
+                {/* INGRESOS Y PERÍODO */}
+                <Section tutId="settings_period" onLayoutY={trackY("period")} icon="calendar-outline" title="Ingresos y período" description="Tu período empieza el día que cae tu sueldo. Acá ves cuándo empezó y podés cambiar las reglas.">
+                    <Text style={s.switchLabel}>{payDayText(settings)}</Text>
+                    <Text style={s.hint}>Período actual: {getCurrentFinancialPeriod(settings).label}</Text>
+                    <GlassButton
+                        kind="secondary"
+                        icon="calendar-outline"
+                        label="Cuándo empieza mi período"
+                        style={s.ghostBtn}
+                        onPress={() => setShowPeriod(true)}
+                    />
+                </Section>
+
                 {/* MONEDA PRINCIPAL */}
                 <Section tutId="settings_currency" icon="cash-outline" title="Moneda Principal" description="La moneda que usás en tu día a día.">
                     <GlassSegmented
@@ -844,6 +861,13 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 <View style={{ height: 120 + kb }} />
             </ScrollView>
 
+            {showPeriod && (
+                <PeriodStartSheet
+                    settings={settings}
+                    onClose={() => setShowPeriod(false)}
+                    onChanged={upd => { if (upd) onSave(upd); setPeriodTick(n => n + 1); }}
+                />
+            )}
             {showNewCat && (
                 <NewCategorySheet onSaved={handleCustomCatSaved} onClose={() => setShowNewCat(false)} />
             )}

@@ -7,8 +7,8 @@
 import type {
   Account, AccountType, CreditInstallment, Currency, FixedExpense, PaymentCycle, UserSettings,
 } from './storage';
-import { dueDateInPeriod, periodFor } from './FixedCycle';
-import type { FixedCycleConfig } from './FixedCycle';
+import { dueDateInPeriod, periodFor, periodForWith } from './FixedCycle';
+import type { FixedCycleConfig, PeriodStartResolver } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
 import { suggestInstallmentCount } from './InstallmentMath';
 
@@ -426,9 +426,13 @@ export function periodSentence(
   }
 }
 
-/** «Vence el 5 nov, dentro de tu período 27 oct – 26 nov» para un gasto fijo del día `day`. */
-export function dueLabel(day: number, cfg: FixedCycleConfig, now: Date): string {
-  const p = periodFor(cfg, now);
+/**
+ * «Vence el 5 nov, dentro de tu período 27 oct – 26 nov» para un gasto fijo del día `day`. En el onboarding se
+ * pasa `resolve` armado con el ciclo del BORRADOR (el resolvedor global aún tiene los ajustes por defecto);
+ * sin él se usa el global.
+ */
+export function dueLabel(day: number, cfg: FixedCycleConfig, now: Date, resolve?: PeriodStartResolver | null): string {
+  const p = resolve === undefined ? periodFor(cfg, now) : periodForWith(cfg, now, resolve);
   const due = dueDateInPeriod(day, p, cfg);
   return `Vence el ${formatShortDay(due)}, dentro de tu período ${formatPeriodRange(p)}`;
 }

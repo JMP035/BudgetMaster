@@ -3,10 +3,11 @@ import React, { useContext, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { getAllExpenseCategories } from "../../categories";
 import { fixedCycleConfig } from "../../services/FixedCycle";
+import { buildStartResolver } from "../../services/PeriodAnchors";
 import {
     dueLabel, DraftCurrency, DraftFixed, FIXED_SUGGESTIONS, newDraftId, normalizeName, validateDay, validateFixed,
 } from "../../services/OnboardingPlan";
-import { parseAmount } from "../../services/storage";
+import { DEFAULT_SETTINGS, parseAmount } from "../../services/storage";
 import { C } from "../../theme";
 import { GlassButton, GlassButtonGroup } from "../GlassButton";
 import { GlassCard } from "../GlassCard";
@@ -61,7 +62,9 @@ export default function StepFixed({ draft, onChange, onFormOpenChange }: StepPro
     const remove = (id: string) => onChange(d => ({ fixed: d.fixed.filter(f => f.id !== id) }));
 
     const dayValid = validateDay(day).ok;
-    const due = dayValid ? dueLabel(Number(day), fixedCycleConfig(cycleSettingsOf(draft)), new Date()) : null;
+    // Mismo inicio real que el resto del onboarding: el ciclo del borrador, no el resolvedor global.
+    const cycle = cycleSettingsOf(draft);
+    const due = dayValid ? dueLabel(Number(day), fixedCycleConfig(cycle), new Date(), buildStartResolver({ ...DEFAULT_SETTINGS, ...cycle }, [])) : null;
 
     const taken = (n: string) => draft.fixed.some(f => normalizeName(f.name) === normalizeName(n));
 

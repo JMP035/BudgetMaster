@@ -442,11 +442,11 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
     isChecklistComplete(buildChecklist({ ...base, isAndroid: false, biometricAvailable: false, accountsCount: 1, tourDone: true }), ['fixed', 'gemini']));
 
   const ids = new Set(HELP_MODULES.map(m => m.tutorialId));
-  check('HELP_MODULES: 10 ids únicos', HELP_MODULES.length === 10 && ids.size === 10);
+  check('HELP_MODULES: 11 ids únicos', HELP_MODULES.length === 11 && ids.size === 11);
   check('HELP_MODULES: ids reales de Tutorial.ts', ['tour_inicial', 'tutorial_inicio', 'tutorial_movimientos', 'tutorial_agregar', 'tutorial_presupuesto',
-    'tutorial_cuentas', 'tutorial_stats', 'tutorial_ia', 'tutorial_ajustes', 'tutorial_sms'].every(id => ids.has(id)));
-  check('helpModulesFor(false) sin tutorial_sms', !helpModulesFor(false).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(false).length === 9);
-  check('helpModulesFor(true) con tutorial_sms', helpModulesFor(true).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(true).length === 10);
+    'tutorial_cuentas', 'tutorial_stats', 'tutorial_ia', 'tutorial_ajustes', 'tutorial_sms', 'tutorial_periodo'].every(id => ids.has(id)));
+  check('helpModulesFor(false) sin tutorial_sms', !helpModulesFor(false).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(false).length === 10);
+  check('helpModulesFor(true) con tutorial_sms', helpModulesFor(true).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(true).length === 11);
 
   const st = { v: 1, dismissed: false, collapsed: true, skipped: ['tour', 'zzz'], tourDeferred: true, createdAt: NOW };
   const san = sanitizeGettingStarted(st);

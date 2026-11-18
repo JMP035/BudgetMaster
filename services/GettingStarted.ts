@@ -121,6 +121,7 @@ export interface HelpModule { tutorialId: string; label: string; requiresSms?: b
 export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tour_inicial', label: 'Recorrido general' },
   { tutorialId: 'tutorial_inicio', label: 'Inicio' },
+  { tutorialId: 'tutorial_periodo', label: 'Tu período' },
   { tutorialId: 'tutorial_movimientos', label: 'Movimientos' },
   { tutorialId: 'tutorial_agregar', label: 'Agregar' },
   { tutorialId: 'tutorial_presupuesto', label: 'Presupuesto' },

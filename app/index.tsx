@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState, InteractionManager, LayoutAnimation, Platform, StatusBar,
   StyleSheet, Text, TouchableOpacity,
@@ -22,6 +22,8 @@ import { buildOnboardingCommit } from "../services/OnboardingPlan";
 import type { OnboardingResult } from "../services/OnboardingPlan";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
+import { buildRequirementFacts } from "../services/TutorialRequirements";
+import type { TutorialRequirement } from "../services/TutorialRequirements";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
 import { C, shadow } from "../theme";
 import { GlassBackground } from "../components/GlassCard";
@@ -137,6 +139,8 @@ function AppContent() {
   const showAccountsRef = useRef(false);
   showAccountsRef.current = showAccounts;
   const tutorialOpenedAccountsRef = useRef(false);
+  // «Crearlo ahora» del tutorial: Cuentas se abre con el modal de alta ya listo (cuenta bancaria o tarjeta).
+  const [accountCreate, setAccountCreate] = useState<{ type: "bank" | "credit"; n: number } | null>(null);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
   const contentRef = useTutorialRef('app_content');
@@ -386,6 +390,42 @@ function AppContent() {
     setShowAI(false);
   }, []);
 
+  // Requisitos de los pasos del tutorial: qué existe ya en los datos del usuario.
+  const smsOnNow = isSmsFeatureOn(settings);
+  const hasIncomeTx = useMemo(() => txs.some(t => t.type === "income"), [txs]);
+  const requirementFacts = useMemo(() => buildRequirementFacts({
+    accounts,
+    monthlyIncome: settings.monthlyIncome,
+    hasIncomeTransaction: hasIncomeTx,
+    smsOn: smsOnNow,
+  }), [accounts, settings.monthlyIncome, hasIncomeTx, smsOnNow]);
+
+  // «Crearlo ahora»: lleva al usuario a donde se crea lo que falta (el tutorial ya se cerró).
+  const handleFulfillRequirement = useCallback((req: TutorialRequirement) => {
+    tutorialOpenedAccountsRef.current = false;
+    switch (req) {
+      case "bank_account":
+      case "credit_card":
+        setAccountCreate({ type: req === "credit_card" ? "credit" : "bank", n: Date.now() });
+        setShowAI(false);
+        setShowAccounts(true);
+        break;
+      case "income_source":
+        // TODO(B4): cuando exista la pestaña Ingresos, llevar a ella. Por ahora la fuente de ingreso
+        // (ingreso mensual / movimientos de ingreso) se administra desde Presupuesto.
+        setShowAccounts(false);
+        setShowAI(false);
+        setTab("budget");
+        break;
+      case "sms_on":
+        setShowAccounts(false);
+        setShowAI(false);
+        setSettingsFocus("sms");
+        setTab("settings");
+        break;
+    }
+  }, []);
+
   // ── Renders condicionales ─────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
   if (!settings.onboardingComplete) return <OnboardingScreen onComplete={handleOnboarding} />;
@@ -500,6 +540,8 @@ function AppContent() {
             transactions={txs}
             setTransactions={setTxs}
             settings={settings}
+            autoCreate={accountCreate}
+            onAutoCreateHandled={() => setAccountCreate(null)}
             onClose={() => { setShowAccounts(false); loadData(); }}
           />
         )}
@@ -525,6 +567,8 @@ function AppContent() {
           currentScreen={showAccounts ? 'accounts' : showAI ? 'advisor' : tab}
           onNavigateToScreen={navigateForTutorial}
           smsEnabled={isSmsFeatureOn(settings)}
+          requirementFacts={requirementFacts}
+          onFulfillRequirement={handleFulfillRequirement}
         />
       </View>
     </TutorialMenuProvider>

@@ -548,11 +548,14 @@ interface Props {
   setTransactions: (t: Transaction[]) => void;
   settings: UserSettings;
   onClose: () => void;
+  /** Pide abrir el alta de cuenta (bancaria o tarjeta) al montar o al cambiar; lo usa «Crearlo ahora» del tutorial. */
+  autoCreate?: { type: 'bank' | 'credit'; n: number } | null;
+  onAutoCreateHandled?: () => void;
 }
 
 export default function AccountsScreen({
   accounts, setAccounts, creditInstallments, setCreditInstallments,
-  transactions, setTransactions, settings, onClose,
+  transactions, setTransactions, settings, onClose, autoCreate, onAutoCreateHandled,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height: winH, width: winW } = useWindowDimensions();
@@ -567,6 +570,18 @@ export default function AccountsScreen({
   const [showTransfer, setShowTransfer] = useState(false);
   const [editingAcc, setEditingAcc] = useState<Account | undefined>();
   const [editingInst, setEditingInst] = useState<CreditInstallment | undefined>();
+  const [createType, setCreateType] = useState<AccountType | undefined>();
+
+  // «Crearlo ahora» del tutorial: abre el alta de la cuenta o tarjeta que falta.
+  useEffect(() => {
+    if (!autoCreate) return;
+    setActiveTab('accounts');
+    setEditingAcc(undefined);
+    setCreateType(autoCreate.type);
+    setShowAccModal(true);
+    onAutoCreateHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoCreate?.n]);
 
   // ── Tutorial ──────────────────────────────────────────────
   const rootRef = useTutorialRef('accounts_root');
@@ -1010,7 +1025,7 @@ export default function AccountsScreen({
           accessibilityRole="button"
           accessibilityLabel={activeTab === 'accounts' ? 'Agregar cuenta' : 'Agregar visacuota'}
           onPress={() => {
-            if (activeTab === 'accounts') { setEditingAcc(undefined); setShowAccModal(true); }
+            if (activeTab === 'accounts') { setEditingAcc(undefined); setCreateType(undefined); setShowAccModal(true); }
             else { setEditingInst(undefined); setShowInstModal(true); }
           }}
         >
@@ -1022,11 +1037,12 @@ export default function AccountsScreen({
       {showAccModal && (
         <AccountModal
           existing={editingAcc}
+          defaultType={createType}
           defaultCurrency={settings.currency}
           smsOn={smsOn}
           allAccounts={accounts}
           onSave={handleSaveAccount}
-          onClose={() => { setShowAccModal(false); setEditingAcc(undefined); }}
+          onClose={() => { setShowAccModal(false); setEditingAcc(undefined); setCreateType(undefined); }}
         />
       )}
       {showInstModal && (
