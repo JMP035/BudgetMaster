@@ -31,7 +31,9 @@ interface Props {
 export default function InstallmentModal({ accounts, onSave, onClose, existing, prefill, customCategories }: Props) {
   const categories = getAllExpenseCategories(customCategories);
   const creditAccounts = accounts.filter(a => a.type === 'credit' && a.isActive);
-  const [accountId, setAccountId] = useState(existing?.accountId || creditAccounts[0]?.id || '');
+  // '' = préstamo sin tarjeta (por ejemplo una deuda del onboarding): al editarla no se le asigna una tarjeta sola.
+  const [accountId, setAccountId] = useState(existing ? existing.accountId : (creditAccounts[0]?.id ?? ''));
+  const [dueDay, setDueDay] = useState(existing?.dueDay?.toString() || '');
   const [name, setName] = useState(existing?.name || prefill?.name || '');
   const [total, setTotal] = useState(existing?.totalAmount.toString() || prefill?.total || '');
   const [monthly, setMonthly] = useState(existing?.monthlyPayment.toString() || '');
@@ -60,7 +62,6 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
 
   const handleSave = () => {
     if (!name.trim()) { setError('Ingresa el nombre de la compra.'); return; }
-    if (!accountId) { setError('Selecciona una tarjeta de crédito.'); return; }
     const t = parseAmount(total);
     const m = parseAmount(monthly);
     const n = parseInt(installments);
@@ -73,10 +74,17 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
       return;
     }
 
+    let parsedDueDay: number | undefined;
+    if (!accountId && dueDay.trim()) {
+      parsedDueDay = parseInt(dueDay, 10);
+      if (isNaN(parsedDueDay) || parsedDueDay < 1 || parsedDueDay > 31) { setError('El día de pago debe estar entre 1 y 31.'); return; }
+    }
+
     const parsedStart = parseDateOnly(startDate);
     const validStartDate = parsedStart ? parsedStart.toISOString() : (existing?.startDate || new Date().toISOString());
 
     const item: CreditInstallment = {
+      ...(existing ?? {}),
       id: existing?.id || `ci_${Date.now()}`,
       accountId,
       name: name.trim(),
@@ -89,6 +97,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
       category,
       isActive: true,
       notes: notes.trim() || undefined,
+      dueDay: parsedDueDay,
     };
     onSave(item);
     onClose();
@@ -98,25 +107,21 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
     <GlassSheet
       onClose={onClose}
       title={`${existing ? 'Editar' : 'Nueva'} Visacuota`}
-      footer={creditAccounts.length > 0 ? (
+      footer={(
         <View style={md.footer}>
           {!!error && <InlineNotice variant="error" text={error} />}
           <GlassButton label="Guardar Visacuota" icon="card-outline" onPress={handleSave} />
         </View>
-      ) : undefined}
+      )}
     >
-      {creditAccounts.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Ionicons name="card-outline" size={48} color={C.textMuted} />
-          <Text style={{ color: C.textSub, fontSize: 14, textAlign: 'center', marginTop: 12 }}>
-            Primero agrega una tarjeta de crédito en la sección de Cuentas.
-          </Text>
-        </View>
-      ) : (
-        <>
+      <>
           <Text style={md.lbl}>TARJETA DE CRÉDITO</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
             <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity style={[md.typeChip, accountId === '' && { borderColor: C.primary, backgroundColor: C.glassActive }]} onPress={() => { setAccountId(''); setError(''); }}>
+                <Ionicons name="cash-outline" size={16} color={accountId === '' ? C.primaryLight : C.textSub} />
+                <Text style={[md.typeChipTxt, accountId === '' && { color: C.primaryLight }]}>Sin tarjeta (préstamo)</Text>
+              </TouchableOpacity>
               {creditAccounts.map(acc => (
                 <TouchableOpacity key={acc.id} style={[md.typeChip, accountId === acc.id && { borderColor: acc.color, backgroundColor: acc.color + '22' }]} onPress={() => { setAccountId(acc.id); setError(''); }}>
                   <Ionicons name="card-outline" size={16} color={accountId === acc.id ? acc.color : C.textSub} />
@@ -125,6 +130,9 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
               ))}
             </View>
           </ScrollView>
+          {creditAccounts.length === 0 && accountId === '' && (
+            <Text style={md.hint}>Para una compra con tarjeta, primero agrega la tarjeta en la sección de Cuentas (con su día de corte).</Text>
+          )}
 
           <Text style={md.lbl}>NOMBRE DE LA COMPRA</Text>
           <TextInput style={md.input} value={name} onChangeText={ch(setName)} placeholder="Ej: Laptop, Celular, Refrigeradora..." placeholderTextColor={C.textMuted} autoFocus />
@@ -146,14 +154,26 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
             <TextInput style={md.amtInput} value={installments} onChangeText={ch(setInstallments)} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
             <Text style={md.cur}>cuotas</Text>
           </View>
-          <Text style={md.hint}>La app descuenta una cuota automáticamente cada mes.</Text>
+          <Text style={md.hint}>
+            {accountId
+              ? 'Cada corte de tu tarjeta la app carga una cuota como gasto en tu período (no la compra completa).'
+              : 'Cada mes, el día de pago, la app carga una cuota como gasto en tu período.'}
+          </Text>
 
           <Text style={md.lbl}>CUOTAS YA PAGADAS</Text>
           <View style={md.amtRow}>
             <TextInput style={md.amtInput} value={paidInstallments} onChangeText={ch(setPaidInstallments)} placeholder="0" placeholderTextColor={C.textMuted} keyboardType="numeric" />
             <Text style={md.cur}>de {installments || '0'}</Text>
           </View>
-          <Text style={md.hint}>Si ya pagaste algunas cuotas antes de registrar esta compra, indícalo aquí.</Text>
+          <Text style={md.hint}>Si ya pagaste algunas cuotas antes de registrar esta compra, indícalo aquí: a partir de ahora la app carga las siguientes.</Text>
+
+          {!accountId && (
+            <>
+              <Text style={md.lbl}>DÍA DE PAGO (opcional)</Text>
+              <TextInput style={md.input} value={dueDay} onChangeText={ch(setDueDay)} placeholder="Ej: 15 (si lo dejas vacío, el día de la fecha de inicio)" placeholderTextColor={C.textMuted} keyboardType="number-pad" maxLength={2} />
+              <Text style={md.hint}>El día del mes en que se carga la cuota de este préstamo.</Text>
+            </>
+          )}
 
           <Text style={md.lbl}>FECHA DE INICIO</Text>
           <TouchableOpacity style={md.amtRow} onPress={() => setShowDatePicker(true)}>
@@ -189,8 +209,7 @@ export default function InstallmentModal({ accounts, onSave, onClose, existing, 
 
           <Text style={md.lbl}>NOTAS (Opcional)</Text>
           <TextInput style={md.input} value={notes} onChangeText={ch(setNotes)} placeholder="Ej: Comprado en Elektra, 12 cuotas sin interés..." placeholderTextColor={C.textMuted} />
-        </>
-      )}
+      </>
       <View style={{ height: 16 }} />
     </GlassSheet>
   );

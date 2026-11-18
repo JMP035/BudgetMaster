@@ -563,13 +563,13 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_3', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago y la cuota mensual de sus visacuotas.',
+                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y el «Ciclo abierto»: lo que llevás gastado desde el último corte, separado en quetzales y dólares (cada moneda se paga en su moneda).',
                 emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
             },
             {
                 id: 'acc_4', elementId: 'accounts_fab', screen: 'accounts', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar una cuenta',
-                description: 'Elegí el tipo, el nombre, el banco, la moneda y el saldo actual. En las tarjetas de crédito podés indicar el día de corte y el día de pago.',
+                description: 'Elegí el tipo, el nombre, el banco, la moneda y el saldo actual. En las tarjetas de crédito indicá el día de corte, que es la fecha de «Saldo al corte» de tu estado de cuenta (ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente), y el día de pago.',
             },
             {
                 id: 'acc_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
@@ -579,18 +579,52 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_6', elementId: 'accounts_tabs', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'bottom', icon: 'layers-outline', padding: 8,
                 title: 'Visacuotas',
-                description: 'En esta pestaña registrás compras a cuotas con tarjeta. Cada mes la app descuenta una cuota automáticamente.',
+                description: 'En esta pestaña registrás compras a cuotas con tarjeta (o un préstamo sin tarjeta). En cada corte de la tarjeta la app carga UNA cuota como gasto en tu período; no la compra completa.',
             },
             {
                 id: 'acc_7', elementId: 'accounts_inst_list', screen: 'accounts', position: 'top', icon: 'card-outline', padding: 8,
                 title: 'Seguimiento de cuotas',
-                description: 'Cada visacuota muestra la cuota mensual, cuántas pagaste, cuántas faltan y el mes en que terminás. Con el lápiz la editás y con la papelera la eliminás. También podés convertir un gasto existente en visacuota desde su detalle en Movimientos.',
+                description: 'Cada visacuota muestra la cuota mensual, cuántas se cargaron, cuántas faltan, la fecha de la «Próxima cuota» (el corte en que entra) y el mes en que terminás. Cada cuota se carga como gasto en el corte en que entra, no la compra completa. Con el lápiz la editás y con la papelera la eliminás (las cuotas que ya se cargaron como gasto se quedan en Movimientos). También podés convertir un gasto existente en visacuota desde su detalle en Movimientos.',
                 emptyHint: 'Todavía no tenés visacuotas. Agregá una con el botón +.',
             },
             {
                 id: 'acc_8', elementId: 'accounts_fab', screen: 'accounts', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar una visacuota',
-                description: 'Indicá la tarjeta, el monto total, la cuota mensual, el número de cuotas, las que ya pagaste y la fecha de la primera cuota.',
+                description: 'Indicá la tarjeta (o «Sin tarjeta (préstamo)» con su día de pago), el monto total, la cuota mensual, el número de cuotas, las que ya pagaste y la fecha de la compra: la primera cuota entra en el primer corte desde esa fecha.',
+            },
+        ],
+    },
+
+    // ── Cómo funcionan las visacuotas (tutorial de proceso) ───
+    {
+        id: 'tutorial_visacuotas', title: 'Cómo funcionan las visacuotas',
+        description: 'La tarjeta con su corte, la compra en cuotas y el cargo de cada cuota.',
+        icon: 'layers-outline', color: C.primary,
+        steps: [
+            {
+                id: 'vis_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'card-outline', padding: 8,
+                requires: 'credit_card',
+                title: '1. La tarjeta con su día de corte',
+                description: 'Primero tiene que existir la tarjeta en Cuentas, con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta: ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente) y su día de pago. Con el corte la app sabe en qué ciclo cae cada cuota. Si tu estado trae dos saldos (quetzales y dólares), cada moneda se cuenta aparte.',
+                emptyHint: 'Todavía no tenés tarjetas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'vis_2', elementId: 'accounts_fab', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'top', icon: 'add-circle-outline', padding: 8,
+                title: '2. La compra en cuotas',
+                description: 'La compra en cuotas llega de dos formas: la app la detecta sola cuando el banco te manda el SMS de «compra a cuotas», o la registrás vos con el botón +: tarjeta, monto total, cuota mensual, número de cuotas, las que ya pagaste y la fecha de la compra. Si es un préstamo sin tarjeta, elegí «Sin tarjeta (préstamo)» y su día de pago.',
+                noSmsDescription: 'La compra en cuotas la registrás con el botón +: tarjeta, monto total, cuota mensual, número de cuotas, las que ya pagaste y la fecha de la compra. Si es un préstamo sin tarjeta, elegí «Sin tarjeta (préstamo)» y su día de pago.',
+            },
+            {
+                id: 'vis_3', elementId: 'accounts_inst_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'top', icon: 'calendar-outline', padding: 8,
+                title: '3. Cada corte carga una cuota',
+                description: 'En cada corte de la tarjeta la app registra UNA cuota como gasto, fechado el día del corte y en la categoría de la visacuota: así tu período solo suma lo que de verdad te cargan cada mes, no la compra completa. Si la app estuvo cerrada varios cortes, al abrirla pone al día todas las cuotas de una vez. Si ya tenías ese gasto por SMS, se marca como la cuota en vez de duplicarse. Si borrás una cuota de Movimientos, no se vuelve a crear.',
+                emptyHint: 'Todavía no tenés visacuotas. Agregá una con el botón +.',
+            },
+            {
+                id: 'vis_4', elementId: 'accounts_inst_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'top', icon: 'checkmark-done-outline', padding: 8,
+                title: '4. La última cuota',
+                description: 'La visacuota muestra cuántas cuotas se cargaron y la «Próxima cuota». Al cargarse la última, la visacuota termina sola y deja de mostrarse en esta lista; las cuotas ya cargadas se quedan en Movimientos como historial. Si la eliminás antes, también se conservan.',
+                emptyHint: 'Todavía no tenés visacuotas. Agregá una con el botón +.',
             },
         ],
     },

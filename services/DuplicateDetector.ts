@@ -163,6 +163,12 @@ export function mergeManualIntoSms(manual: Transaction, sms: Transaction, nowIso
     merged.accountSource = 'user';
   }
 
+  // El cargo de una cuota de visacuota que se une a su SMS conserva la marca de la cuota (no se regenera).
+  if (manual.installmentId && manual.installmentNo) {
+    merged.installmentId = manual.installmentId;
+    merged.installmentNo = manual.installmentNo;
+  }
+
   if (manual.fixedExpenseId) {
     merged.fixedExpenseId = manual.fixedExpenseId;
     // Se conserva para que "Separar" devuelva el vínculo al manual aunque su id no sea fe_tx_*.

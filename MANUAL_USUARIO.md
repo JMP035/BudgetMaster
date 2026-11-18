@@ -209,7 +209,9 @@ Registrá dónde está tu dinero real:
 | 📈 Inversión | Acciones, cripto, fondos |
 | 💰 Ahorro | Cuenta de ahorro separada |
 
-- **Crear**: botón ➕ → tipo, nombre, banco (opcional), moneda (Q/USD), saldo actual, color y notas. Las tarjetas de crédito piden además el **límite de crédito** y muestran una barra de uso (roja arriba del 80 %).
+- **Crear**: botón ➕ → tipo, nombre, banco (opcional), moneda (Q/USD), saldo actual, color y notas. Las tarjetas de crédito piden además el **día de corte** y el **día de pago**.
+- **Día de corte de la tarjeta** = la fecha de **«Saldo al corte»** de tu estado de cuenta. Ese día todavía entra en el estado y el **ciclo nuevo empieza al día siguiente** (corte el 9 → el ciclo nuevo arranca el 10 a las 00:00). El pago cae en la primera aparición del día de pago después del corte (corte el 9 y pago el 2 → se paga el 2 del mes siguiente).
+- En cada tarjeta ves el **«Ciclo abierto»**: lo que llevás gastado desde el último corte, **separado por moneda** («Q 9,276.01 · $39.67»): las compras en dólares se pagan en dólares, no se mezclan. Las transferencias nunca suman.
 - **Editar**: mantené presionada la tarjeta. **Eliminar**: ícono 🗑.
 - El resumen superior muestra **Activos, Deudas y Neto** (las tarjetas de crédito restan del patrimonio).
 
@@ -224,9 +226,14 @@ Botón **"Transferir"** (necesitás al menos 2 cuentas activas): elegí origen, 
 Para compras financiadas con tarjeta (ej. "Laptop — Q6,000 en 12 cuotas de Q500"):
 
 - **Crear**: pestaña Visacuotas → ➕ → tarjeta asociada, nombre, monto total, cuota mensual (el número de cuotas se calcula solo), categoría.
-- Al crearla, el monto total **se suma al saldo deudor** de la tarjeta.
-- **Cada mes la app descuenta una cuota automáticamente** y te muestra cuotas pagadas, restantes y la fecha en la que terminás de pagar.
+- Si registrás la visacuota con cuotas ya pagadas, la app solo carga las siguientes (no genera cargos del pasado).
+- Ahora también podés elegir **«Sin tarjeta (préstamo)»** con su **día de pago**, indicar las cuotas ya pagadas y la fecha de la compra. La app también las detecta sola desde el SMS de «compra a cuotas» del banco (Android).
+- **Cada cuota se carga como gasto en el corte en que entra, no la compra completa**: en cada corte de la tarjeta la app registra UNA cuota (fechada el día del corte, con la categoría de la visacuota) y tu período solo suma esa cuota. La primera cuota entra en el primer corte desde la fecha de la compra. Si la app estuvo cerrada varios cortes, al abrirla pone al día todas las cuotas de una vez, sin duplicar ninguna.
+- Si ya tenías ese cargo por SMS, se marca como la cuota en vez de contarse dos veces. Si borrás una cuota de Movimientos, no se vuelve a crear.
+- Cada visacuota muestra la **«Próxima cuota»** (el corte en que entra), las cuotas cargadas y las restantes. Al cargarse la última, la visacuota **termina sola**.
+- **Eliminar** una visacuota conserva los cargos que ya hizo (fueron gastos reales). **Deshacer** una sincronización de SMS sí borra los cargos de las visacuotas que deshace.
 - El Dashboard te avisa cuánto debés este mes en visacuotas.
+- El tutorial **«Cómo funcionan las visacuotas»** (también en la guía del Inicio como «Visacuotas») lo cuenta en orden: la tarjeta con su corte, la compra en cuotas, el cargo de cada corte y la última cuota.
 
 ---
 
@@ -364,6 +371,7 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real:
 7. Estadísticas.
 8. **Cómo se mide tu período** (también en la guía del Inicio como «Tu período») — tu día de pago, fin de semana y feriados, el sueldo que llega antes y la edición a mano.
 9. **Tu sueldo** (también en la guía del Inicio) — cómo enseñarle a la app tu pago: la cuenta donde te pagan, la fuente de ingreso, un SMS de ejemplo y qué pasa cuando llega el pago.
+10. **Cómo funcionan las visacuotas** (también en la guía del Inicio como «Visacuotas») — la tarjeta con su día de corte, la compra en cuotas, la cuota que se carga en cada corte y la última cuota.
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 

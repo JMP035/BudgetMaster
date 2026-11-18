@@ -8,6 +8,7 @@
 // solo se importan funciones puras. Regex sin lookbehind ni flags s/v (Hermes).
 import type { Account, Currency, SmsLinkSeen, Transaction } from './storage';
 import { detectBankName, prepareSms } from './BankSmsParser';
+import { lastClosedCut, sumByCurrency } from './CardCycle';
 
 export type LinkSignalKind = 'card' | 'acct' | 'acctpre' | 'prod' | 'kind' | 'bank';
 
@@ -287,51 +288,23 @@ export function reconcileBalanceEffects(
 // Consumido en el ciclo de una tarjeta
 // ─────────────────────────────────────────────────────────────
 
-function txTime(stored: string): number {
-  const m = /^(\d{4})-(\d{2})-(\d{2})(T00:00:00(\.000)?Z)?$/.exec(stored);
-  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
-  return Date.parse(stored);
-}
-
-function cutoffOf(year: number, month: number, cutoffDay: number): Date {
-  const dim = new Date(year, month + 1, 0).getDate();
-  return new Date(year, month, Math.min(cutoffDay, dim));
-}
-
 /**
- * "Consumido este ciclo" de una tarjeta: gastos menos reembolsos (ingresos) con
- * accountId === card.id, en la moneda de la tarjeta, desde el día siguiente al último
- * corte hasta hoy. Hoy todavía pertenece al ciclo abierto aunque sea el día de corte.
- * Sin cutoffDay usa el mes calendario.
+ * "Ciclo abierto" de una tarjeta: gastos menos reembolsos (ingresos) con accountId === card.id desde el
+ * día siguiente al último corte hasta hoy (el día de corte es el último día INCLUIDO en el estado, y hoy
+ * todavía pertenece al ciclo abierto aunque sea día de corte). Sin cutoffDay usa el mes calendario.
+ * `byCurrency` separa cada moneda sin convertir (las compras en dólares se pagan en dólares); `amount` y
+ * `currency` son el total en la moneda de la tarjeta (compatibilidad). Las transferencias nunca suman.
  */
 export function cycleSpentForCard(
   txs: Transaction[],
   card: Account,
   now: Date,
-): { amount: number; currency: Currency; from: Date; to: Date } {
-  const day = card.cutoffDay;
-  let from: Date;
-  if (day && day >= 1 && day <= 31) {
-    const thisCut = cutoffOf(now.getFullYear(), now.getMonth(), day);
-    const lastCut = now.getDate() <= thisCut.getDate()
-      ? cutoffOf(now.getFullYear(), now.getMonth() - 1, day)
-      : thisCut;
-    from = new Date(lastCut.getFullYear(), lastCut.getMonth(), lastCut.getDate() + 1);
-  } else {
-    from = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-  const fromMs = from.getTime();
-  const endMs = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime();
-
-  let amount = 0;
-  for (const t of txs) {
-    if (t.accountId !== card.id || t.currency !== card.currency) continue;
-    if (t.type !== 'expense' && t.type !== 'income') continue;
-    const ms = txTime(t.date);
-    if (isNaN(ms) || ms < fromMs || ms >= endMs) continue;
-    amount += t.type === 'expense' ? t.amount : -t.amount;
-  }
-  return { amount: Math.max(0, Math.round(amount * 100) / 100), currency: card.currency, from, to: now };
+): { amount: number; currency: Currency; from: Date; to: Date; byCurrency: Array<{ currency: Currency; amount: number }> } {
+  const closed = lastClosedCut(card, now);
+  const from = new Date(closed.getFullYear(), closed.getMonth(), closed.getDate() + 1);
+  const byCurrency = sumByCurrency(txs, card.id, from, now);
+  const main = byCurrency.find(c => c.currency === card.currency);
+  return { amount: Math.max(0, main ? main.amount : 0), currency: card.currency, from, to: now, byCurrency };
 }
 
 // ─────────────────────────────────────────────────────────────

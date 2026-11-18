@@ -22,6 +22,10 @@ import type { PeriodAnchor, PaymentSchedule } from './PeriodAnchors';
 import { computeFinancialPeriod, daysUntilNextPay } from './FinancialPeriod';
 import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
+import {
+  detachInstallmentCharges, dropInstallmentCharges, migrateInstallmentsSchedule, planInstallmentCharges,
+  prepareInstallmentForSave,
+} from './InstallmentSchedule';
 // Módulos puros del onboarding: de ellos solo se importan valores sin dependencia de storage en runtime
 // (sanitizeDraft / sanitizeGettingStarted); los tipos van con `import type`.
 import { sanitizeDraft } from './OnboardingPlan';
@@ -87,6 +91,10 @@ export interface Transaction {
   incomeSourceId?: string;
   /** Ciclo de la fuente que cubre este depósito: fecha nominal del pago ('YYYY-MM-DD'). */
   incomeCycleKey?: string;
+  /** Visacuota (CreditInstallment.id) de la que este movimiento es el cargo de una cuota. */
+  installmentId?: string;
+  /** Número de la cuota (1..N) que representa este movimiento. */
+  installmentNo?: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -132,6 +140,12 @@ export interface CreditInstallment {
   notes?: string;
   originalSMS?: string;     // SMS de origen (si se detectó por SMS)
   smsFingerprint?: string;  // Huella del SMS de origen
+  /** ISO: solo los cortes desde este día generan el cargo de la cuota (nada retroactivo). Ver InstallmentSchedule. */
+  trackSince?: string;
+  /** Ajuste para que paidInstallments = cuotas cargadas + paidOffset (cuotas pagadas antes de seguirlas). */
+  paidOffset?: number;
+  /** Día de pago (1-31) de un préstamo sin tarjeta; sin él se usa el día de startDate. */
+  dueDay?: number;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -682,6 +696,13 @@ export const StorageService = {
     if (target && target.source === 'sms') {
       await this.addDismissedSms(smsTombstoneKeys(target));
     }
+    // El cargo de una cuota de visacuota borrado a mano no se vuelve a generar en el siguiente corte/arranque.
+    if (target && (target.id.startsWith('inst_') || (target.installmentId && target.installmentNo))) {
+      await this.addDismissedSms([
+        ...(target.id.startsWith('inst_') ? [target.id] : []),
+        ...(target.installmentId && target.installmentNo ? [`inst_${target.installmentId}_${target.installmentNo}`] : []),
+      ]);
+    }
     let updated = all.filter(t => t.id !== id);
     // Mitad de un par de transferencia: la otra queda neutra pero sin transferPairId (sin huérfanos).
     if (target?.transferPairId) updated = clearPairIdOfPartner(updated, target.transferPairId);
@@ -1161,14 +1182,17 @@ export const StorageService = {
 
     // saveTransactions es el punto por donde se revertirán los saldos cuando exista el saldo automático.
     // Los registros manuales que el lote había unido a un SMS vuelven (no reciben lápida: no son SMS).
-    const remaining = plan.removeTxs.length > 0
-      ? [...txs.filter(t => !plan.removedTxIds.has(t.id)), ...plan.restoreManuals]
-      : txs;
+    // Los cargos que generaron las visacuotas deshechas se van con ellas (no quedan cuotas huérfanas).
+    const dropped = dropInstallmentCharges(txs, new Set(plan.removeInsts.map(i => i.id)));
+    const afterTwins = dropped.txs;
+    const remaining = plan.removeTxs.length > 0 || dropped.removed > 0
+      ? [...afterTwins.filter(t => !plan.removedTxIds.has(t.id)), ...plan.restoreManuals]
+      : afterTwins;
     // Ingresos que el lote vinculó solo a una fuente: categoría previa en los que se quedan y fuera sus anclas.
     const incomeUndo = (batch.incomeLinks && batch.incomeLinks.length > 0)
       ? planIncomeLinksUndo(batch.incomeLinks, remaining, await this.getPeriodAnchors())
       : null;
-    if (plan.removeTxs.length > 0 || incomeUndo?.txsChanged) {
+    if (plan.removeTxs.length > 0 || dropped.changed || incomeUndo?.txsChanged) {
       await this.saveTransactions(incomeUndo ? incomeUndo.txs : remaining);
     }
     if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
@@ -1767,6 +1791,16 @@ export const StorageService = {
             if (r.changedKeys.includes('installments')) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
           },
         },
+        {
+          // Las visacuotas pasan de «una cuota por mes calendario» a «una cuota por corte de la tarjeta».
+          // trackSince = ahora (no se generan cargos retroactivos) y paidOffset conserva lo ya contado.
+          id: 'installments_schedule_v1',
+          run: async () => {
+            const [insts, accounts] = await Promise.all([this.getCreditInstallments(), this.getAccounts()]);
+            const r = migrateInstallmentsSchedule(insts, accounts, new Date());
+            if (r.changed) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
+          },
+        },
       ];
 
       for (const step of steps) {
@@ -1962,7 +1996,9 @@ export const StorageService = {
 
   async addCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {
     const all = await this.getCreditInstallments();
-    const updated = [...all, item];
+    // Fija trackSince/paidOffset (las que ya vienen con trackSince, como las de SMS, se respetan).
+    const prepared = prepareInstallmentForSave(item, undefined, await this.getAccounts(), new Date());
+    const updated = [...all, prepared];
     await this.saveCreditInstallments(updated);
     return updated;
   },
@@ -1976,11 +2012,18 @@ export const StorageService = {
 
   async updateCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {
     const all = await this.getCreditInstallments();
-    const updated = all.map(x => x.id === item.id ? item : x);
+    const previous = all.find(x => x.id === item.id);
+    // Si cambió algo que mueve el calendario o las cuotas pagadas, paidOffset se recalcula.
+    const prepared = previous ? prepareInstallmentForSave(item, previous, await this.getAccounts(), new Date()) : item;
+    const updated = all.map(x => x.id === item.id ? prepared : x);
     await this.saveCreditInstallments(updated);
     return updated;
   },
 
+  /**
+   * Elimina una visacuota. Los cargos que ya generó se CONSERVAN (fueron gastos reales del período) y solo
+   * pierden el vínculo con ella; los que aún no se cargaban simplemente dejan de existir.
+   */
   async deleteCreditInstallment(id: string): Promise<CreditInstallment[]> {
     const all = await this.getCreditInstallments();
     const target = all.find(x => x.id === id);
@@ -1989,26 +2032,35 @@ export const StorageService = {
     }
     const updated = all.filter(x => x.id !== id);
     await this.saveCreditInstallments(updated);
+    const detached = detachInstallmentCharges(await this.getTransactions(), id);
+    if (detached.changed) await this.saveTransactions(detached.txs);
     return updated;
   },
 
-  /** Avanza un mes en todas las cuotas activas */
-  async processMonthlyInstallments(): Promise<void> {
-    const all = await this.getCreditInstallments();
-    const updated: CreditInstallment[] = [];
-    for (const item of all) {
-      if (!item.isActive || item.paidInstallments >= item.totalInstallments) {
-        updated.push(item);
-        continue;
-      }
-      const newPaid = item.paidInstallments + 1;
-      updated.push({
-        ...item,
-        paidInstallments: newPaid,
-        isActive: newPaid < item.totalInstallments,
-      });
+  /**
+   * Genera los cargos de cuota que faltan (uno por corte cumplido de cada visacuota activa) y actualiza
+   * las cuotas pagadas. Idempotente: se puede llamar en cada arranque. Una escritura por colección.
+   * Los ids de cargos borrados a mano (en descartados) no se regeneran.
+   */
+  async syncInstallmentCharges(now: Date = new Date()): Promise<{ added: number; changed: boolean }> {
+    await this.runMigrations();
+    const [insts, accounts, txs, dismissed] = await Promise.all([
+      this.getCreditInstallments(), this.getAccounts(), this.getTransactions(), this.getDismissedSms(),
+    ]);
+    if (insts.length === 0) return { added: 0, changed: false };
+    const plan = planInstallmentCharges(insts, accounts, txs, dismissed, now);
+    if (plan.toAdd.length > 0 || plan.twinUpdates.length > 0) {
+      const twinMap = new Map(plan.twinUpdates.map(t => [t.id, t] as const));
+      await this.saveTransactions([...plan.toAdd, ...txs.map(t => twinMap.get(t.id) ?? t)]);
     }
-    await this.saveCreditInstallments(updated);
+    if (plan.updates.length > 0) {
+      const updMap = new Map(plan.updates.map(i => [i.id, i] as const));
+      await this.saveCreditInstallments(insts.map(i => updMap.get(i.id) ?? i));
+    }
+    return {
+      added: plan.toAdd.length,
+      changed: plan.toAdd.length > 0 || plan.twinUpdates.length > 0 || plan.updates.length > 0,
+    };
   },
 
   // ── Estado de notificaciones ──────────────────────────────
@@ -2052,8 +2104,10 @@ export const StorageService = {
 
   async checkAndRunMonthlyReset(): Promise<boolean> {
     const now = new Date();
-    // Gastos fijos: por período (idempotente, en cada carga). Cuotas: por mes calendario.
+    // Gastos fijos: por período (idempotente, en cada carga). Visacuotas: un cargo por corte de la tarjeta
+    // (idempotente; se pone al día de una vez si la app estuvo sin abrir varios cortes).
     await this.resetFixedExpensesForNewPeriod(now);
+    await this.syncInstallmentCharges(now);
     const lastReset = await this.getLastResetDate();
     const nowY = now.getFullYear();
     const nowM = now.getMonth();
@@ -2061,8 +2115,7 @@ export const StorageService = {
 
     const match = lastReset ? /^(\d{4})-(\d{1,2})$/.exec(lastReset) : null;
     if (!match) {
-      // Sin registro previo o con formato inválido: un solo ciclo, como antes.
-      await this.processMonthlyInstallments();
+      // Sin registro previo o con formato inválido.
       await this.saveLastResetDate(currentMonth);
       return true;
     }
@@ -2076,13 +2129,6 @@ export const StorageService = {
       return false;
     }
 
-    // Tope de 120 meses (10 años) solo como protección ante un lastReset
-    // corrupto o absurdamente viejo; no es un límite funcional esperado.
-    const cycles = Math.min(elapsed, 120);
-    // processMonthlyInstallments avanza una cuota por ciclo (mes calendario) y no depende de los gastos fijos.
-    for (let i = 0; i < cycles; i++) {
-      await this.processMonthlyInstallments();
-    }
     await this.saveLastResetDate(currentMonth);
     return true;
   },

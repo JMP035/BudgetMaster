@@ -136,6 +136,7 @@ export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tutorial_agregar', label: 'Agregar' },
   { tutorialId: 'tutorial_presupuesto', label: 'Presupuesto' },
   { tutorialId: 'tutorial_cuentas', label: 'Cuentas' },
+  { tutorialId: 'tutorial_visacuotas', label: 'Visacuotas' },
   { tutorialId: 'tutorial_stats', label: 'Estadísticas' },
   { tutorialId: 'tutorial_ia', label: 'Asesor' },
   { tutorialId: 'tutorial_ajustes', label: 'Ajustes' },

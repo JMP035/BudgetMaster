@@ -15,6 +15,7 @@ import {
 } from "../services/storage";
 import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
 import { detectBankName } from "../services/BankSmsParser";
+import { nextInstallmentCut } from "../services/InstallmentSchedule";
 import { isSmsFeatureOn } from "../services/features";
 import { formatMoney } from "../services/format";
 import { C } from "../theme";
@@ -313,6 +314,11 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
             <TextInput style={md.input} value={paymentDueDay} onChangeText={ch(setPaymentDueDay)} placeholder="Ej: 10" placeholderTextColor={C.textMuted} keyboardType="number-pad" maxLength={2} />
           </View>
         </View>
+      )}
+      {type === 'credit' && (
+        <Text style={md.hint}>
+          Día de corte = la fecha de «Saldo al corte» de tu estado de cuenta (ese día entra en el estado y el ciclo nuevo empieza al día siguiente).
+        </Text>
       )}
 
       {/* Mensajes (SMS) que actualizan esta cuenta */}
@@ -672,17 +678,24 @@ export default function AccountsScreen({
       ? await StorageService.addCreditInstallment(item)
       : await StorageService.updateCreditInstallment(item);
     setCreditInstallments(updated);
+    // Los cortes ya cumplidos cargan su cuota de una vez (sin esperar al próximo arranque).
+    const synced = await StorageService.syncInstallmentCharges();
+    if (synced.changed) {
+      setTransactions(await StorageService.getTransactions());
+      setCreditInstallments(await StorageService.getCreditInstallments());
+    }
   };
 
   const handleDeleteInstallment = async (id: string) => {
     const ok = await dialog.confirm({
       title: 'Eliminar visacuota',
-      message: 'Esta visacuota se borrará de forma permanente.',
+      message: 'Esta visacuota se borrará de forma permanente. Las cuotas que ya se cargaron como gasto se quedan en tus movimientos.',
       confirmLabel: 'Eliminar',
     });
     if (!ok) return;
     const updated = await StorageService.deleteCreditInstallment(id);
     setCreditInstallments(updated);
+    setTransactions(await StorageService.getTransactions());
   };
 
   // ── Handler Transferencia ─────────────────────────────────
@@ -892,7 +905,8 @@ export default function AccountsScreen({
                         )}
                         {cycle && (
                           <Text style={[s.accExtra, { color: C.primaryLight }]}>
-                            Consumido este ciclo: {formatMoney(cycle.amount, cycle.currency)}
+                            Ciclo abierto: {(cycle.byCurrency.length > 0 ? cycle.byCurrency : [{ currency: cycle.currency, amount: 0 }])
+                              .map(c => formatMoney(Math.max(0, c.amount), c.currency)).join(' · ')}
                           </Text>
                         )}
                         {linksLabel && (
@@ -954,6 +968,7 @@ export default function AccountsScreen({
                 const pct = (item.paidInstallments / item.totalInstallments) * 100;
                 const endDate = parseDateOnly(storedDateToDateOnly(item.startDate)) ?? new Date(item.startDate);
                 endDate.setMonth(endDate.getMonth() + item.totalInstallments);
+                const nextCut = nextInstallmentCut(item, acc, new Date());
 
                 return (
                   <View key={item.id} style={s.cardWrap}>
@@ -970,6 +985,11 @@ export default function AccountsScreen({
                         </View>
                       )}
                       <AnimBar pct={pct} color={acc?.color || C.primary} />
+                      {nextCut && (
+                        <Text style={[s.accExtra, { fontSize: 11, marginTop: 8 }]}>
+                          Próxima cuota: {nextCut.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </Text>
+                      )}
                       <View style={s.instStats}>
                         <View style={s.instStat}>
                           <Money amount={item.monthlyPayment} currency={item.currency} size="sm" tone="warning" align="center" minScale={0.5} containerStyle={s.summaryMoney} />

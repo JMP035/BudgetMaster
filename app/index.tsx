@@ -303,6 +303,12 @@ function AppContent() {
     setAccounts(accs);
     const updatedTxs = await StorageService.deleteTransaction(originalTxId);
     setTxs(updatedTxs);
+    // La compra completa se reemplaza por sus cuotas: los cortes ya cumplidos cargan su cuota de una vez.
+    const synced = await StorageService.syncInstallmentCharges();
+    if (synced.changed) {
+      setTxs(await StorageService.getTransactions());
+      setCreditInstallments(await StorageService.getCreditInstallments());
+    }
   };
 
   const hAdd = async (tx: Transaction) => {

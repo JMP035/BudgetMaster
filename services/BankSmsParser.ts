@@ -785,6 +785,9 @@ export function buildRecordFromClassification(
       totalInstallments: c.installments,
       paidInstallments: 0,
       startDate: date,
+      // Compra real detectada por SMS: se sigue desde su fecha (cada corte desde entonces carga su cuota).
+      trackSince: date,
+      paidOffset: 0,
       currency: c.currency,
       category: c.category ?? 'other',
       isActive: true,

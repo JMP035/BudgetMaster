@@ -647,6 +647,8 @@ export function buildOnboardingCommit(
       totalInstallments: total > 0 ? suggestInstallmentCount(total, monthly) : 12,
       paidInstallments: 0,
       startDate: ctx.nowIso,
+      trackSince: ctx.nowIso,
+      paidOffset: 0,
       currency: d.currency as Currency,
       category: d.type === 'credit' ? 'transfer' : d.type === 'loan' ? 'other' : 'subscriptions',
       isActive: true,
