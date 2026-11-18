@@ -5,15 +5,18 @@ import {
     StyleSheet, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
-import { Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
+import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
+import { monthlyDebtLoad } from "../services/DebtLoad";
 import { getAllExpenseCategories } from "../categories";
 import { C } from "../theme";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassCard } from "./GlassCard";
 import { GlassSegmented } from "./GlassSegmented";
 import { GlassButton } from "./GlassButton";
+import { useGlassDialog } from "./GlassDialogProvider";
 import { GradientText } from "./GradientText";
 import { HelpButton } from "./HelpButton";
+import { InlineNotice } from "./InlineNotice";
 import Money from "./Money";
 import { ScreenHeader } from "./ScreenHeader";
 import { SignMode, formatMoney } from "../services/format";
@@ -240,9 +243,19 @@ function VertBars({ data, color, labels }: { data: number[]; color: string; labe
 // ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
-interface Props { transactions: Transaction[]; settings: UserSettings; }
+interface Props {
+    transactions: Transaction[];
+    settings: UserSettings;
+    /** Visacuotas y préstamos: la deuda se mide desde ellos (no desde lo declarado en el onboarding). */
+    creditInstallments?: CreditInstallment[];
+    /** Fuentes de ingreso: base del ratio; sin ellas se usa el ingreso declarado. */
+    incomeSources?: IncomeSource[];
+    /** «Ya no la tengo»: borra la deuda declarada en el onboarding viejo. */
+    onClearLegacyDebt?: () => void | Promise<void>;
+}
 
-export default function StatsScreen({ transactions, settings }: Props) {
+export default function StatsScreen({ transactions, settings, creditInstallments = [], incomeSources = [], onClearLegacyDebt }: Props) {
+    const dialog = useGlassDialog();
     const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
     const [legendExpanded, setLegendExpanded] = useState(false);
@@ -389,8 +402,27 @@ export default function StatsScreen({ transactions, settings }: Props) {
     })).filter(b => b.amount > 0).sort((a, b) => b.amount - a.amount);
     const bankMax = Math.max(...byBank.map(b => b.amount), 1);
 
-    const debtRatio = settings.monthlyIncome > 0 ? (settings.activeDebts / settings.monthlyIncome) * 100 : 0;
-    const debtColor = debtRatio > 40 ? C.danger : debtRatio > 20 ? C.warning : C.income;
+    // Deuda = cuota mensual de visacuotas y préstamos activos (no el consumo de tarjeta). No depende del filtro de período.
+    const debt = monthlyDebtLoad({ installments: creditInstallments, settings, sources: incomeSources, txs: transactions });
+    const debtColor = debt.level === "high" ? C.danger : debt.level === "moderate" ? C.warning : debt.level === "healthy" ? C.income : C.textSub;
+    const debtBasisTxt = debt.incomeBasis === "sources" ? "de tus fuentes" : "declarado";
+    const debtLevelTxt = debt.level === "high" ? "Más del 40 % de tu ingreso se va en cuotas."
+        : debt.level === "moderate" ? "Entre 20 % y 40 %: conviene no sumar cuotas nuevas."
+            : "Tus cuotas están bajo control.";
+    const debtSubtitle = debt.ratioPct === null
+        ? "Agregá tu ingreso para ver el ratio."
+        : `${formatMoney(debt.totalQ, "Q", { decimals: 0, sign: "never" })}/mes en cuotas${debt.activeCount > 0 ? ` (${debt.activeCount})` : ""} frente a tu ingreso de ${formatMoney(debt.incomeQ, "Q", { decimals: 0, sign: "never" })}/mes (${debtBasisTxt}). ${debtLevelTxt}`;
+    const confirmClearLegacy = async () => {
+        if (!onClearLegacyDebt) return;
+        const ok = await dialog.confirm({
+            title: "Quitar deuda declarada",
+            message: "Se quitará de tu ratio la deuda que declaraste al configurar la app. No borra ninguna visacuota ni préstamo registrado.",
+            confirmLabel: "Ya no la tengo",
+            destructive: false,
+            variant: "info",
+        });
+        if (ok) await onClearLegacyDebt();
+    };
 
     // ── Subtítulo STAT 1 (Flujo de Caja Proyectado) ──────────
     const q0 = (n: number) => formatMoney(n, "Q", { decimals: 0, sign: "never" });
@@ -589,12 +621,26 @@ export default function StatsScreen({ transactions, settings }: Props) {
                 </StatCard>
             )}
 
-            {/* STAT 7 — Ratio deuda/ingreso */}
-            {settings.activeDebts > 0 && (
-                <StatCard tutRef={debtRef} icon="alert-circle-outline" title="Ratio Deuda / Ingreso" value={`${debtRatio.toFixed(1)}%`} color={debtColor}
-                    subtitle={debtRatio > 40 ? "Ratio peligroso: más del 40% de tu ingreso mensual es deuda." : debtRatio > 20 ? "Ratio moderado: buscá reducirlo progresivamente." : "Ratio saludable: tu deuda está bajo control."}
+            {/* STAT 7 — Ratio deuda/ingreso (cuotas mensuales reales) */}
+            {debt.totalQ > 0 && (
+                <StatCard tutRef={debtRef} icon="alert-circle-outline" title="Ratio Deuda / Ingreso (cuotas mensuales)" color={debtColor}
+                    value={debt.ratioPct !== null ? `${debt.ratioPct.toFixed(1)}%` : ""}
+                    money={debt.ratioPct === null ? { amount: debt.totalQ, decimals: 0, suffix: "/mes", sign: "never" } : undefined}
+                    subtitle={debtSubtitle}
                 >
-                    <AnimBar pct={Math.min(debtRatio, 100)} color={debtColor} />
+                    {debt.ratioPct !== null && <AnimBar pct={Math.min(debt.ratioPct, 100)} color={debtColor} />}
+                    {debt.legacyQ > 0 && (
+                        <>
+                            <InlineNotice
+                                variant="info"
+                                style={{ marginTop: 12 }}
+                                text={`Incluye ${formatMoney(debt.legacyQ, "Q", { decimals: 0, sign: "never" })} que declaraste al configurar la app; no se actualiza solo. Regístralo como préstamo en Cuentas → Visacuotas.`}
+                            />
+                            {!!onClearLegacyDebt && (
+                                <GlassButton kind="ghost" label="Ya no la tengo" onPress={confirmClearLegacy} style={{ marginTop: 8 }} />
+                            )}
+                        </>
+                    )}
                 </StatCard>
             )}
 

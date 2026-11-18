@@ -3,6 +3,7 @@
 // calendario. El servicio (NotificationService) solo decide cuándo enviar; aquí se arma qué dice.
 import type { CategoryBudget, FixedExpense, Transaction, UserSettings } from './storage';
 import { storedToLocalDate } from './FixedCycle';
+import type { DebtLoad } from './DebtLoad';
 
 /** Período (inicio y fin inclusive; `nextStart` = inicio del siguiente si se conoce). */
 export interface PeriodRange { start: Date; end: Date; nextStart?: Date; }
@@ -142,14 +143,18 @@ export function periodSnapshot(input: {
 
 /** Contexto financiero para Gemini: todo del período de pago actual (según lo registrado). */
 export function buildFinancialContextText(
-  settings: Pick<UserSettings, 'userName' | 'monthlyIncome' | 'budgetLimit' | 'activeDebts' | 'monthlySavingsGoal'>,
+  settings: Pick<UserSettings, 'userName' | 'monthlyIncome' | 'budgetLimit' | 'monthlySavingsGoal'>,
   snap: PeriodSnapshot,
+  debt: DebtLoad,
 ): string {
   const dailyRate = snap.spentQ / Math.max(snap.daysPassed, 1);
   const projected = dailyRate * snap.daysTotal;
   const catSummary = snap.catRows
     .map(r => `${r.label}: gastado Q${r.spent.toFixed(0)} de Q${r.limit} (${r.pct}%)`)
     .join(', ');
+  const debtLine = debt.totalQ > 0
+    ? `Cuotas de deuda al mes: Q${debt.totalQ.toFixed(2)}${debt.ratioPct !== null ? ` (${debt.ratioPct.toFixed(1)}% del ingreso, base ${debt.incomeBasis === 'sources' ? 'fuentes' : 'declarado'})` : ' (sin ingreso para medir el ratio)'}`
+    : 'Cuotas de deuda al mes: Q0 (sin visacuotas ni préstamos activos)';
   return `
 Usuario: ${settings.userName}
 Ingreso declarado: Q${settings.monthlyIncome}
@@ -163,7 +168,7 @@ Tasa diaria de gasto: Q${dailyRate.toFixed(2)}/día
 Proyección fin de período: Q${projected.toFixed(2)}
 Gastos por categoría: ${catSummary || 'Sin presupuesto por categoría definido'}
 Gastos fijos pendientes: ${snap.unpaidFixedCount} (total Q${snap.unpaidFixedTotal.toFixed(2)})
-Deudas activas: Q${settings.activeDebts}
+${debtLine}
 Meta de ahorro mensual: Q${settings.monthlySavingsGoal}
   `.trim();
 }

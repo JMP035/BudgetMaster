@@ -518,6 +518,12 @@ export const TUTORIALS: Tutorial[] = [
                 noSmsEmptyHint: 'Aparece cuando tus gastos tienen banco asignado.',
             },
             {
+                id: 'stats_debt', elementId: 'stats_debt', screen: 'stats', position: 'top', icon: 'alert-circle-outline', padding: 8,
+                title: 'Ratio deuda / ingreso',
+                description: 'Compara lo que pagas cada mes en cuotas de visacuotas y préstamos activos con tu ingreso mensual: el de tus fuentes de ingreso o, si no tienes, el que declaraste. No incluye el consumo de tarjeta que pagas completo cada mes. Verde por debajo del 20 %, ámbar entre 20 % y 40 %, rojo por encima del 40 %. Si venía de lo que declaraste al configurar la app, aparece avisado y puedes quitarlo con «Ya no la tengo».',
+                emptyHint: 'Aparece cuando tienes visacuotas o préstamos activos. Agrégalos en Cuentas → Visacuotas.',
+            },
+            {
                 id: 'stats_10', elementId: 'stats_velocity', screen: 'stats', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Velocidad de gasto',
                 description: 'Compara lo que llevás gastado en este período con todo el período anterior. Si es positivo, estás gastando más rápido que antes.',

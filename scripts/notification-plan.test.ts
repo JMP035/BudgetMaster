@@ -14,6 +14,7 @@ import {
   buildBriefingFallbackText, buildFinancialContextText, buildWeeklySummaryBodyText, fmtQ, periodSnapshot,
 } from '../services/NotificationTexts';
 import { computeFinancialPeriod } from '../services/FinancialPeriod';
+import { monthlyDebtLoad } from '../services/DebtLoad';
 import type { Account, CategoryBudget, CreditInstallment, FixedExpense, Transaction, UserSettings } from '../services/storage';
 
 let failures = 0;
@@ -200,7 +201,15 @@ check('semanal (puro): usa el período', body.indexOf('27/10 – 26/11') >= 0 &&
 const brief = buildBriefingFallbackText('Ana', snap, 'Frase.');
 check('briefing (puro): período y «según lo registrado»', brief.indexOf('Buenos días, Ana') === 0 && brief.indexOf('27/10 – 26/11') >= 0 && brief.indexOf('según lo registrado') >= 0 && brief.indexOf('19%') >= 0 && brief.indexOf('Frase.') >= 0, brief);
 check('briefing (puro): no dice "mensual"', brief.indexOf('mensual') < 0);
-const ctxText = buildFinancialContextText({ userName: 'Ana', monthlyIncome: 8000, budgetLimit: 6000, activeDebts: 0, monthlySavingsGoal: 0 }, snap);
+const noDebt = monthlyDebtLoad({ installments: [], settings: { monthlyIncome: 8000, exchangeRate: 7.5, activeDebts: 0 }, sources: [], txs: [] });
+const someDebt = monthlyDebtLoad({
+  installments: [{ id: 'c1', accountId: '', name: 'Prést', totalAmount: 24000, monthlyPayment: 2000, totalInstallments: 12, paidInstallments: 0, startDate: '2026-10-01T12:00:00.000Z', currency: 'Q', category: 'other', isActive: true }],
+  settings: { monthlyIncome: 8000, exchangeRate: 7.5, activeDebts: 0 }, sources: [], txs: [],
+});
+const ctxText = buildFinancialContextText({ userName: 'Ana', monthlyIncome: 8000, budgetLimit: 6000, monthlySavingsGoal: 0 }, snap, noDebt);
+const ctxDebt = buildFinancialContextText({ userName: 'Ana', monthlyIncome: 8000, budgetLimit: 6000, monthlySavingsGoal: 0 }, snap, someDebt);
+check('contexto Gemini: deuda = cuotas reales con ratio y base', ctxDebt.indexOf('Cuotas de deuda al mes: Q2000.00 (25.0% del ingreso, base declarado)') >= 0 && ctxDebt.indexOf('Deudas activas') < 0, ctxDebt);
+check('contexto Gemini: sin cuotas lo dice', ctxText.indexOf('Cuotas de deuda al mes: Q0') >= 0, ctxText);
 check('contexto Gemini: del período, no del mes', ctxText.indexOf('Período de pago actual: 27/10 – 26/11') >= 0 && ctxText.indexOf('Gastado en este período en Q: 1150.00') >= 0 && ctxText.indexOf('Días transcurridos: 23 de 31') >= 0, ctxText);
 const over = periodSnapshot({
   settings: { budgetLimit: 1000 }, txs, categoryBudgets: [], fixed: [], now: NOW,

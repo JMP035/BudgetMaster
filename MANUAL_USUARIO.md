@@ -38,7 +38,7 @@ La primera vez que abras la app, un asistente de 8 pasos configura tu perfil fin
 | 3 | **Ciclo de pago**: mensual, quincenal, semanal o irregular | La app trabaja con tu *período financiero real* (de pago a pago), no con el mes calendario. |
 | 4 | **Día(s) de pago** (ej. 30, o 15,30 si es quincenal) | Calcular cuántos días faltan para tu próximo ingreso. |
 | 5 | **Tu mayor gasto fijo** | Referencia inicial (luego podés detallar todos en Presupuesto). |
-| 6 | **Tus deudas activas** (tarjetas, préstamos, visacuotas) | Cada deuda que registres con cuota mensual se convierte automáticamente en una *visacuota* para seguimiento. Si superás el 30 % de tu ingreso en deudas, la app te lo advierte. |
+| 6 | **Tus deudas activas** (tarjetas, préstamos, visacuotas) | Cada deuda que registres con cuota mensual se convierte automáticamente en una *visacuota* para seguimiento. Si tus cuotas mensuales pasan del 20 % de tu ingreso, la app te lo señala; arriba del 40 %, es zona de alerta. |
 | 7 | **Meta de ahorro mensual** | Se recomienda mínimo el 20 % de tu ingreso. |
 | 8 | **Bancos que usás y ahorros actuales** | Los bancos ayudan a la detección de SMS; los ahorros se suman a tu patrimonio. |
 

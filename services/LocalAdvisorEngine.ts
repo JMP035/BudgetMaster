@@ -1,5 +1,5 @@
 import {
-    Account, CategoryBudget, CreditInstallment, FixedExpense, SavingsGoal,
+    Account, CategoryBudget, CreditInstallment, FixedExpense, IncomeSource, SavingsGoal,
     Transaction, UserSettings, FinancialPeriod,
     calcCreditCommitments, calcNetWorthFromAccounts, convertAmount,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
@@ -9,6 +9,7 @@ import { isBalanceTracked } from './Balances';
 import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
 import { fixedCycleConfig, fixedDueInfo } from './FixedCycle';
+import { DebtLoad, monthlyDebtLoad } from './DebtLoad';
 
 const MONTHS_SHORT_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -154,6 +155,8 @@ export interface LocalMetrics {
     fixedTotalQ: number;
     fixedPendingQ: number;
     installTotal: number;
+    /** Carga de deuda mensual real (cuotas de visacuotas y préstamos activos) frente al ingreso; ver DebtLoad. */
+    debt: DebtLoad;
     installmentsPendingQ: number;
     activeInstallments: CreditInstallment[];
     totalBalance: number;
@@ -174,6 +177,7 @@ export function computeLocalMetrics(
     savingsGoals: SavingsGoal[] = [],
     creditInstallments: CreditInstallment[] = [],
     categoryBudgets: CategoryBudget[] = [],
+    incomeSources: IncomeSource[] = [],
 ): LocalMetrics {
     const fp = getCurrentFinancialPeriod(settings);
     const now = new Date();
@@ -242,6 +246,7 @@ export function computeLocalMetrics(
         .reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
     const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
     const activeInstallments = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0);
+    const debt = monthlyDebtLoad({ installments: creditInstallments, settings, sources: incomeSources, txs: transactions });
 
     const activeAccountsAll = accounts.filter(a => a.isActive);
     const { totalQ: netWorthQ, totalUSD: netWorthUSD, totalEUR: netWorthEUR, totalGBP: netWorthGBP } = calcNetWorthFromAccounts(activeAccountsAll, settings.exchangeRate);
@@ -278,7 +283,7 @@ export function computeLocalMetrics(
         hasBudget, remaining, pct, daysLeftInPeriod, dailyRate, projected,
         prevExpQ, prevIncomeQ, prevSamePointExpQ, catTotals, prevCatSamePoint,
         fixedActive, fixedPendingList, fixedTotalQ, fixedPendingQ,
-        installTotal, installmentsPendingQ, activeInstallments, totalBalance,
+        installTotal, debt, installmentsPendingQ, activeInstallments, totalBalance,
         activeAccounts: activeAccountsAll, activeGoals, completedGoalsCount,
         budgetAlerts, tone, hasAnyData, settings,
     };
@@ -343,8 +348,9 @@ export function getLocalResponse(
     savingsGoals: SavingsGoal[] = [],
     creditInstallments: CreditInstallment[] = [],
     categoryBudgets: CategoryBudget[] = [],
+    incomeSources: IncomeSource[] = [],
 ): string {
-    const m = computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+    const m = computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets, incomeSources);
     const msg = normalizeText(message);
 
     // 1. AYUDA
@@ -428,10 +434,10 @@ export function getLocalResponse(
             const c = m.catTotals[0];
             tips.push(`"${c.label}" representa más de un tercio de tu gasto (${fmtQ(c.amount)}). Recortar un 15% ahí te liberaría ${fmtQ(c.amount * 0.15)}.`);
         }
-        if (m.settings.monthlyIncome > 0 && m.installTotal / m.settings.monthlyIncome > 0.3) {
+        if (m.debt.level === 'high') {
             const sorted = [...m.activeInstallments].sort((a, b) => (a.totalInstallments - a.paidInstallments) - (b.totalInstallments - b.paidInstallments));
             const target = sorted[0];
-            tips.push(`Tus cuotas (${fmtQ(m.installTotal)}/mes) representan más del 30% de tu ingreso.${target ? ` Considerá liquidar primero "${target.name}", le quedan ${target.totalInstallments - target.paidInstallments} cuotas.` : ''}`);
+            tips.push(`Tus cuotas (${fmtQ(m.installTotal)}/mes) representan más del 40% de tu ingreso.${target ? ` Considerá liquidar primero "${target.name}", le quedan ${target.totalInstallments - target.paidInstallments} cuotas.` : ''}`);
         }
         if (m.fixedPendingQ > Math.max(m.remaining, 0) && m.hasBudget) {
             tips.push(`Tus gastos fijos pendientes (${fmtQ(m.fixedPendingQ)}) superan lo que te queda de presupuesto (${fmtQ(Math.max(m.remaining, 0))}). Priorizalos antes de cualquier gasto variable.`);
@@ -644,12 +650,17 @@ export function getLocalResponse(
         if (m.activeInstallments.length === 0) {
             parts.push('No tenés visacuotas activas en este momento.');
         } else {
-            parts.push(`Tenés ${fmtQ(m.installTotal)} en cuotas mensuales activas${m.settings.monthlyIncome > 0 ? `, lo que representa ${Math.round((m.installTotal / m.settings.monthlyIncome) * 100)}% de tu ingreso mensual` : ''}.`);
+            parts.push(`Tenés ${fmtQ(m.debt.cardInstallmentsQ + m.debt.loansQ)} en cuotas mensuales activas.`);
             const list = m.activeInstallments.slice(0, 3).map(c => `"${c.name}" (${c.totalInstallments - c.paidInstallments} cuotas restantes)`).join(', ');
             parts.push(`Visacuotas activas: ${list}.`);
         }
-        if (m.settings.activeDebts > 0) {
-            parts.push(`Además tenés ${fmtQ(m.settings.activeDebts)} declarados como deuda activa.`);
+        if (m.debt.legacyQ > 0) {
+            parts.push(`${fmtQ(m.debt.legacyQ)} declarados al configurar la app (no se actualizan solos).`);
+        }
+        if (m.debt.totalQ > 0 && m.debt.ratioPct !== null) {
+            const base = m.debt.incomeBasis === 'sources' ? 'de tus fuentes' : 'declarado';
+            const lvl = m.debt.level === 'high' ? ' Es zona de alerta (más del 40%).' : m.debt.level === 'moderate' ? ' Entre 20% y 40%: conviene no sumar cuotas nuevas.' : '';
+            parts.push(`Tu carga de deuda mensual (${fmtQ(m.debt.totalQ)}) equivale al ${m.debt.ratioPct.toFixed(1)}% de tu ingreso ${base} (${fmtQ(m.debt.incomeQ)}/mes).${lvl}`);
         }
         parts.push('Esto va separado de tu patrimonio neto, que no se ve afectado por estas cuotas directamente.');
 
@@ -770,8 +781,9 @@ export function buildLocalOpening(
     savingsGoals: SavingsGoal[] = [],
     creditInstallments: CreditInstallment[] = [],
     categoryBudgets: CategoryBudget[] = [],
+    incomeSources: IncomeSource[] = [],
 ): string {
-    const m = computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+    const m = computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets, incomeSources);
     const hour = m.now.getHours();
     const saludo = hour < 12 ? 'Buenos días' : hour < 19 ? 'Buenas tardes' : 'Buenas noches';
 

@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { debtLevelOf } from "../../services/DebtLoad";
 import { DebtKind, DraftCurrency, DraftDebt, newDraftId } from "../../services/OnboardingPlan";
 import { parseAmount } from "../../services/storage";
 import { C } from "../../theme";
@@ -77,6 +78,8 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
     // Total mensual en Q (las deudas en dólares se convierten) y su peso sobre el ingreso.
     const totalQ = draft.debts.reduce((sum, d) => sum + (d.currency === "USD" ? num(d.monthlyPayment) * rate.rate : num(d.monthlyPayment)), 0);
     const incomeQ = draft.incomeCurrency === "USD" ? num(draft.income) * rate.rate : num(draft.income);
+    // Mismos umbrales que Estadísticas y el Asesor: 20 % moderado, 40 % alto (ver services/DebtLoad.ts).
+    const debtLevel = incomeQ > 0 ? debtLevelOf((totalQ / incomeQ) * 100) : "none";
 
     return (
         <>
@@ -142,11 +145,18 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
                         align="center"
                         containerStyle={s.totalValWrap}
                     />
-                    {incomeQ > 0 && totalQ > incomeQ * 0.3 && (
+                    {debtLevel === "high" && (
                         <InlineNotice
                             variant="warning"
                             style={{ marginTop: 10, alignSelf: "stretch" }}
-                            text="Superas el 30% de tu ingreso en deudas. Zona de alerta."
+                            text="Más del 40 % de tu ingreso en cuotas. Zona de alerta."
+                        />
+                    )}
+                    {debtLevel === "moderate" && (
+                        <InlineNotice
+                            variant="info"
+                            style={{ marginTop: 10, alignSelf: "stretch" }}
+                            text="Entre 20 % y 40 % de tu ingreso en cuotas."
                         />
                     )}
                 </GlassCard>

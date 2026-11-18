@@ -7,6 +7,7 @@
 //  - Los presupuestos por categoría son solo Q y excluyen transferencias (`filterTransactions`).
 //  - Sin emojis, y nunca `originalSMS`, `bankRef` ni huellas.
 import type { Currency, CreditInstallment, UserSettings } from '../storage';
+import type { DebtLoad } from '../DebtLoad';
 import type { AssistantContext } from './types';
 import { formatDateOnly } from '../DateAmount';
 import { isBalanceTracked } from '../Balances';
@@ -45,7 +46,8 @@ export function todayLine(ctx: AssistantContext): string {
 export interface CompactExtras {
   budgetLimit?: number;
   monthlyIncome?: number;
-  activeDebts?: number;
+  /** Carga de deuda mensual real (DebtLoad.monthlyDebtLoad): cuotas activas frente al ingreso. */
+  debt?: DebtLoad;
   monthlySavingsGoal?: number;
   installments?: CreditInstallment[];
 }
@@ -87,7 +89,7 @@ export function buildCompactContext(ctx: AssistantContext, userName: string, ext
   const full = ctx.settings as Partial<UserSettings>;
   const budgetLimit = extras.budgetLimit ?? num(full.budgetLimit) ?? 0;
   const monthlyIncome = extras.monthlyIncome ?? num(full.monthlyIncome) ?? 0;
-  const activeDebts = extras.activeDebts ?? num(full.activeDebts) ?? 0;
+  const debt = extras.debt;
   const savingsGoal = extras.monthlySavingsGoal ?? num(full.monthlySavingsGoal) ?? 0;
   const custom = ctx.settings.customCategories ?? [];
   const lines: string[] = [];
@@ -224,7 +226,9 @@ export function buildCompactContext(ctx: AssistantContext, userName: string, ext
       : cycle === 'weekly' ? 'semanal' : String(cycle);
   const profile = [`ciclo de pago ${cycleText}`];
   if (monthlyIncome > 0) profile.unshift(`ingreso mensual ${money(monthlyIncome, 'Q')}`);
-  if (activeDebts > 0) profile.push(`deudas activas ${money(activeDebts, 'Q')}`);
+  if (debt && debt.totalQ > 0) {
+    profile.push(`cuotas de deuda ${money(debt.totalQ, 'Q')}/mes${debt.ratioPct !== null ? ` (${debt.ratioPct.toFixed(1)}% del ingreso)` : ''}`);
+  }
   if (savingsGoal > 0) profile.push(`meta de ahorro mensual ${money(savingsGoal, 'Q')}`);
   lines.push(`Perfil: ${profile.join('; ')}.`);
 

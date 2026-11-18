@@ -15,6 +15,7 @@ import {
 import type { GeminiOutcome, GeminiTransport } from '../services/assistant/GeminiTools';
 import { ACTIONS, makeProposal } from '../services/assistant/Actions';
 import { QUERIES } from '../services/assistant/Queries';
+import { monthlyDebtLoad } from '../services/DebtLoad';
 
 let failures = 0;
 let checks = 0;
@@ -652,9 +653,15 @@ async function main(): Promise<void> {
   const ccFull = buildCompactContext(
     mkCtx({ settings: { ...ctx.settings, budgetLimit: 8000, monthlyIncome: 6000, activeDebts: 300, monthlySavingsGoal: 500 } as AssistantContext['settings'] }),
     'Ana',
+    { debt: monthlyDebtLoad({
+      installments: [{ id: 'd1', accountId: '', name: 'Préstamo', totalAmount: 7200, monthlyPayment: 300, totalInstallments: 24, paidInstallments: 0, startDate: iso(2026, 1, 1), currency: 'Q', category: 'other', isActive: true }],
+      settings: { monthlyIncome: 6000, exchangeRate: 7.5, activeDebts: 0 }, sources: [], txs: [],
+    }) },
   );
   check('contexto: lee el presupuesto de settings completos', ccFull.indexOf('Presupuesto del período: Q 8,000, usado 7%.') >= 0, ccFull);
-  check('contexto: perfil con ingreso, deudas y ahorro', ccFull.indexOf('Perfil: ingreso mensual Q 6,000; ciclo de pago mensual (día 27); deudas activas Q 300; meta de ahorro mensual Q 500.') >= 0, ccFull);
+  check('contexto: perfil con ingreso, cuotas de deuda reales y ahorro', ccFull.indexOf('Perfil: ingreso mensual Q 6,000; ciclo de pago mensual (día 27); cuotas de deuda Q 300/mes (5.0% del ingreso); meta de ahorro mensual Q 500.') >= 0, ccFull);
+  check('contexto: ya no lee la deuda congelada settings.activeDebts', ccFull.indexOf('deudas activas') < 0
+    && buildCompactContext(mkCtx({ settings: { ...ctx.settings, activeDebts: 999 } as AssistantContext['settings'] }), 'Ana').indexOf('deuda') < 0);
 
   const inst = (id: string, monthly: number, currency: 'Q' | 'USD', extra: Partial<CreditInstallment> = {}): CreditInstallment => ({
     id, accountId: 'acc1', name: id, totalAmount: monthly * 12, monthlyPayment: monthly, totalInstallments: 12, paidInstallments: 2,
@@ -687,7 +694,7 @@ async function main(): Promise<void> {
     const big = buildCompactContext(
       mkCtx({ fixedExpenses: manyFixed, categoryBudgets: manyBudgets, savingsGoals: manyGoals }),
       'N'.repeat(300),
-      { installments: [inst('i1', 500, 'Q')], budgetLimit: 5000, monthlyIncome: 9000, activeDebts: 1, monthlySavingsGoal: 1 },
+      { installments: [inst('i1', 500, 'Q')], budgetLimit: 5000, monthlyIncome: 9000, monthlySavingsGoal: 1 },
     );
     check('contexto estrés: ≤ 2000 caracteres', big.length <= COMPACT_CONTEXT_MAX, String(big.length));
     check('contexto estrés: conserva el período al inicio', big.indexOf('Período:') >= 0);

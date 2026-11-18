@@ -9,6 +9,8 @@ import {
 } from './storage';
 import type { Account, CreditInstallment, IncomeSource, NotificationState } from './storage';
 import { fixedCycleConfig } from './FixedCycle';
+import { monthlyDebtLoad } from './DebtLoad';
+import type { DebtLoad } from './DebtLoad';
 import { QUOTES, randomQuote } from './FinancialQuotes';
 import { categoryLabelOf } from '../categories';
 import { sanitizePayRules } from './PayCalendar';
@@ -182,6 +184,15 @@ function snapshotOf(
         daysLeft: getDaysUntilNextPayment(i.settings, now),
         labelOfCategory: id => categoryLabelOf(id, i.settings.customCategories, 'expense'),
     });
+}
+
+/** Carga de deuda real (cuotas activas frente al ingreso) para el contexto de Gemini; lee cuotas y fuentes del almacenamiento. */
+async function debtLoadOf(settings: UserSettings, transactions: Transaction[]): Promise<DebtLoad> {
+    const [installments, sources] = await Promise.all([
+        StorageService.getCreditInstallments(),
+        StorageService.getIncomeSources(),
+    ]);
+    return monthlyDebtLoad({ installments, settings, sources, txs: transactions });
 }
 
 function dayKeyOf(d: Date): string {
@@ -682,11 +693,13 @@ export const NotificationService = {
     ): Promise<boolean> {
         const { settings } = data;
         const prefs = prefsOf(settings);
-        const financialCtx = buildFinancialContextText(settings, snapshotOf(data, new Date()));
         const quote = randomQuote(quoteType);
         let body = '';
 
         if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
+            const financialCtx = buildFinancialContextText(
+                settings, snapshotOf(data, new Date()), await debtLoadOf(settings, data.transactions),
+            );
             const prompt = `
 Eres el CFO personal de ${settings.userName}. Tono directo, profesional y motivador. Sin emojis en exceso.
 Contexto financiero:
@@ -820,7 +833,7 @@ Responde SOLO el texto, sin encabezados ni formato.
         const snap = snapshotOf({ settings, transactions, categoryBudgets, fixedExpenses }, now);
 
         if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
-            const ctx = buildFinancialContextText(settings, snap);
+            const ctx = buildFinancialContextText(settings, snap, await debtLoadOf(settings, transactions));
             const prompt = `
 Eres el CFO personal de ${settings.userName}. Genera un briefing financiero breve (máximo 4 oraciones).
 Menciona: presupuesto actual (${snap.pct}% del período ${snap.label}), días hasta próximo pago (${snap.daysLeft}), gastos fijos pendientes (${snap.unpaidFixedCount}), categorías en alerta (${snap.catAlerts}).

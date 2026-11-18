@@ -5,12 +5,13 @@ import {
     TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import {
-    Account, CategoryBudget, CreditInstallment, FixedExpense,
+    Account, CategoryBudget, CreditInstallment, FixedExpense, IncomeSource,
     SavingsGoal, StorageService, Transaction, UserSettings,
     getCurrentFinancialPeriod
 } from "../services/storage";
 import { buildLocalOpening, computeLocalMetrics, getLocalResponse, getQuickReplies } from "../services/LocalAdvisorEngine";
 import { createGeminiTransport } from "../services/GeminiClient";
+import { monthlyDebtLoad } from "../services/DebtLoad";
 import { isSmsFeatureOn } from "../services/features";
 import { applyEdit, startGuided } from "../services/assistant/Dialogue";
 import type { DialogueOutput } from "../services/assistant/Dialogue";
@@ -76,6 +77,8 @@ interface Props {
     categoryBudgets?: CategoryBudget[];
     savingsGoals?: SavingsGoal[];
     creditInstallments?: CreditInstallment[];
+    /** Fuentes de ingreso: base del ratio de deuda frente al ingreso real. */
+    incomeSources?: IncomeSource[];
     /** El asistente escribe datos: la app debe refrescar su estado con la lista nueva. */
     onTransactionsChanged: (t: Transaction[]) => void;
     onFixedExpensesChanged: (f: FixedExpense[]) => void;
@@ -87,21 +90,21 @@ export default function AIAdvisor(props: Props) {
     const {
         transactions, settings,
         accounts = [], fixedExpenses = [], categoryBudgets = [],
-        savingsGoals = [], creditInstallments = [],
+        savingsGoals = [], creditInstallments = [], incomeSources = [],
     } = props;
     const hasApiKey = (settings.geminiApiKey ?? "").trim().length > 20;
     const { height: windowHeight } = useWindowDimensions();
     const kb = useKeyboardHeight();
 
     const metrics = useMemo(
-        () => computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets),
-        [transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets]
+        () => computeLocalMetrics(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets, incomeSources),
+        [transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets, incomeSources]
     );
 
     const getWelcomeText = (): string => {
         const base = hasApiKey
             ? `¡Hola ${settings.userName}! Soy tu CFO personal. Tengo acceso a tus datos financieros reales y puedo ayudarte con cualquier análisis o decisión. ¿En qué te puedo ayudar hoy?`
-            : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets);
+            : buildLocalOpening(transactions, settings, accounts, fixedExpenses, savingsGoals, creditInstallments, categoryBudgets, incomeSources);
         return `${base}\n\n${WELCOME_EXTRA}`;
     };
 
@@ -341,15 +344,17 @@ export default function AIAdvisor(props: Props) {
                     extras: {
                         budgetLimit: st.budgetLimit,
                         monthlyIncome: st.monthlyIncome,
-                        activeDebts: st.activeDebts,
                         monthlySavingsGoal: st.monthlySavingsGoal,
                         installments: p.creditInstallments ?? [],
+                        debt: monthlyDebtLoad({
+                            installments: p.creditInstallments ?? [], settings: st, sources: p.incomeSources ?? [], txs: p.transactions,
+                        }),
                     },
                 } : null,
                 geminiCooldownUntil: cooldownRef.current,
                 localAdvisor: t => getLocalResponse(
                     t, p.transactions, st, p.accounts ?? [], p.fixedExpenses ?? [], p.savingsGoals ?? [],
-                    p.creditInstallments ?? [], p.categoryBudgets ?? [],
+                    p.creditInstallments ?? [], p.categoryBudgets ?? [], p.incomeSources ?? [],
                 ),
                 getProposal: findProposal,
             };

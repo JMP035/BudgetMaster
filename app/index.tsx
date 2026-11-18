@@ -369,6 +369,13 @@ function AppContent() {
     setSettings(updated);
   };
 
+  // «Ya no la tengo»: borra la deuda declarada en el onboarding viejo (legado; no se migra a cuotas).
+  const clearLegacyDebt = async () => {
+    const updated = { ...settings, activeDebts: 0, activeDebtsUSD: 0 };
+    await StorageService.saveSettings(updated);
+    setSettings(updated);
+  };
+
   const hClearAll = async () => {
     await NotificationService.cancelAll();
     await StorageService.clearAllData();
@@ -555,7 +562,13 @@ function AppContent() {
             />
           )}
           {tab === "stats" && !showAI && (
-            <StatsScreen transactions={txs} settings={settings} />
+            <StatsScreen
+              transactions={txs}
+              settings={settings}
+              creditInstallments={creditInstallments}
+              incomeSources={incomeSources}
+              onClearLegacyDebt={clearLegacyDebt}
+            />
           )}
           {tab === "settings" && !showAI && (
             <SettingsScreen
@@ -581,6 +594,7 @@ function AppContent() {
               categoryBudgets={categoryBudgets}
               savingsGoals={savingsGoals}
               creditInstallments={creditInstallments}
+              incomeSources={incomeSources}
               onTransactionsChanged={setTxs}
               onFixedExpensesChanged={setFixedExpenses}
               onCategoryBudgetsChanged={setCategoryBudgets}

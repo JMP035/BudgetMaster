@@ -307,7 +307,9 @@ export interface UserSettings {
   paymentDays: number[];
   monthlyIncome: number;
   monthlyIncomeUSD: number;
+  /** @deprecated instantánea del onboarding; solo la lee DebtLoad.legacyDeclaredDebtQ. */
   activeDebts: number;
+  /** @deprecated instantánea del onboarding; solo la lee DebtLoad.legacyDeclaredDebtQ. */
   activeDebtsUSD: number;
   monthlySavingsGoal: number;
   externalSavings: number;
@@ -328,6 +330,7 @@ export interface UserSettings {
   cardsOnboardingComplete: boolean;
   /** @deprecated sin uso; se conserva por compatibilidad */
   financialScoreHistory: { month: string; score: number }[];
+  /** @deprecated instantánea del onboarding; solo la lee DebtLoad.legacyDeclaredDebtQ. */
   activeDebtsList?: any[];
   /** Sincronizar SMS al abrir la app (default true). Nunca pide permisos por su cuenta. */
   smsAutoSync?: boolean;
