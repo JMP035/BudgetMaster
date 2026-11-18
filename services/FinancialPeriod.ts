@@ -24,7 +24,18 @@ export interface FinancialPeriod {
   nextStart: Date;
 }
 
-type CycleSettings = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'>;
+/** `paymentWeekday` (0=dom..6=sáb) solo lo usa el ciclo semanal; si falta se toma domingo. */
+type CycleSettings = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'> & { paymentWeekday?: number };
+
+/** Día de la semana válido (entero 0..6, 0 = domingo); cualquier otro valor cae a 0. */
+export function normalizeWeekday(n: unknown): number {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 6 ? n : 0;
+}
+
+/** Días transcurridos desde el último día de pago semanal (0 = hoy es el día de pago). */
+function weeklyOffset(settings: CycleSettings, now: Date): number {
+  return (now.getDay() - normalizeWeekday(settings.paymentWeekday) + 7) % 7;
+}
 
 const fmt_d = (d: Date) =>
   d.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -74,8 +85,11 @@ export function computeFinancialPeriod(
   }
 
   // ── Ciclo semanal ────────────────────────────────────────────
+  // La semana arranca el día de la semana en que le pagan (`paymentWeekday`, domingo por defecto). El motor
+  // de anclas (PeriodAnchors) NO cubre este ciclo a propósito: el pago semanal casi nunca depende de
+  // feriados ni de tolerancia, y anclar 52 períodos al año complicaría las claves. La clave es el inicio.
   if (settings.paymentCycle === 'weekly') {
-    const dayOfWeek = now.getDay(); // 0=dom
+    const dayOfWeek = weeklyOffset(settings, now); // días desde el último día de pago
     const start = new Date(now); start.setDate(today - dayOfWeek); start.setHours(0, 0, 0, 0);
     const end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59);
     const prevStart = new Date(start); prevStart.setDate(start.getDate() - 7);
@@ -155,7 +169,7 @@ export function daysUntilNextPay(
   now: Date,
   resolve: PeriodStartResolver | null,
 ): number {
-  if (settings.paymentCycle === 'weekly') return 7 - now.getDay();
+  if (settings.paymentCycle === 'weekly') return 7 - weeklyOffset(settings, now);
   if (settings.paymentCycle === 'monthly' || settings.paymentCycle === 'biweekly') {
     const fp = computeFinancialPeriod(settings, now, resolve);
     return dayNumOf(fp.nextStart) - dayNumOf(now);

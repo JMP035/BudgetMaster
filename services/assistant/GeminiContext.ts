@@ -11,6 +11,7 @@ import type { DebtLoad } from '../DebtLoad';
 import type { AssistantContext } from './types';
 import { formatDateOnly } from '../DateAmount';
 import { isBalanceTracked } from '../Balances';
+import { normalizeWeekday } from '../FinancialPeriod';
 import { formatMoney } from '../format';
 import { currencyOf, formatPeriodRange, formatShortDay } from '../BudgetBreakdown';
 import { fixedCycleConfig, fixedDueInfo, isPaidForPeriod, storedToLocalDate } from '../FixedCycle';
@@ -223,7 +224,8 @@ export function buildCompactContext(ctx: AssistantContext, userName: string, ext
   const cycle = ctx.settings.paymentCycle || 'monthly';
   const cycleText = cycle === 'monthly' ? `mensual (día ${ctx.settings.paymentDay})`
     : cycle === 'biweekly' ? `quincenal (días ${(ctx.settings.paymentDays ?? []).join(' y ')})`
-      : cycle === 'weekly' ? 'semanal' : String(cycle);
+      : cycle === 'weekly' ? `semanal (cobra los ${WEEKDAYS[normalizeWeekday(ctx.settings.paymentWeekday)]})`
+        : cycle === 'irregular' ? 'irregular (período = mes calendario)' : String(cycle);
   const profile = [`ciclo de pago ${cycleText}`];
   if (monthlyIncome > 0) profile.unshift(`ingreso mensual ${money(monthlyIncome, 'Q')}`);
   if (debt && debt.totalQ > 0) {

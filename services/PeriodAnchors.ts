@@ -8,6 +8,7 @@ import { adjustPayDate, DEFAULT_PAY_RULES, parseYmd, sanitizePayRules } from './
 import type { PayRules } from './PayCalendar';
 import { effectiveDay } from './FixedCycle';
 import type { PeriodStartResolver } from './FixedCycle';
+import { normalizeWeekday } from './FinancialPeriod';
 import type { UserSettings } from './storage';
 
 export interface PeriodAnchor {
@@ -117,12 +118,13 @@ export function clearManualAnchor(list: PeriodAnchor[], key: string): PeriodAnch
 }
 
 /** Ciclo y día(s) de pago editables desde Ajustes (los mismos campos que define el onboarding). */
-export type PaymentSchedule = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'>;
+export type PaymentSchedule = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'> & { paymentWeekday?: number };
 
 /**
  * Cambio de ciclo o día de pago ya validado: mensual con un día 1..31, quincenal con dos días distintos
- * 1..31 (orden ascendente) y semanal / irregular conservan el día guardado. Lo inválido se descarta y se
- * deja lo que había. Las anclas NO se tocan: las de claves que dejan de ser día de pago efectivo las
+ * 1..31 (orden ascendente); el semanal usa `paymentWeekday` (entero 0..6, 0 = domingo; inválido → conserva el
+ * actual y, si no hay, 0) y el irregular conserva los días guardados. Lo inválido se descarta y se deja lo
+ * que había. El motor de anclas NO cubre el ciclo semanal (ver FinancialPeriod). Las anclas NO se tocan: las de claves que dejan de ser día de pago efectivo las
  * ignora el resolvedor (buildStartResolver), y si el usuario vuelve a ese día reviven.
  */
 export function sanitizePaymentSchedule(current: PaymentSchedule, patch: Partial<PaymentSchedule>): PaymentSchedule {
@@ -140,7 +142,9 @@ export function sanitizePaymentSchedule(current: PaymentSchedule, patch: Partial
     const ds = Array.from(new Set(patch.paymentDays.map(day).filter((n): n is number => n !== null))).sort((a, b) => a - b);
     if (ds.length === 2) paymentDays = ds;
   }
-  return { paymentCycle: cycle, paymentDay, paymentDays };
+  const validWeekday = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 6;
+  const paymentWeekday = validWeekday(patch.paymentWeekday) ? patch.paymentWeekday : normalizeWeekday(current.paymentWeekday);
+  return { paymentCycle: cycle, paymentDay, paymentDays, paymentWeekday };
 }
 
 /** Lista válida a partir de lo guardado (descarta entradas mal formadas). */

@@ -27,7 +27,7 @@ export interface SummaryRow { label: string; value: string; money?: { amount: nu
 export interface AssistantContext {
   now: Date;
   period: { start: Date; end: Date; prevStart: Date; prevEnd: Date; label: string };
-  settings: Pick<UserSettings, 'currency' | 'customCategories' | 'paymentCycle' | 'paymentDay' | 'paymentDays' | 'exchangeRate' | 'smsEnabled'>;
+  settings: Pick<UserSettings, 'currency' | 'customCategories' | 'paymentCycle' | 'paymentDay' | 'paymentDays' | 'exchangeRate' | 'smsEnabled'> & { paymentWeekday?: number };
   transactions: Transaction[]; accounts: Account[]; fixedExpenses: FixedExpense[];
   categoryBudgets: CategoryBudget[]; savingsGoals: SavingsGoal[]; merchantRules: MerchantRule[];
   smsOn: boolean;

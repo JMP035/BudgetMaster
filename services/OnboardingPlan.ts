@@ -8,7 +8,8 @@ import type {
   Account, AccountType, CreditInstallment, Currency, FixedExpense, IncomePattern, IncomeSource, PaymentCycle, UserSettings,
 } from './storage';
 import { learnPatternFromSms } from './IncomeSources';
-import { applyPatternCorrection } from './IncomeSourceView';
+import { applyPatternCorrection, WEEKDAY_NAMES } from './IncomeSourceView';
+import { normalizeWeekday } from './FinancialPeriod';
 import { dueDateInPeriod, periodFor, periodForWith } from './FixedCycle';
 import type { FixedCycleConfig, PeriodStartResolver } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
@@ -80,6 +81,8 @@ export interface OnboardingDraft {
   paymentDay: string;
   payDay1: string;
   payDay2: string;
+  /** Día de la semana en que le pagan ('0'..'6', 0 = domingo); solo ciclo semanal. Opcional: los borradores viejos no lo traen. */
+  payWeekday?: string;
   savings: string;
   accounts: DraftAccount[];
   fixed: DraftFixed[];
@@ -279,6 +282,7 @@ export function sanitizeDraft(raw: unknown): OnboardingDraft | null {
     paymentDay: r.paymentDay,
     payDay1: r.payDay1,
     payDay2: r.payDay2,
+    ...(isStr(r.payWeekday) && /^[0-6]$/.test(r.payWeekday) ? { payWeekday: r.payWeekday } : {}),
     savings: r.savings,
     accounts: accounts as DraftAccount[],
     fixed: fixed as DraftFixed[],
@@ -353,10 +357,13 @@ export function validateRate(s: string): Validation {
   return { ok: true };
 }
 
-/** Ciclo de pago válido según su modalidad (semanal e irregular no piden día). */
+/** Ciclo de pago válido según su modalidad (el semanal pide el día de la semana; el irregular no pide día). */
 export function validateCycle(d: OnboardingDraft): Validation {
   if (d.paymentCycle === 'monthly') return validateDay(d.paymentDay);
   if (d.paymentCycle === 'biweekly') return validateBiweekly(d.payDay1, d.payDay2);
+  if (d.paymentCycle === 'weekly' && !(typeof d.payWeekday === 'string' && /^[0-6]$/.test(d.payWeekday))) {
+    return { ok: false, error: 'Elegí el día de la semana en que te pagan.' };
+  }
   return { ok: true };
 }
 
@@ -448,12 +455,13 @@ export function needsUsd(d: OnboardingDraft): boolean {
 // ─────────────────────────────────────────────────────────────
 /**
  * Frase «Así se va a medir tu dinero». `budgetRange` y `fixedRange` ya vienen formateados
- * («27 oct – 26 nov», formatPeriodRange).
+ * («27 oct – 26 nov», formatPeriodRange). `weekday` (0=dom..6=sáb) solo lo usa el ciclo semanal; sin él, domingo.
  */
 export function periodSentence(
   cycle: PaymentCycle,
   budgetRange: string,
   fixedRange: string,
+  weekday: number = 0,
 ): { title: string; body: string } {
   switch (cycle) {
     case 'monthly':
@@ -466,15 +474,17 @@ export function periodSentence(
         title: `Tu presupuesto se mide por quincena: ${budgetRange}`,
         body: `Tus gastos fijos se cuentan una vez al mes, del ${fixedRange.replace(' – ', ' al ')}.`,
       };
-    case 'weekly':
+    case 'weekly': {
+      const wd = normalizeWeekday(weekday);
       return {
-        title: `Tu semana de presupuesto va de domingo a sábado: ${budgetRange}`,
+        title: `Tu semana de presupuesto va de ${WEEKDAY_NAMES[wd]} a ${WEEKDAY_NAMES[(wd + 6) % 7]}: ${budgetRange}`,
         body: `Los gastos fijos se cuentan por mes calendario (${fixedRange}).`,
       };
+    }
     default:
       return {
         title: `Usamos el mes calendario: ${budgetRange}`,
-        body: 'Tus gastos fijos también se cuentan por mes calendario.',
+        body: 'Tus ingresos no tienen fecha fija, así que tu período es el mes calendario (del 1 al último día). Tus gastos fijos también se cuentan por mes.',
       };
   }
 }
@@ -534,7 +544,7 @@ const INCOME_NAME: Record<PaymentCycle, string> = {
 function buildIncomeSource(
   draft: OnboardingDraft,
   monthlyAmount: number,
-  days: { paymentDay: number; paymentDays: number[] },
+  days: { paymentDay: number; paymentDays: number[]; declaredWeekday?: number },
   nowIso: string,
 ): IncomeSource {
   const cycle = draft.paymentCycle;
@@ -551,7 +561,8 @@ function buildIncomeSource(
   let srcDays: number[] = [];
   if (cycle === 'monthly') srcDays = [days.paymentDay];
   else if (cycle === 'biweekly') srcDays = [...days.paymentDays];
-  else if (cycle === 'weekly') srcDays = weekday !== undefined ? [weekday] : [];
+  // Semanal: el día declarado gana sobre el del SMS; un borrador viejo sin día usa el del SMS y, si no, domingo.
+  else if (cycle === 'weekly') srcDays = [days.declaredWeekday ?? weekday ?? 0];
   const perPayment = cycle === 'biweekly' ? round2(monthlyAmount / 2)
     : cycle === 'weekly' ? round2(monthlyAmount * 12 / 52)
       : monthlyAmount;
@@ -606,6 +617,9 @@ export function buildOnboardingCommit(
     const b = parseInt(draft.payDay2, 10);
     if (Number.isFinite(a) && Number.isFinite(b)) paymentDays = [a, b].sort((x, y) => x - y);
   }
+
+  const declaredWeekday = typeof draft.payWeekday === 'string' && /^[0-6]$/.test(draft.payWeekday)
+    ? parseInt(draft.payWeekday, 10) : undefined;
 
   // Ahorro (siempre en Q)
   const savingsRaw = num(draft.savings);
@@ -725,7 +739,8 @@ export function buildOnboardingCommit(
     settings.exchangeRateUpdatedAt = ctx.nowIso;
   }
 
-  const incomeSources = [buildIncomeSource(draft, incomeRaw, { paymentDay, paymentDays }, ctx.nowIso)];
+  const incomeSources = [buildIncomeSource(draft, incomeRaw, { paymentDay, paymentDays, declaredWeekday }, ctx.nowIso)];
+  if (draft.paymentCycle === 'weekly') settings.paymentWeekday = incomeSources[0].days[0];
 
   return { settings, accounts, fixedExpenses, installments, incomeSources };
 }

@@ -122,7 +122,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_1', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Tu período financiero',
-                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. Tocá el rango del período para ver de dónde sale su inicio y cambiarlo. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
+                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal, semanal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. Tocá el rango del período para ver de dónde sale su inicio y cambiarlo. La insignia con la letra d indica cuántos días faltan para tu próximo ingreso.',
             },
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
@@ -194,7 +194,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'per_1', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Tu día de pago',
-                description: 'Todo parte de tu día de pago (por ejemplo el 27): tu período va de un pago al siguiente, no del 1 al 30. Esta sección de Ajustes lo muestra junto con el período actual, y ahí mismo está el botón «Cuándo empieza mi período». Si tu ciclo es semanal o irregular el inicio es fijo y no hay nada que ajustar.',
+                description: 'Todo parte de tu día de pago (por ejemplo el 27): tu período va de un pago al siguiente, no del 1 al 30. Esta sección de Ajustes lo muestra junto con el período actual, y ahí mismo está el botón «Cuándo empieza mi período». Si cobrás semanal, tu período empieza el día de la semana que elegiste (Ajustes → Ciclo de pago) y no se mueve por feriados. Si tus ingresos son irregulares, tu período es el mes calendario.',
             },
             {
                 id: 'per_2', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'sunny-outline', padding: 8,
@@ -838,7 +838,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_period', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Ingresos y período',
-                description: 'Muestra tu día de pago y el período actual. «Mis fuentes de ingreso» te lleva a Presupuesto → Ingresos. En «Ciclo de pago» cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día o los dos días de pago, y se guardan con su propio botón; cambiar el día mueve tu período, y lo que fijaste a mano en un período anterior se conserva. «Cuándo empieza mi período» abre el detalle: de dónde sale el inicio (tu sueldo, un fin de semana o feriado, o lo que fijaste a mano), las fechas para elegir otro inicio y las reglas de fin de semana, feriados, tolerancia y sueldo adelantado. Esos cambios se guardan con los botones del propio detalle, no con Guardar Cambios.',
+                description: 'Muestra tu día de pago y el período actual. «Mis fuentes de ingreso» te lleva a Presupuesto → Ingresos. En «Ciclo de pago» cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día (o los dos días) de pago; con ciclo semanal elegís el día de la semana en que te pagan y la semana arranca ese día. Se guardan con su propio botón; cambiar el día mueve tu período, y lo que fijaste a mano en un período anterior se conserva. «Cuándo empieza mi período» abre el detalle: de dónde sale el inicio (tu sueldo, un fin de semana o feriado, o lo que fijaste a mano), las fechas para elegir otro inicio y las reglas de fin de semana, feriados, tolerancia y sueldo adelantado. Esos cambios se guardan con los botones del propio detalle, no con Guardar Cambios.',
             },
             {
                 id: 'set_3', elementId: 'settings_currency', screen: 'settings', position: 'bottom', icon: 'cash-outline', padding: 8,

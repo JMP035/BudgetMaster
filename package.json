@@ -37,7 +37,8 @@
     "test:widget-snapshot": "sucrase-node scripts/widget-snapshot.test.ts",
     "test:financial-score": "sucrase-node scripts/financial-score.test.ts",
     "test:debt-load": "sucrase-node scripts/debt-load.test.ts",
-    "test:card-setup": "sucrase-node scripts/card-setup.test.ts"
+    "test:card-setup": "sucrase-node scripts/card-setup.test.ts",
+    "test:weekly-period": "sucrase-node scripts/weekly-period.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

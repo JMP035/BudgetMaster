@@ -13,6 +13,7 @@ import { adjustForQuiet } from './NotifPrefs';
 import {
   dueDateInPeriod, fixedCycleConfig, isPaidForPeriod, nextPeriod, periodFor,
 } from './FixedCycle';
+import { normalizeWeekday } from './FinancialPeriod';
 import { cutDate, dayNum, dueDateFor, effectiveCutoffDay, lastClosedCut } from './CardCycle';
 import { statementFor } from './CardStatement';
 import { cardOfInstallment, chargedCount, cutForInstallment } from './InstallmentSchedule';
@@ -43,7 +44,7 @@ export interface PlannedNotif {
 }
 
 export interface PlanData {
-  settings: Pick<UserSettings, 'userName' | 'budgetLimit' | 'monthlyIncome' | 'exchangeRate' | 'paymentCycle' | 'paymentDay' | 'paymentDays'>;
+  settings: Pick<UserSettings, 'userName' | 'budgetLimit' | 'monthlyIncome' | 'exchangeRate' | 'paymentCycle' | 'paymentDay' | 'paymentDays'> & { paymentWeekday?: number };
   transactions: Transaction[];
   fixedExpenses: FixedExpense[];
   accounts: Account[];
@@ -89,6 +90,15 @@ function amountsText(pair: { Q: number; USD: number }): string {
   if (pair.Q > EPS) out.push(fmtMoney(pair.Q, 'Q'));
   if (pair.USD > EPS) out.push(fmtMoney(pair.USD, 'USD'));
   return out.join(' y ');
+}
+
+/**
+ * Día de la semana (0=dom..6=sáb) en que llega el resumen semanal: el domingo, salvo con ciclo semanal, donde
+ * es el último día de su semana (el día anterior al de pago). Ese día reemplaza al resumen diario.
+ */
+export function weeklySummaryWeekday(settings: Pick<PlanData['settings'], 'paymentCycle' | 'paymentWeekday'>): number {
+  if (settings.paymentCycle !== 'weekly') return 0;
+  return (normalizeWeekday(settings.paymentWeekday) + 6) % 7;
 }
 
 // ── Plan ───────────────────────────────────────────────────────
@@ -221,17 +231,19 @@ export function buildPlan(data: PlanData, prefs: NotifPrefs, now: Date): Planned
     }
   }
 
-  // Resumen semanal (domingo) y diario. El domingo el semanal reemplaza al diario.
+  // Resumen semanal (domingo, o el último día de la semana de quien cobra semanal) y diario. Ese día el
+  // semanal reemplaza al diario.
   const weeklyOn = prefs.kinds.weekly;
-  const sundays: string[] = [];
+  const summaryWeekday = weeklySummaryWeekday(data.settings);
+  const summaryDays: string[] = [];
   let weeklyCount = 0;
   for (let i = 0; i <= HORIZON_DAYS && weeklyCount < WEEKLY_COUNT; i++) {
     const d = addDays(now, i);
-    if (d.getDay() !== 0) continue;
+    if (d.getDay() !== summaryWeekday) continue;
     const fire = atHour(d, summaryHour);
     if (fire.getTime() - now.getTime() <= MIN_LEAD_MS) continue;
     weeklyCount++;
-    sundays.push(ymdNum(d));
+    summaryDays.push(ymdNum(d));
     push('weekly', 'w', fire, 'Resumen Semanal — BudgetMaster',
       weeklyCount === 1
         ? buildWeeklySummaryBodyText(snapNow, now)
@@ -241,7 +253,7 @@ export function buildPlan(data: PlanData, prefs: NotifPrefs, now: Date): Planned
   if (prefs.dailySummary.enabled) {
     for (let i = 0; i < DAILY_DAYS; i++) {
       const d = addDays(now, i);
-      if (weeklyOn && d.getDay() === 0 && sundays.indexOf(ymdNum(d)) >= 0) continue;
+      if (weeklyOn && d.getDay() === summaryWeekday && summaryDays.indexOf(ymdNum(d)) >= 0) continue;
       const body = i === 0
         ? buildDailySummaryBody(snapNow, spentQOf(txsInPeriod(data.transactions, d, d)))
         : DAILY_SUMMARY_GENERIC_BODY;

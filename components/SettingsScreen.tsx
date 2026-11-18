@@ -5,7 +5,10 @@ import {
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { Account, Currency, CustomCategory, FixedExpense, PaymentCycle, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
+import { Account, Currency, CustomCategory, FixedExpense, IncomeSource, PaymentCycle, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
+import { normalizeWeekday } from "../services/FinancialPeriod";
+import { WEEKDAY_NAMES, weeklySourceMismatch } from "../services/IncomeSourceView";
+import { Chip, ChipRow } from "./onboarding/OnbPrimitives";
 import { PeriodStartSheet, payDayText } from "./PeriodStartSheet";
 import SmsPendingSheet from "./SmsPendingSheet";
 import NotificationSettingsSheet from "./NotificationSettingsSheet";
@@ -192,6 +195,14 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const [cycle, setCycle] = useState<PaymentCycle>(settings.paymentCycle);
     const [payDay1, setPayDay1] = useState(String(settings.paymentCycle === "biweekly" ? (settings.paymentDays?.[0] ?? 15) : settings.paymentDay));
     const [payDay2, setPayDay2] = useState(String(settings.paymentDays?.[1] ?? 30));
+    const [weekday, setWeekday] = useState(normalizeWeekday(settings.paymentWeekday));
+    // Fuentes de ingreso: solo para avisar si la fuente semanal dice otro día que el elegido aquí.
+    const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+    useEffect(() => {
+        let alive = true;
+        StorageService.getIncomeSources().then(list => { if (alive) setIncomeSources(list); }).catch(() => { });
+        return () => { alive = false; };
+    }, [cycle]);
     const [schedBusy, setSchedBusy] = useState(false);
     const [schedNotice, setSchedNotice] = useState<{ variant: "success" | "error"; text: string } | null>(null);
     // Sube cuando el sheet del período guarda algo: el resumen de «Ingresos y período» se relee.
@@ -383,8 +394,10 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         setSchedNotice(null);
         if (v === "monthly") setPayDay1(String(settings.paymentDay));
         else if (v === "biweekly") { setPayDay1(String(savedDays[0] ?? 15)); setPayDay2(String(savedDays[1] ?? 30)); }
+        else if (v === "weekly") setWeekday(normalizeWeekday(settings.paymentWeekday));
     };
     const schedDirty = cycle !== settings.paymentCycle
+        || (cycle === "weekly" && weekday !== normalizeWeekday(settings.paymentWeekday))
         || (cycle === "monthly" && parseInt(payDay1, 10) !== settings.paymentDay)
         || (cycle === "biweekly" && (parseInt(payDay1, 10) !== savedDays[0] || parseInt(payDay2, 10) !== savedDays[1]));
 
@@ -414,6 +427,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 paymentCycle: cycle,
                 ...(cycle === "monthly" ? { paymentDay: a } : {}),
                 ...(cycle === "biweekly" ? { paymentDays: [a, b] } : {}),
+                ...(cycle === "weekly" ? { paymentWeekday: weekday } : {}),
             });
             onSave(upd);
             setSchedNotice({ variant: "success", text: `Listo. ${payDayText(upd)}. Tu período se recalculó con el nuevo día.` });
@@ -792,10 +806,44 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                         </View>
                     )}
                     {cycle === "weekly" && (
-                        <Text style={s.hint}>Con ciclo semanal el período siempre empieza el domingo: no hay un día que elegir.</Text>
+                        <>
+                            <Text style={[s.hint, { marginTop: 10 }]}>¿Qué día de la semana te pagan?</Text>
+                            <ChipRow>
+                                {WEEKDAY_NAMES.map((name, i) => (
+                                    <Chip
+                                        key={name}
+                                        label={name.slice(0, 3).replace(/^./, ch => ch.toUpperCase())}
+                                        selected={weekday === i}
+                                        onPress={() => { setWeekday(i); setSchedNotice(null); }}
+                                    />
+                                ))}
+                            </ChipRow>
+                            <Text style={s.hint}>Tu semana va de {WEEKDAY_NAMES[weekday]} a {WEEKDAY_NAMES[(weekday + 6) % 7]}.</Text>
+                            {(() => {
+                                const mismatch = weeklySourceMismatch(incomeSources, weekday);
+                                if (!mismatch) return null;
+                                const day = WEEKDAY_NAMES[mismatch.days[0]];
+                                return (
+                                    <>
+                                        <InlineNotice
+                                            variant="info"
+                                            text={`Tu fuente «${mismatch.name}» dice que cobrás el ${day}.`}
+                                            style={{ marginTop: 10 }}
+                                        />
+                                        <GlassButton
+                                            kind="ghost"
+                                            icon="swap-horizontal-outline"
+                                            label={`Usar el ${day}`}
+                                            style={s.ghostBtn}
+                                            onPress={() => { setWeekday(mismatch.days[0]); setSchedNotice(null); }}
+                                        />
+                                    </>
+                                );
+                            })()}
+                        </>
                     )}
                     {cycle === "irregular" && (
-                        <Text style={s.hint}>Con ingresos irregulares el período es el mes calendario: no hay un día que elegir.</Text>
+                        <Text style={s.hint}>Con ingresos irregulares tu período es el mes calendario (del 1 al último día): no hay un día que elegir.</Text>
                     )}
                     <InlineNotice
                         variant="info"

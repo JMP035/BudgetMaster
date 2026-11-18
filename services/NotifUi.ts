@@ -15,7 +15,7 @@ export const NOTIF_KIND_INFO: Record<NotifKind, { label: string; help: string }>
   capacity: { label: 'Capacidad de pago', help: 'Si el pago de una tarjeta ya compromete casi todo lo que tendrás para pagarla.' },
   period_end: { label: 'Fin de período', help: 'El día antes de que cierre tu período, con cuánto llevas gastado.' },
   daily: { label: 'Resumen diario', help: 'Un solo aviso al día con lo que registraste y cuánto te queda. Reemplaza al aviso por cada gasto.' },
-  weekly: { label: 'Resumen semanal', help: 'Los domingos, el resumen de tu semana (ese día reemplaza al resumen diario).' },
+  weekly: { label: 'Resumen semanal', help: 'Una vez por semana: los domingos, o el último día de tu semana si cobras semanal (ese día reemplaza al resumen diario).' },
   thresholds: { label: 'Alertas de presupuesto', help: 'Al llegar al 50 %, 80 % y 100 % del presupuesto del período o de una categoría.' },
   ai: { label: 'Recordatorio del Asesor IA', help: 'Un empujón ocasional para consultar a tu asesor.' },
 };

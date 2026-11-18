@@ -124,7 +124,12 @@ console.log('Distintas formas de cobrar');
   check('semanal con muestra: el día de la semana sale del SMS (martes = 2), no ancla',
     wk.frequency === 'weekly' && eq(wk.days, [2]) && wk.anchorsPeriod === false && wk.amount === 1200, JSON.stringify(wk));
   const wkNo = sourceOf(draftWith({ paymentCycle: 'weekly', income: '5,200' }));
-  check('semanal sin muestra: sin día inventado', eq(wkNo.days, []) && wkNo.pattern === undefined);
+  check('semanal sin muestra ni día declarado (borrador viejo): domingo, sin patrón', eq(wkNo.days, [0]) && wkNo.pattern === undefined);
+  const wkDecl = buildOnboardingCommit(draftWith({ paymentCycle: 'weekly', income: '5,200', payWeekday: '5', incomeSample: { body: SMS_A, confirmed: true } }), BASE, ctx);
+  check('semanal: el día declarado (viernes = 5) gana sobre el del SMS (martes)',
+    eq(wkDecl.incomeSources[0].days, [5]) && wkDecl.settings.paymentWeekday === 5, JSON.stringify(wkDecl.incomeSources[0].days));
+  const wkOld = buildOnboardingCommit(draftWith({ paymentCycle: 'weekly', income: '5,200', incomeSample: { body: SMS_A, confirmed: true } }), BASE, ctx);
+  check('semanal en borrador viejo: usa el día del SMS también en los ajustes', wkOld.settings.paymentWeekday === 2);
 
   const irr = sourceOf(draftWith({ paymentCycle: 'irregular', income: '3,000' }));
   check('irregular (ventas): sin días, no ancla, monto declarado',

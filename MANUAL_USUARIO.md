@@ -357,7 +357,7 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 - **Ingresos y período** — muestra tu día de pago y el período actual. **Mis fuentes de ingreso** te lleva a Presupuesto → Ingresos. En **Ciclo de pago** cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día o los dos días de pago; se guarda con **Guardar ciclo y día de pago** (no con *Guardar Cambios*). Cambiar el día mueve tu período; lo que fijaste a mano en un período anterior se conserva. El botón **Cuándo empieza mi período** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
   - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia); nunca se ofrece una fecha futura. **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijás a mano siempre gana*: la app no lo cambia sola.
   - **Reglas** — qué hacer si el día de pago cae en fin de semana o feriado (**Viernes antes**, **Lunes después** o **Día exacto**), si cuentan los **feriados de Guatemala**, la **tolerancia** (de 1 a 7 días de diferencia máxima con el día de pago) y **Adelantar el período cuando llega el sueldo** (cuando la app reconoce por SMS el depósito de tu sueldo y cae antes o después de lo esperado, dentro de la tolerancia, el período empieza ese día). Se guardan con **Guardar reglas**, no con *Guardar Cambios*.
-  - Solo aplica a ciclos **mensual** y **quincenal**; con ciclo semanal o irregular el inicio del período es fijo.
+  - Solo aplica a ciclos **mensual** y **quincenal**; con ciclo semanal el período empieza siempre el día de la semana que elegiste y con ciclo irregular es el mes calendario.
 - **Moneda principal** — Q, $, € o £.
 - **Tipo de cambio USD → Q** — se actualiza solo cada 6 horas desde el **Banco de Guatemala (Banguat)**, con respaldo del mercado internacional. Podés forzar la actualización con ⟳ o escribirlo manualmente.
 - **Ahorros externos** — dinero guardado fuera de la app (Q y USD); se suma al Patrimonio Total.
@@ -405,7 +405,7 @@ La app envía notificaciones locales (acepta el permiso la primera vez). Están 
 | Deuda por vencer | Préstamos con día de pago: 2 días antes y el mismo día. |
 | Fin de período | El día antes de que cierre tu período, con cuánto llevás gastado. |
 | Resumen del día | Cada día a las 20:00: lo que registraste hoy y cuánto te queda del período. Se puede apagar. |
-| Resumen semanal | Los domingos a las 20:00 (ese día reemplaza al resumen del día). |
+| Resumen semanal | Los domingos a las 20:00, o el último día de tu semana si cobras semanal (ese día reemplaza al resumen del día). |
 
 **Avisos inmediatos**
 

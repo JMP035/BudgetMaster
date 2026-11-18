@@ -6,6 +6,8 @@ import type { PayRules, WeekendRule } from "../services/PayCalendar";
 import { getCurrentFinancialPeriod, StorageService } from "../services/storage";
 import type { FinancialPeriod, UserSettings } from "../services/storage";
 import type { PeriodAnchor } from "../services/PeriodAnchors";
+import { normalizeWeekday } from "../services/FinancialPeriod";
+import { WEEKDAY_NAMES } from "../services/IncomeSourceView";
 import { C } from "../theme";
 import { GlassButton } from "./GlassButton";
 import { GlassCard } from "./GlassCard";
@@ -26,7 +28,7 @@ function addDays(d: Date, n: number): Date {
 }
 
 /** Frase corta con el día (o los días) de pago configurados; la usa también Ajustes → Ingresos y período. */
-export function payDayText(s: Pick<UserSettings, "paymentCycle" | "paymentDay" | "paymentDays">): string {
+export function payDayText(s: Pick<UserSettings, "paymentCycle" | "paymentDay" | "paymentDays"> & { paymentWeekday?: number }): string {
     if (s.paymentCycle === "monthly") return `Tu día de pago: el ${s.paymentDay} de cada mes`;
     if (s.paymentCycle === "biweekly") {
         const days = [...(s.paymentDays ?? [])].sort((a, b) => a - b);
@@ -34,7 +36,7 @@ export function payDayText(s: Pick<UserSettings, "paymentCycle" | "paymentDay" |
             ? `Tus días de pago: el ${days[0]} y el ${days[1]} de cada mes`
             : "Cobrás dos veces al mes";
     }
-    if (s.paymentCycle === "weekly") return "Cobrás cada semana";
+    if (s.paymentCycle === "weekly") return `Cobrás cada ${WEEKDAY_NAMES[normalizeWeekday(s.paymentWeekday)]}`;
     return "Tus ingresos son irregulares";
 }
 
@@ -165,7 +167,7 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
     };
 
     const fixedStartText = cur.paymentCycle === "weekly"
-        ? "Tu ciclo es semanal: el período siempre empieza el domingo, así que no hay nada que ajustar aquí."
+        ? `Tu ciclo es semanal: tu período empieza cada ${WEEKDAY_NAMES[normalizeWeekday(cur.paymentWeekday)]}. Cambialo en Ajustes → Ciclo de pago.`
         : "Tus ingresos son irregulares: el período es el mes calendario, así que su inicio es fijo y no hay nada que ajustar aquí.";
 
     return (

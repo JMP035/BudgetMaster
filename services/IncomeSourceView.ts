@@ -60,6 +60,22 @@ export function scheduleText(source: Pick<IncomeSource, 'frequency' | 'days' | '
   return base;
 }
 
+/**
+ * Coherencia entre el día de pago semanal de Ajustes y las fuentes de ingreso: la primera fuente BASE, activa
+ * y semanal cuyo día (`days[0]`, 0=dom..6=sáb) no coincide con `weekday`, o null si todas coinciden. Las que
+ * no traen un día válido no cuentan como contradicción.
+ */
+export function weeklySourceMismatch(sources: IncomeSource[], weekday: number): IncomeSource | null {
+  const list = Array.isArray(sources) ? sources : [];
+  for (const s of list) {
+    if (!s || s.role !== 'base' || !s.isActive || s.frequency !== 'weekly') continue;
+    const d = Array.isArray(s.days) ? s.days[0] : undefined;
+    if (typeof d !== 'number' || !Number.isInteger(d) || d < 0 || d > 6) continue;
+    if (d !== weekday) return s;
+  }
+  return null;
+}
+
 export type StatusTone = 'success' | 'info' | 'danger' | 'muted';
 
 export interface StatusView {

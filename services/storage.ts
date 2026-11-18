@@ -24,7 +24,7 @@ import {
   buildStartResolver, clearManualAnchor, removeAnchorsForTx, sanitizeAnchors, sanitizePaymentSchedule, setManualAnchor,
 } from './PeriodAnchors';
 import type { PeriodAnchor, PaymentSchedule } from './PeriodAnchors';
-import { computeFinancialPeriod, daysUntilNextPay } from './FinancialPeriod';
+import { computeFinancialPeriod, daysUntilNextPay, normalizeWeekday } from './FinancialPeriod';
 import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 import {
@@ -305,6 +305,8 @@ export interface UserSettings {
   paymentCycle: PaymentCycle;
   paymentDay: number;
   paymentDays: number[];
+  /** Día de la semana en que le pagan (0=dom..6=sáb); solo ciclo semanal. Default 0; se normaliza al leer. */
+  paymentWeekday?: number;
   monthlyIncome: number;
   monthlyIncomeUSD: number;
   /** @deprecated instantánea del onboarding; solo la lee DebtLoad.legacyDeclaredDebtQ. */
@@ -467,6 +469,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   paymentCycle: 'monthly',
   paymentDay: 30,
   paymentDays: [15, 30],
+  paymentWeekday: 0,
   monthlyIncome: 0,
   monthlyIncomeUSD: 0,
   activeDebts: 0,
@@ -494,7 +497,11 @@ export const DEFAULT_SETTINGS: UserSettings = {
 /** Ajustes guardados + defaults; `payRules` siempre completo y válido (ajustes viejos no lo traen). */
 function withSettingsDefaults(parsed: unknown): UserSettings {
   const base = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<UserSettings>;
-  return { ...DEFAULT_SETTINGS, ...base, payRules: sanitizePayRules(base.payRules), notif: sanitizeNotifPrefs(base.notif) };
+  return {
+    ...DEFAULT_SETTINGS, ...base,
+    paymentWeekday: normalizeWeekday(base.paymentWeekday),
+    payRules: sanitizePayRules(base.payRules), notif: sanitizeNotifPrefs(base.notif),
+  };
 }
 
 /**

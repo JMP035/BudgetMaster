@@ -57,7 +57,7 @@ export const FieldContext = createContext<FieldCtx>({
 // PERÍODOS (helpers compartidos por P3, gastos fijos y cierre)
 // ─────────────────────────────────────────────────────────────
 /** Ajustes de ciclo a partir del borrador, siempre con valores numéricos válidos. */
-export function cycleSettingsOf(d: OnboardingDraft): Pick<UserSettings, "paymentCycle" | "paymentDay" | "paymentDays"> {
+export function cycleSettingsOf(d: OnboardingDraft): Pick<UserSettings, "paymentCycle" | "paymentDay" | "paymentDays"> & { paymentWeekday: number } {
     const day = parseInt(d.paymentDay, 10);
     const a = parseInt(d.payDay1, 10);
     const b = parseInt(d.payDay2, 10);
@@ -65,6 +65,8 @@ export function cycleSettingsOf(d: OnboardingDraft): Pick<UserSettings, "payment
         paymentCycle: d.paymentCycle,
         paymentDay: Number.isFinite(day) && day >= 1 && day <= 31 ? day : 1,
         paymentDays: Number.isFinite(a) && Number.isFinite(b) ? [a, b].sort((x, y) => x - y) : [15, 30],
+        // Sin día elegido (borrador viejo o aún sin tocar) se mide con domingo, como el default de la app.
+        paymentWeekday: typeof d.payWeekday === "string" && /^[0-6]$/.test(d.payWeekday) ? parseInt(d.payWeekday, 10) : 0,
     };
 }
 

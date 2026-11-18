@@ -7,8 +7,11 @@ import { GlassCard } from "../GlassCard";
 import { GradientText } from "../GradientText";
 import { InlineNotice } from "../InlineNotice";
 import {
-    Chip, ChipRow, OptionBtn, periodRanges, ps, StepHeader, StepProps, StyledInput,
+    Chip, ChipRow, cycleSettingsOf, OptionBtn, periodRanges, ps, StepHeader, StepProps, StyledInput,
 } from "./OnbPrimitives";
+
+/** Días de la semana en el orden de Date.getDay() (0 = domingo): el índice es el valor guardado. */
+const WEEKDAY_CHIPS = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 const CYCLES: { value: PaymentCycle; label: string; desc: string; icon: "calendar-outline" | "git-branch-outline" | "refresh-outline" | "shuffle-outline" }[] = [
     { value: "monthly", label: "Mensual", desc: "Una vez al mes", icon: "calendar-outline" },
@@ -42,7 +45,7 @@ export default function StepCycle({ draft, onChange }: StepProps) {
         : cycle === "biweekly" && (Number(draft.payDay1) >= 29 || Number(draft.payDay2) >= 29);
 
     const ranges = valid.ok ? periodRanges(draft) : null;
-    const sentence = ranges ? periodSentence(cycle, ranges.budget, ranges.fixed) : null;
+    const sentence = ranges ? periodSentence(cycle, ranges.budget, ranges.fixed, cycleSettingsOf(draft).paymentWeekday) : null;
     // El título trae la frase con el rango al final: el rango va aparte, con degradado bronce.
     const rangeText = ranges?.budget ?? "";
     const titleHead = sentence
@@ -123,6 +126,22 @@ export default function StepCycle({ draft, onChange }: StepProps) {
                                 label={`${a} y ${b}`}
                                 selected={draft.payDay1.trim() === a && draft.payDay2.trim() === b}
                                 onPress={() => onChange({ payDay1: a, payDay2: b })}
+                            />
+                        ))}
+                    </ChipRow>
+                </>
+            )}
+
+            {cycle === "weekly" && (
+                <>
+                    <Text style={ps.label}>¿Qué día de la semana te pagan?</Text>
+                    <ChipRow>
+                        {WEEKDAY_CHIPS.map((label, i) => (
+                            <Chip
+                                key={label}
+                                label={label}
+                                selected={draft.payWeekday === String(i)}
+                                onPress={() => onChange({ payWeekday: String(i) })}
                             />
                         ))}
                     </ChipRow>

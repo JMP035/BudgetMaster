@@ -4,7 +4,7 @@ process.env.TZ = 'America/Guatemala';
 
 import {
   ONBOARDING_BANKS, ONB_TYPE_STYLE, FIXED_SUGGESTIONS,
-  buildOnboardingCommit, canContinueRequired, dueLabel, emptyDraft, needsUsd, newDraftId, optionalSteps,
+  buildOnboardingCommit, canContinueRequired, dueLabel, validateCycle, emptyDraft, needsUsd, newDraftId, optionalSteps,
   periodSentence, sanitizeDraft, smsLinksFor, validateAccount, validateBiweekly, validateDay, validateFixed,
   validateIncome, validateName, validateRate, validateSavings, parseRate,
 } from '../services/OnboardingPlan';
@@ -110,6 +110,14 @@ function acc(id: string, bankCode: string | null, kind: DraftAccount['kind'], ex
 {
   const c = buildOnboardingCommit(draftWith({ paymentCycle: 'weekly' }), BASE, ctxAndroid);
   check('semanal conserva día y días base', c.settings.paymentDay === 30 && eq(c.settings.paymentDays, [15, 30]));
+  check('semanal en borrador viejo (sin día, sin SMS): domingo', c.settings.paymentWeekday === 0 && eq(c.incomeSources[0].days, [0]));
+}
+{
+  const c = buildOnboardingCommit(draftWith({ paymentCycle: 'weekly', payWeekday: '5' }), BASE, ctxAndroid);
+  check('semanal viernes: paymentWeekday 5', c.settings.paymentWeekday === 5, String(c.settings.paymentWeekday));
+  check('semanal viernes: la fuente guarda days [5]', eq(c.incomeSources[0].days, [5]) && c.incomeSources[0].frequency === 'weekly');
+  const m = buildOnboardingCommit(draftWith({ paymentCycle: 'monthly', payWeekday: '5' }), BASE, ctxAndroid);
+  check('mensual no toca paymentWeekday', m.settings.paymentWeekday === BASE.paymentWeekday);
 }
 {
   const c = buildOnboardingCommit(draftWith({ incomeCurrency: 'USD', income: '1000', savings: '100' }), BASE, ctxAndroid);
@@ -329,9 +337,15 @@ check('nombre de 41 letras inválido, de 40 válido', !validateName('a'.repeat(4
   check('canContinueRequired paso 2 mensual', canContinueRequired(d, 2, parse) && !canContinueRequired(draftWith({ paymentDay: '' }), 2, parse));
   check('canContinueRequired paso 2 quincenal', canContinueRequired(draftWith({ paymentCycle: 'biweekly' }), 2, parse)
     && !canContinueRequired(draftWith({ paymentCycle: 'biweekly', payDay1: '15', payDay2: '15' }), 2, parse));
-  check('canContinueRequired paso 2 semanal/irregular no pide día',
-    canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '' }), 2, parse)
-    && canContinueRequired(draftWith({ paymentCycle: 'irregular', paymentDay: '' }), 2, parse));
+  check('canContinueRequired paso 2 irregular no pide día', canContinueRequired(draftWith({ paymentCycle: 'irregular', paymentDay: '' }), 2, parse));
+  check('canContinueRequired paso 2 semanal pide el día de la semana',
+    !canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '' }), 2, parse)
+    && canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '', payWeekday: '0' }), 2, parse)
+    && canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '', payWeekday: '6' }), 2, parse));
+  const vc = validateCycle(draftWith({ paymentCycle: 'weekly' }));
+  check('validateCycle semanal sin día: mensaje', !vc.ok && vc.error === 'Elegí el día de la semana en que te pagan.', String(vc.error));
+  check('validateCycle semanal con día inválido', !validateCycle(draftWith({ paymentCycle: 'weekly', payWeekday: '7' })).ok);
+  check('validateCycle semanal con día válido', validateCycle(draftWith({ paymentCycle: 'weekly', payWeekday: '3' })).ok);
   check('canContinueRequired paso 3 (ahorro vacío ok, inválido no)', canContinueRequired(d, 3, parse) && !canContinueRequired(draftWith({ savings: 'x' }), 3, parse));
 }
 
@@ -372,10 +386,15 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
 
   const w = periodSentence('weekly', '8 nov – 14 nov', '1 nov – 30 nov');
   check('semanal: domingo a sábado', w.title === 'Tu semana de presupuesto va de domingo a sábado: 8 nov – 14 nov', w.title);
+  const wt = periodSentence('weekly', '10 nov – 16 nov', '1 nov – 30 nov', 2);
+  check('semanal martes: de martes a lunes', wt.title === 'Tu semana de presupuesto va de martes a lunes: 10 nov – 16 nov', wt.title);
+  check('semanal: día inválido cae a domingo', periodSentence('weekly', 'x', 'y', 9).title.indexOf('de domingo a sábado') >= 0);
   check('semanal: fijos por mes calendario', w.body === 'Los gastos fijos se cuentan por mes calendario (1 nov – 30 nov).', w.body);
 
   const irr = periodSentence('irregular', '1 nov – 30 nov', '1 nov – 30 nov');
   check('irregular: mes calendario', irr.title === 'Usamos el mes calendario: 1 nov – 30 nov', irr.title);
+  check('irregular: dice que no hay fecha fija y que los fijos van por mes',
+    irr.body === 'Tus ingresos no tienen fecha fija, así que tu período es el mes calendario (del 1 al último día). Tus gastos fijos también se cuentan por mes.', irr.body);
   const wk = fixedCycleConfig({ paymentCycle: 'weekly', paymentDay: 30, paymentDays: [15, 30] });
   check('semanal: fijos en mes calendario', formatPeriodRange(periodFor(wk, now)) === '1 nov – 30 nov');
 }
@@ -419,6 +438,12 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
   check('borrador válido sale igual', round !== null && eq(round, full));
   const emp = sanitizeDraft(JSON.parse(JSON.stringify(emptyDraft())));
   check('borrador vacío sale igual', emp !== null && eq(emp, emptyDraft()));
+  const wkd = sanitizeDraft({ ...JSON.parse(JSON.stringify(full)), paymentCycle: 'weekly', payWeekday: '3' });
+  check('payWeekday válido se conserva', wkd !== null && wkd.payWeekday === '3');
+  for (const bad of ['7', '-1', '2.5', '', 'x', 3, null, undefined]) {
+    const r = sanitizeDraft({ ...JSON.parse(JSON.stringify(full)), paymentCycle: 'weekly', payWeekday: bad });
+    check('payWeekday inválido (' + String(bad) + ') se descarta sin invalidar el borrador', r !== null && !('payWeekday' in r));
+  }
 
   check('null → null', sanitizeDraft(null) === null);
   check('undefined → null', sanitizeDraft(undefined) === null);
