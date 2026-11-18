@@ -421,6 +421,14 @@ console.log('\n=== (f2) Revisión de categorías ===');
   check('(f2) B4 legada como depósito other → transfer_in', iB4.length === 1 && iB4[0].proposed?.category === 'transfer_in' && iB4[0].proposed?.description === 'BANRURAL · Transferencia recibida',
     JSON.stringify(iB4[0]?.proposed));
 
+  // Ingreso que el usuario ya marcó como Salario a mano: no se le propone volver a Transferencia
+  const salaryTx = (extra: Partial<Transaction> = {}) => legacyTx('sms_h_sal', b4.body, b4.receivedAt as number,
+    { amount: 515, bank: 'BANRURAL', type: 'income', category: 'salary', description: 'BANRURAL · Transferencia recibida', ...extra });
+  check('(f2) Salario sin edición manual → se sigue proponiendo (comportamiento previo)',
+    reviewImportedSms([salaryTx()], new Set()).length === 1);
+  check('(f2) Salario con categoryEditedAt → sin propuesta',
+    reviewImportedSms([salaryTx({ categoryEditedAt: new Date().toISOString() })], new Set()).length === 0);
+
   // Los avisos ya importados por error se proponen para quitar
   const n2 = byId('N2');
   const iN2 = reviewImportedSms([legacyTx('sms_h_n2', n2.body, n2.receivedAt as number, { amount: 1 })], new Set());

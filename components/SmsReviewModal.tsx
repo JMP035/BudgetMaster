@@ -60,16 +60,38 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [dlg, setDlg] = useState<"confirm" | "error" | null>(null);
     const [busy, setBusy] = useState(false);
+    // Los que el usuario dejó "así" en esta sesión: ya quedaron guardados como conservados.
+    const [hidden, setHidden] = useState<Set<string>>(new Set());
 
     // Cada vez que se abre con una lista nueva, todo viene seleccionado.
     useEffect(() => {
         if (visible) {
             setSelected(new Set(items.map(i => i.txId)));
             setExpanded(new Set());
+            setHidden(new Set());
             setDlg(null);
             setBusy(false);
         }
     }, [visible, items]);
+
+    const shown = useMemo(() => items.filter(i => !hidden.has(i.txId)), [items, hidden]);
+
+    /** «Dejar así»: se guarda como conservado (no se vuelve a sugerir) y sale de la lista al instante. */
+    const keepOne = useCallback(async (id: string) => {
+        await StorageService.addSmsReviewKept([id]);
+        setSelected(prev => { const next = new Set(prev); next.delete(id); return next; });
+        setHidden(prev => new Set(prev).add(id));
+    }, []);
+
+    // Si dejó así el último, se refresca el centro de revisión y se vuelve a él.
+    useEffect(() => {
+        if (visible && hidden.size > 0 && items.length > 0 && shown.length === 0) onApplied();
+    }, [visible, hidden, items, shown, onApplied]);
+
+    // Cerrar con «Ahora no» tras haber dejado alguno así: refresca el conteo del centro de revisión.
+    const handleClose = useCallback(() => {
+        if (hidden.size > 0) onApplied(); else onClose();
+    }, [hidden, onApplied, onClose]);
 
     const toggle = useCallback((id: string) => {
         setSelected(prev => {
@@ -91,7 +113,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
         let remove = 0;
         let fixCategory = 0;
         let fixOther = 0;
-        for (const it of items) {
+        for (const it of shown) {
             if (!selected.has(it.txId)) continue;
             if (it.action === "remove") { remove++; continue; }
             const p = it.proposed;
@@ -99,9 +121,9 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
             if (onlyCategory) fixCategory++; else fixOther++;
         }
         return { remove, fixCategory, fixOther, total: remove + fixCategory + fixOther };
-    }, [items, selected]);
+    }, [shown, selected]);
 
-    const allSelected = selected.size === items.length && items.length > 0;
+    const allSelected = selected.size === shown.length && shown.length > 0;
 
     const apply = async () => {
         if (busy) return;
@@ -110,7 +132,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
             const removeIds: string[] = [];
             const updates: Transaction[] = [];
             const keepIds: string[] = [];
-            for (const it of items) {
+            for (const it of shown) {
                 if (!selected.has(it.txId)) { keepIds.push(it.txId); continue; }
                 if (it.action === "remove") removeIds.push(it.txId);
                 else updates.push({ ...it.original, ...it.proposed });
@@ -202,6 +224,16 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                             <Text style={s.fixLine}>Se corregirá: {fixLine}</Text>
                         )}
 
+                        <Pressable
+                            onPress={() => { void keepOne(item.txId); }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Dejar así: ${o.description || "movimiento"}`}
+                            style={({ pressed }) => [s.keepBtn, pressed && s.btnPressed]}
+                        >
+                            <Ionicons name="hand-left-outline" size={14} color={C.primaryLight} />
+                            <Text style={s.keepBtnTxt}>Dejar así</Text>
+                        </Pressable>
+
                         {!!o.originalSMS && (
                             <Pressable
                                 onPress={() => toggleExpanded(item.txId)}
@@ -215,7 +247,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                 </GlassCard>
             </View>
         );
-    }, [selected, expanded, toggle, toggleExpanded, customCategories]);
+    }, [selected, expanded, toggle, toggleExpanded, keepOne, customCategories]);
 
     return (
         <Modal
@@ -224,7 +256,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
             animationType="fade"
             statusBarTranslucent
             navigationBarTranslucent
-            onRequestClose={onClose}
+            onRequestClose={handleClose}
         >
             <View
                 style={[
@@ -245,25 +277,25 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                         <View style={s.headerText}>
                             <Text style={s.title} accessibilityRole="header">Revisar movimientos importados</Text>
                             <Text style={s.subtitle}>
-                                {items.length} movimiento{items.length === 1 ? "" : "s"} para revisar. Destildá los que quieras conservar tal como están.
+                                {shown.length} movimiento{shown.length === 1 ? "" : "s"} para revisar. Tocá «Dejar así» en los que quieras conservar tal como están; con «Aplicar» se corrigen los demás.
                             </Text>
-                            <Text style={s.note}>Las categorías que cambiaste a mano no se tocan.</Text>
+                            <Text style={s.note}>Lo que dejes así no se vuelve a sugerir.</Text>
                         </View>
                     </View>
 
                     <Pressable
-                        onPress={() => setSelected(allSelected ? new Set() : new Set(items.map(i => i.txId)))}
+                        onPress={() => setSelected(allSelected ? new Set() : new Set(shown.map(i => i.txId)))}
                         accessibilityRole="button"
                         style={s.selectAll}
                     >
                         <Ionicons name={allSelected ? "checkbox" : "square-outline"} size={18} color={allSelected ? C.primary : C.textSub} />
                         <Text style={s.selectAllTxt}>{allSelected ? "Quitar selección" : "Seleccionar todo"}</Text>
-                        <Text style={s.selectedCount}>{selected.size} de {items.length}</Text>
+                        <Text style={s.selectedCount}>{selected.size} de {shown.length}</Text>
                     </Pressable>
 
                     <FlatList
                         style={s.list}
-                        data={items}
+                        data={shown}
                         keyExtractor={(it) => it.txId}
                         renderItem={renderItem}
                         extraData={{ selected, expanded }}
@@ -277,7 +309,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                         <Pressable
                             accessibilityRole="button"
                             accessibilityLabel="Ahora no"
-                            onPress={onClose}
+                            onPress={handleClose}
                             style={({ pressed }) => [s.btn, stacked ? s.btnStacked : s.btnGrow, pressed && s.btnPressed]}
                         >
                             <GlassBackground radius={12} blur={false} />
@@ -381,6 +413,20 @@ const s = StyleSheet.create({
     itemDate: { color: C.textSub, fontSize: 12 },
     fixLine: { color: C.primaryLight, fontSize: 12, lineHeight: 18, marginTop: 8 },
     sms: { color: C.textMuted, fontSize: 12, lineHeight: 17, marginTop: 8 },
+    keepBtn: {
+        flexDirection: "row",
+        alignItems: "center",
+        alignSelf: "flex-start",
+        gap: 6,
+        minHeight: 36,
+        marginTop: 8,
+        paddingHorizontal: 12,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: C.glassActiveBorder,
+        backgroundColor: C.glassActive,
+    },
+    keepBtnTxt: { color: C.primaryLight, fontSize: 12, fontWeight: "800" },
     actions: { flexDirection: "row", gap: 10, marginTop: 12 },
     actionsStacked: { flexDirection: "column-reverse" },
     btn: {

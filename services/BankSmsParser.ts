@@ -1154,7 +1154,8 @@ export function reviewImportedSms(
     const proposed: NonNullable<SmsReviewItem['proposed']> = {};
     const typeChanged = c.txType !== t.type;
     const dayChanged = !isNaN(ts) && !sameLocalDay(c.occurredAt, new Date(ts));
-    const salaryChanged = t.type === 'income' && t.category === 'salary' && c.category !== 'salary';
+    // Un "Salario" que el usuario eligió a mano (categoryEditedAt) nunca se vuelve a proponer.
+    const salaryChanged = !t.categoryEditedAt && t.type === 'income' && t.category === 'salary' && c.category !== 'salary';
     const learned = c.reason.includes('|learned');
     const categoryFix = !t.categoryEditedAt && !!c.category && c.category !== t.category && (
       t.category === 'other' ||
