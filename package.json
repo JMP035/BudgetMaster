@@ -34,7 +34,8 @@
     "test:capacity": "sucrase-node scripts/capacity.test.ts",
     "test:notification-plan": "sucrase-node scripts/notification-plan.test.ts",
     "test:notif-ui": "sucrase-node scripts/notif-ui.test.ts",
-    "test:widget-snapshot": "sucrase-node scripts/widget-snapshot.test.ts"
+    "test:widget-snapshot": "sucrase-node scripts/widget-snapshot.test.ts",
+    "test:financial-score": "sucrase-node scripts/financial-score.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

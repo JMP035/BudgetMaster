@@ -7,7 +7,7 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense, IncomeSource,
     FinancialPeriod, SavingsGoal, StorageService, Transaction, UserSettings,
-    calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
+    calcCreditCommitments, calcNetWorthFromAccounts,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
     getDaysUntilNextPayment, getMonthlyInstallmentTotal, isFixedExpenseOverdue
 } from "../services/storage";
@@ -39,7 +39,10 @@ import PeriodStartSheet from "./PeriodStartSheet";
 import { capacityFor } from "../services/Capacity";
 import type { CapacityContext, CapacityResult } from "../services/Capacity";
 import { sanitizePayRules } from "../services/PayCalendar";
-import { fmtDM } from "../services/NotificationTexts";
+import { fmtDM, incomeQOf, spentQOf, txsInPeriod } from "../services/NotificationTexts";
+import { computeFinancialScore } from "../services/FinancialScore";
+import type { ScoreFactor, ScoreResult } from "../services/FinancialScore";
+import { isTransferLike } from "../services/BudgetBreakdown";
 import {
     capacityBasisText, capacityChipText, capacityLevelLabel, capacityPct, capacityTone, dueInText,
 } from "../services/NotifUi";
@@ -129,7 +132,9 @@ export function MiniBarChart({ data, color, labels }: { data: number[]; color: s
 // ─────────────────────────────────────────────────────────────
 // SCORE FINANCIERO
 // ─────────────────────────────────────────────────────────────
-function ScoreWidget({ score }: { score: number }) {
+function ScoreWidget({ result, periodLabel, onInfo }: { result: ScoreResult; periodLabel: string; onInfo: () => void }) {
+    const score = result.score;
+    const savingsPending = result.factors.some(f => f.id === "savings" && f.state === "pending");
     const anim = useRef(new Animated.Value(0)).current;
     const color = score >= 80 ? C.income : score >= 60 ? C.accent : score >= 40 ? C.warning : C.danger;
     const label = score >= 80 ? "Excelente" : score >= 60 ? "Bueno" : score >= 40 ? "Regular" : "Crítico";
@@ -152,6 +157,9 @@ function ScoreWidget({ score }: { score: number }) {
                 </View>
                 {score >= 60 ? <GradientText text={String(score)} style={s.scoreValue} /> : <Text style={[s.scoreValue, { color }]}>{score}</Text>}
                 <Text style={s.scoreMax}>/100</Text>
+                <TouchableOpacity onPress={onInfo} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityRole="button" accessibilityLabel="Cómo se calcula el score">
+                    <Ionicons name="information-circle-outline" size={20} color={C.textSub} />
+                </TouchableOpacity>
             </View>
             <View style={{ height: 8, backgroundColor: C.bgDeep, borderRadius: 4, overflow: "hidden", borderWidth: 1, borderColor: C.cardBorder }}>
                 <Animated.View style={{ height: "100%", width: w, backgroundColor: color, borderRadius: 4 }} />
@@ -162,7 +170,8 @@ function ScoreWidget({ score }: { score: number }) {
                         score >= 40 ? "Hay oportunidades de mejora importantes." :
                             "Situación crítica. Revisa tu presupuesto urgente."}
             </Text>
-            <Text style={s.scoreSource}>Se calcula con los movimientos que registrás este mes, no con tu ingreso declarado.</Text>
+            <Text style={s.scoreSource}>{`Se calcula con lo que registrás en tu período actual (${periodLabel}), no con tu ingreso declarado.`}</Text>
+            {savingsPending && <Text style={s.scoreSource}>Tu ingreso de este período aún no aparece: el ahorro todavía no suma.</Text>}
         </GlassCard>
     );
 }
@@ -452,6 +461,73 @@ const AmbientOrb = React.memo(function AmbientOrb({ size, color, style }: { size
 });
 
 // ─────────────────────────────────────────────────────────────
+// MODAL — CÓMO SE CALCULA EL SCORE (vidrio, no Alert nativo)
+// ─────────────────────────────────────────────────────────────
+const SCORE_FACTOR_LABEL: Record<ScoreFactor["id"], string> = {
+    savings: "Tasa de ahorro",
+    budget: "Presupuesto del período",
+    fixed: "Gastos fijos",
+    accounts: "Cuentas activas",
+};
+const SCORE_FACTOR_COLOR: Record<ScoreFactor["state"], string> = {
+    good: C.income, ok: C.warning, bad: C.danger, pending: C.textMuted,
+};
+const SCORE_FACTOR_ICON: Record<ScoreFactor["state"], "checkmark-circle" | "remove-circle" | "close-circle" | "time"> = {
+    good: "checkmark-circle", ok: "remove-circle", bad: "close-circle", pending: "time",
+};
+
+function ScoreInfoModal({ visible, result, periodLabel, onClose }: { visible: boolean; result: ScoreResult; periodLabel: string; onClose: () => void }) {
+    const score = result.score;
+    const color = score >= 80 ? C.income : score >= 60 ? C.accent : score >= 40 ? C.warning : C.danger;
+    return (
+        <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+            <View style={ni.overlay}>
+                <GlassCard radius={20} style={ni.card} contentStyle={ni.content} blur={false}>
+                    <View style={ni.iconWrap}>
+                        <Ionicons name="shield-checkmark-outline" size={22} color={C.primaryLight} />
+                    </View>
+                    <Text style={ni.title}>Tu score financiero</Text>
+                    <View style={si.scoreRow}>
+                        {score >= 60 ? <GradientText text={String(score)} style={si.scoreValue} /> : <Text style={[si.scoreValue, { color }]}>{score}</Text>}
+                        <Text style={si.scoreMax}>/100</Text>
+                    </View>
+                    <Text style={ni.body}>{`Empieza en 50 y se ajusta con lo que registrás en tu período actual (${periodLabel}), no con el mes calendario.`}</Text>
+
+                    {result.factors.map(f => (
+                        <View key={f.id} style={si.factor}>
+                            <Ionicons name={SCORE_FACTOR_ICON[f.state]} size={16} color={SCORE_FACTOR_COLOR[f.state]} style={si.factorIcon} />
+                            <View style={{ flex: 1 }}>
+                                <View style={si.factorHead}>
+                                    <Text style={[ni.rowLabel, { flex: 1 }]}>{SCORE_FACTOR_LABEL[f.id].toUpperCase()}</Text>
+                                    <Text style={[si.points, { color: SCORE_FACTOR_COLOR[f.state] }]}>{f.points > 0 ? `+${f.points}` : String(f.points)}</Text>
+                                </View>
+                                <Text style={ni.bullet}>{f.text}</Text>
+                            </View>
+                        </View>
+                    ))}
+
+                    <Text style={ni.footnote}>El resultado va de 0 a 100. Las transferencias entre tus cuentas y los movimientos en otras monedas no cuentan.</Text>
+
+                    <TouchableOpacity style={ni.btn} onPress={onClose}>
+                        <Text style={ni.btnTxt}>Entendido</Text>
+                    </TouchableOpacity>
+                </GlassCard>
+            </View>
+        </Modal>
+    );
+}
+
+const si = StyleSheet.create({
+    scoreRow: { flexDirection: "row", alignItems: "flex-end", marginBottom: 8 },
+    scoreValue: { fontSize: 32, fontWeight: "900", lineHeight: 38 },
+    scoreMax: { color: C.textMuted, fontSize: 14, marginLeft: 2, marginBottom: 4 },
+    factor: { flexDirection: "row", alignItems: "flex-start", gap: 8, marginTop: 8 },
+    factorIcon: { marginTop: 1 },
+    factorHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+    points: { fontSize: 13, fontWeight: "900" },
+});
+
+// ─────────────────────────────────────────────────────────────
 // MODAL — INFO DE PATRIMONIO TOTAL (vidrio, no Alert nativo)
 // ─────────────────────────────────────────────────────────────
 function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
@@ -691,6 +767,7 @@ export default function DashboardScreen({
     const [briefingLoading, setBriefingLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
     const [showNetWorthInfo, setShowNetWorthInfo] = useState(false);
+    const [showScoreInfo, setShowScoreInfo] = useState(false);
     const [dialog, setDialog] = useState<SyncDialogState | null>(null);
     const [showPending, setShowPending] = useState(false);
     const [pendingResult, setPendingResult] = useState<SyncResult | null>(null);
@@ -958,26 +1035,18 @@ export default function DashboardScreen({
     };
 
     // ── Transacciones del PERÍODO FINANCIERO (no del mes calendario) ──
-    const inPeriod = (t: { date: string }) => {
-        const d = new Date(t.date);
-        return d >= period.start && d <= period.end;
-    };
-    const inPrevPeriod = (t: { date: string }) => {
-        const d = new Date(t.date);
-        return d >= period.prevStart && d <= period.prevEnd;
-    };
+    // Mismas cifras que los avisos y el widget: por día local (txsInPeriod) y sin traslados entre cuentas (spentQOf/incomeQOf).
+    const periodTx = txsInPeriod(transactions, period.start, period.end);
+    const prevTx = txsInPeriod(transactions, period.prevStart, period.prevEnd);
 
-    const periodTx = transactions.filter(inPeriod);
-    const prevTx = transactions.filter(inPrevPeriod);
-
-    const incomeQ = periodTx.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const expenseQ = periodTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
-    const incomeUSD = periodTx.filter(t => t.type === "income" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
-    const expenseUSD = periodTx.filter(t => t.type === "expense" && t.currency === "USD").reduce((s, t) => s + t.amount, 0);
+    const incomeQ = incomeQOf(periodTx);
+    const expenseQ = spentQOf(periodTx);
+    const incomeUSD = periodTx.filter(t => t.type === "income" && t.currency === "USD" && !isTransferLike(t)).reduce((s, t) => s + t.amount, 0);
+    const expenseUSD = periodTx.filter(t => t.type === "expense" && t.currency === "USD" && !isTransferLike(t)).reduce((s, t) => s + t.amount, 0);
     const hasUSD = incomeUSD > 0 || expenseUSD > 0;
 
     // Comparativa con período anterior
-    const prevExpenseQ = prevTx.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency)).reduce((s, t) => s + t.amount, 0);
+    const prevExpenseQ = spentQOf(prevTx);
     const periodDiff = prevExpenseQ > 0 ? expenseQ - prevExpenseQ : 0;
     const periodDiffPct = prevExpenseQ > 0 ? Math.abs(periodDiff / prevExpenseQ) * 100 : 0;
 
@@ -994,10 +1063,14 @@ export default function DashboardScreen({
     const { installmentsPendingQ: totalInstallmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
     const totalCreditCommitmentsQ = totalInstallmentsPendingQ;
 
-    const score = calcFinancialScore(transactions, settings, fixedExpenses, categoryBudgets, accounts);
+    // Score del PERÍODO de pago (no el mes calendario). budgetForPeriod: hoy el límite guardado.
+    const scoreResult = computeFinancialScore({
+        transactions, window: period, budgetForPeriod: settings.budgetLimit, fixedExpenses,
+        activeAccountsCount: accounts.filter(a => a.isActive).length,
+    });
     const daysLeft = getDaysUntilNextPayment(settings);
 
-    // Gráfica: últimos 6 períodos
+    // Gráfica: últimos 6 meses calendario (por diseño)
     const month = now.getMonth();
     const year = now.getFullYear();
     const months = Array.from({ length: 6 }, (_, i) => {
@@ -1168,7 +1241,7 @@ export default function DashboardScreen({
 
             {/* SCORE */}
             <View ref={scoreRef} collapsable={false}>
-                <ScoreWidget score={score} />
+                <ScoreWidget result={scoreResult} periodLabel={period.label} onInfo={() => setShowScoreInfo(true)} />
             </View>
 
             {/* PATRIMONIO TOTAL */}
@@ -1315,6 +1388,7 @@ export default function DashboardScreen({
             </View>
             </ScrollView>
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
+            <ScoreInfoModal visible={showScoreInfo} result={scoreResult} periodLabel={period.label} onClose={() => setShowScoreInfo(false)} />
             {showCapacity && capacity && <CapacityDetailModal cap={capacity} onClose={() => setShowCapacity(false)} />}
             {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
             {showPeriodSheet && (

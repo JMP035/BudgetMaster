@@ -82,7 +82,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'tour_2', elementId: 'score_card', screen: 'dashboard', position: 'bottom', icon: 'shield-checkmark-outline', padding: 12,
                 title: 'Score Financiero',
-                description: 'Tu puntuación del 0 al 100, calculada con los movimientos que registrás en el mes actual: cuánto ahorrás, si te mantenés dentro del presupuesto y si pagaste tus gastos fijos. Si todavía no registraste movimientos, el número aún no refleja tu situación real.',
+                description: 'Tu puntuación del 0 al 100, calculada con los movimientos que registrás en tu período actual (el que empieza el día que cobrás, no el mes calendario): cuánto ahorrás, si te mantenés dentro del presupuesto y si pagaste tus gastos fijos. Si tu ingreso del período aún no está registrado, el ahorro no suma ni resta.',
             },
             {
                 id: 'tour_3', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
@@ -138,7 +138,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_3', elementId: 'score_card', screen: 'dashboard', position: 'bottom', icon: 'shield-checkmark-outline', padding: 8,
                 title: 'Score financiero',
-                description: 'Puntaje de 0 a 100 que combina tu tasa de ahorro, el respeto a tu presupuesto y el pago de tus gastos fijos del período. Sube cuando gastás menos de lo planificado y pagás a tiempo.',
+                description: 'Puntaje de 0 a 100 con lo que registrás en tu período actual (no el mes calendario): tasa de ahorro, presupuesto del período, gastos fijos pagados y cuentas activas. Si tu ingreso del período aún no está registrado, el ahorro no suma ni resta. Tocá el ícono de información para ver cada punto.',
             },
             {
                 id: 'ini_4', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'diamond-outline', padding: 8,

@@ -326,6 +326,7 @@ export interface UserSettings {
   onboardingComplete: boolean;
   tutorialComplete: boolean;
   cardsOnboardingComplete: boolean;
+  /** @deprecated sin uso; se conserva por compatibilidad */
   financialScoreHistory: { month: string; score: number }[];
   activeDebtsList?: any[];
   /** Sincronizar SMS al abrir la app (default true). Nunca pide permisos por su cuenta. */
@@ -377,7 +378,6 @@ export interface AppData {
   savingsGoals: SavingsGoal[];
   accounts: Account[];
   creditInstallments: CreditInstallment[];
-  currentMonthSpent: number;
   lastResetDate: string;
 }
 
@@ -573,46 +573,6 @@ export type { FinancialPeriod } from './FinancialPeriod';
 /** Calcula el período financiero actual y el anterior según el ciclo de pago (ver services/FinancialPeriod.ts). */
 export function getCurrentFinancialPeriod(settings: UserSettings, now: Date = new Date()): FinancialPeriod {
   return computeFinancialPeriod(settings, now, buildStartResolver(settings, anchorsCache));
-}
-
-/** Score financiero 0-100 */
-export function calcFinancialScore(
-  transactions: Transaction[],
-  settings: UserSettings,
-  fixedExpenses: FixedExpense[],
-  categoryBudgets: CategoryBudget[],
-  accounts: Account[],
-): number {
-  const now = new Date();
-  const m = now.getMonth();
-  const y = now.getFullYear();
-
-  const monthTx = transactions.filter(t => {
-    const d = new Date(t.date);
-    return d.getMonth() === m && d.getFullYear() === y;
-  });
-
-  const income = monthTx.filter(t => t.type === 'income' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-  const expense = monthTx.filter(t => t.type === 'expense' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-
-  let score = 50;
-
-  const savingsRate = income > 0 ? ((income - expense) / income) * 100 : 0;
-  if (savingsRate >= 20) score += 20;
-  else if (savingsRate >= 10) score += 10;
-  else if (savingsRate < 0) score -= 15;
-
-  if (expense <= settings.budgetLimit) score += 15;
-  else score -= 10;
-
-  const paidFixed = fixedExpenses.filter(f => f.isPaid && f.isActive).length;
-  const totalFixed = fixedExpenses.filter(f => f.isActive).length;
-  if (totalFixed > 0 && paidFixed === totalFixed) score += 10;
-
-  // Bonus si tiene cuentas registradas
-  if (accounts.length > 0) score += 5;
-
-  return Math.max(0, Math.min(100, score));
 }
 
 /**
@@ -2412,17 +2372,6 @@ export const StorageService = {
     void periodAnchors; // getPeriodAnchors ya dejó las anclas en memoria
     refreshPeriodResolver(settings);
 
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-
-    const currentMonthSpent = transactions.reduce((total, t) => {
-      const d = new Date(t.date);
-      return (t.type === 'expense' && t.currency === 'Q' &&
-        d.getMonth() === currentMonth && d.getFullYear() === currentYear)
-        ? total + t.amount : total;
-    }, 0);
-
     return {
       transactions,
       settings,
@@ -2431,7 +2380,6 @@ export const StorageService = {
       savingsGoals,
       accounts,
       creditInstallments,
-      currentMonthSpent,
       lastResetDate: lastResetDate || new Date().toISOString(),
     };
   },
