@@ -300,7 +300,7 @@ export function computeLocalMetrics(
 // ─────────────────────────────────────────────────────────────
 function budgetLine(m: LocalMetrics): string {
     if (!m.hasBudget) {
-        return `Todavía no definiste un presupuesto; llevás ${fmtQ(m.expenseQ)} gastados en ${m.fp.label}.`;
+        return `Todavía no definiste un presupuesto; llevas ${fmtQ(m.expenseQ)} gastados en ${m.fp.label}.`;
     }
     if (m.remaining < 0) {
         return `Te pasaste del presupuesto por ${fmtQ(-m.remaining)}.`;
@@ -362,33 +362,33 @@ export function getLocalResponse(
     // 1. AYUDA
     if (/que (puedes|podes|sabes) (hacer|responder)|que te (puedo )?pregunt|como funcion|^ayuda$/.test(msg)) {
         const lines = HELP_EXAMPLES.map(e => `• ${e}`).join('\n');
-        return `Puedo analizar tus datos financieros reales en tu teléfono. Preguntame cosas como:\n${lines}`;
+        return `Puedo analizar tus datos financieros reales en tu teléfono. Pregúntame cosas como:\n${lines}`;
     }
 
     // 2. COMPRA
     if (/puedo comprar|puedo gastar|me (compro|alcanza)|tengo para|alcanza|cuesta|vale la pena comprar/.test(msg)) {
         const amount = extractAmountFromMessage(msg, message);
         const variants2a = [
-            (amt: number, left: number, perDay: number) => `Sí, podés comprarlo. Te quedarían ${fmtQ(left)} y el disponible diario bajaría a ${fmtQ(perDay)}/día.`,
+            (amt: number, left: number, perDay: number) => `Sí, puedes comprarlo. Te quedarían ${fmtQ(left)} y el disponible diario bajaría a ${fmtQ(perDay)}/día.`,
             (amt: number, left: number, perDay: number) => `Sí, te alcanza. Después de los ${fmtQ(amt)} te quedan ${fmtQ(left)} (≈${fmtQ(perDay)}/día hasta tu próximo pago).`,
         ];
         const variants2b = [
-            (amt: number, left: number) => `Alcanza contra tu presupuesto (quedan ${fmtQ(left)}), pero ojo: todavía tenés ${fmtQ(m.fixedPendingQ)} en gastos fijos pendientes, así que te deja corto para cubrirlos.`,
+            (amt: number, left: number) => `Alcanza contra tu presupuesto (quedan ${fmtQ(left)}), pero ojo: todavía tienes ${fmtQ(m.fixedPendingQ)} en gastos fijos pendientes, así que te deja corto para cubrirlos.`,
             (amt: number, left: number) => `Sí te alcanza hoy (${fmtQ(left)} disponibles), aunque te quedarías ajustado porque faltan ${fmtQ(m.fixedPendingQ)} de gastos fijos por pagar.`,
         ];
         const variants2c = [
             (amt: number, over: number) => `No te lo recomiendo. La compra de ${fmtQ(amt)} excede tu disponible por ${fmtQ(over)}.`,
-            (amt: number, over: number) => `Mejor esperá. Te faltarían ${fmtQ(over)} para cubrir los ${fmtQ(amt)} sin pasarte del presupuesto.`,
+            (amt: number, over: number) => `Mejor espera. Te faltarían ${fmtQ(over)} para cubrir los ${fmtQ(amt)} sin pasarte del presupuesto.`,
         ];
 
         if (amount !== null) {
             if (!m.hasBudget) {
                 const safe = m.net;
                 if (amount <= safe) {
-                    return `No tenés presupuesto definido, pero tu balance neto este período es ${fmtQ(m.net)}. Con ${fmtQ(amount)} sí te alcanza; quedarías con ${fmtQ(safe - amount)}.`;
+                    return `No tienes presupuesto definido, pero tu balance neto este período es ${fmtQ(m.net)}. Con ${fmtQ(amount)} sí te alcanza; quedarías con ${fmtQ(safe - amount)}.`;
                 }
                 const over = safe <= 0 ? amount : amount - safe;
-                return `No tenés presupuesto definido. Tu balance neto es ${fmtQ(m.net)}, así que ${fmtQ(amount)} excede lo disponible por ${fmtQ(over)}. Te conviene definir un presupuesto en Ajustes.`;
+                return `No tienes presupuesto definido. Tu balance neto es ${fmtQ(m.net)}, así que ${fmtQ(amount)} excede lo disponible por ${fmtQ(over)}. Te conviene definir un presupuesto en Ajustes.`;
             }
 
             const safe = m.remaining - m.fixedPendingQ;
@@ -411,12 +411,12 @@ export function getLocalResponse(
         // Sin monto
         const noAmountVariants = m.remaining > 0
             ? [
-                () => `Disponés de ${fmtQ(m.remaining)} en tu presupuesto. ¿Cuánto cuesta lo que querés comprar?`,
-                () => `Te quedan ${fmtQ(m.remaining)} este período. Decime el monto y te digo si alcanza.`,
+                () => `Dispones de ${fmtQ(m.remaining)} en tu presupuesto. ¿Cuánto cuesta lo que quieres comprar?`,
+                () => `Te quedan ${fmtQ(m.remaining)} este período. Dime el monto y te digo si alcanza.`,
             ]
             : [
-                () => `Ya superaste tu presupuesto por ${fmtQ(-m.remaining)}, así que cualquier compra nueva lo empeora. ¿Cuánto cuesta lo que querés comprar?`,
-                () => `Estás sobre el presupuesto (${fmtQ(-m.remaining)} de exceso). Decime el monto para ver qué tan grave sería.`,
+                () => `Ya superaste tu presupuesto por ${fmtQ(-m.remaining)}, así que cualquier compra nueva lo empeora. ¿Cuánto cuesta lo que quieres comprar?`,
+                () => `Estás sobre el presupuesto (${fmtQ(-m.remaining)} de exceso). Dime el monto para ver qué tan grave sería.`,
             ];
         return noAmountVariants[pickVariant('compra_sin_monto', noAmountVariants.length, 'random')]();
     }
@@ -426,11 +426,11 @@ export function getLocalResponse(
         const tips: string[] = [];
 
         if (m.hasBudget && m.pct >= 100) {
-            tips.push(`Ya superaste tu presupuesto por ${fmtQ(-m.remaining)}. Congelá gastos no esenciales el resto de ${m.fp.label}.`);
+            tips.push(`Ya superaste tu presupuesto por ${fmtQ(-m.remaining)}. Congela gastos no esenciales el resto de ${m.fp.label}.`);
         }
         if (m.hasBudget && m.pct < 100 && m.projected > m.budgetLimit) {
             const exceso = m.projected - m.budgetLimit;
-            tips.push(`A tu ritmo actual (${fmtQ(m.dailyRate)}/día) vas a proyectar ${fmtQ(m.projected)}, ${fmtQ(exceso)} por encima del presupuesto. Bajá el ritmo diario para no pasarte.`);
+            tips.push(`A tu ritmo actual (${fmtQ(m.dailyRate)}/día) vas a proyectar ${fmtQ(m.projected)}, ${fmtQ(exceso)} por encima del presupuesto. Baja el ritmo diario para no pasarte.`);
         }
         if (m.budgetAlerts[0]) {
             const b = m.budgetAlerts[0];
@@ -443,21 +443,21 @@ export function getLocalResponse(
         if (m.debt.level === 'high') {
             const sorted = [...m.activeInstallments].sort((a, b) => (a.totalInstallments - a.paidInstallments) - (b.totalInstallments - b.paidInstallments));
             const target = sorted[0];
-            tips.push(`Tus cuotas (${fmtQ(m.installTotal)}/mes) representan más del 40% de tu ingreso.${target ? ` Considerá liquidar primero "${target.name}", le quedan ${target.totalInstallments - target.paidInstallments} cuotas.` : ''}`);
+            tips.push(`Tus cuotas (${fmtQ(m.installTotal)}/mes) representan más del 40% de tu ingreso.${target ? ` Considera liquidar primero "${target.name}", le quedan ${target.totalInstallments - target.paidInstallments} cuotas.` : ''}`);
         }
         if (m.fixedPendingQ > Math.max(m.remaining, 0) && m.hasBudget) {
-            tips.push(`Tus gastos fijos pendientes (${fmtQ(m.fixedPendingQ)}) superan lo que te queda de presupuesto (${fmtQ(Math.max(m.remaining, 0))}). Priorizalos antes de cualquier gasto variable.`);
+            tips.push(`Tus gastos fijos pendientes (${fmtQ(m.fixedPendingQ)}) superan lo que te queda de presupuesto (${fmtQ(Math.max(m.remaining, 0))}). Priorízalos antes de cualquier gasto variable.`);
         }
         if (m.activeGoals.length === 0 && m.settings.monthlyIncome > 0) {
-            tips.push(`No tenés ninguna meta de ahorro activa. Págate primero: separá un 10% de tu ingreso (${fmtQ(m.settings.monthlyIncome * 0.1)}) antes de gastar.`);
+            tips.push(`No tienes ninguna meta de ahorro activa. Págate primero: separa un 10% de tu ingreso (${fmtQ(m.settings.monthlyIncome * 0.1)}) antes de gastar.`);
         }
         if (m.settings.monthlySavingsGoal > 0 && m.net < m.settings.monthlySavingsGoal) {
             tips.push(`Vas por debajo de tu meta mensual de ahorro (${fmtQ(m.settings.monthlySavingsGoal)}); tu balance neto actual es ${fmtQ(m.net)}.`);
         }
 
         const introVariants = [
-            'Estos son los puntos donde más podés mejorar:',
-            'Mirando tus números, acá tenés en qué enfocarte:',
+            'Estos son los puntos donde más puedes mejorar:',
+            'Mirando tus números, aquí tienes en qué enfocarte:',
             'Con tus datos reales, esto es lo que te recomiendo:',
         ];
         const intro = introVariants[pickVariant('consejo_intro', introVariants.length, 'random')];
@@ -475,7 +475,7 @@ export function getLocalResponse(
             return withQuote(positive, m, 'random');
         }
 
-        return withQuote('Todavía no tengo movimientos ni presupuesto registrados. Empezá por registrar tus gastos y definir un presupuesto mensual en Ajustes para que pueda darte consejos con datos reales.', m, 'random');
+        return withQuote('Todavía no tengo movimientos ni presupuesto registrados. Empieza por registrar tus gastos y definir un presupuesto mensual en Ajustes para que pueda darte consejos con datos reales.', m, 'random');
     }
 
     // 4. COMPARATIVA
@@ -526,7 +526,7 @@ export function getLocalResponse(
             const biggest = [...catTx].sort((a, b) => b.amount - a.amount)[0];
 
             const parts: string[] = [];
-            parts.push(`En "${label}" llevás ${fmtQ(amount)} este período${m.expenseQ > 0 ? ` (${pctOfTotal}% de tu gasto total)` : ''}.`);
+            parts.push(`En "${label}" llevas ${fmtQ(amount)} este período${m.expenseQ > 0 ? ` (${pctOfTotal}% de tu gasto total)` : ''}.`);
             parts.push(`En ${m.fp.prevLabel}, a esta misma altura, llevabas ${fmtQ(prevAmt)}.`);
 
             const budget = categoryBudgets.find(cb => cb.categoryId === catId);
@@ -536,7 +536,7 @@ export function getLocalResponse(
                 parts.push(`Tu límite ahí es ${fmtQ(catLimit)} en este período (${pctB}%), te quedan ${fmtQ(catLimit - amount)}.`);
             }
 
-            parts.push(`Tenés ${catTx.length} transacción(es) registrada(s)${biggest ? `; la mayor fue "${biggest.description}" por ${fmtQ(biggest.amount)}` : ''}.`);
+            parts.push(`Tienes ${catTx.length} transacción(es) registrada(s)${biggest ? `; la mayor fue "${biggest.description}" por ${fmtQ(biggest.amount)}` : ''}.`);
 
             const variants5 = [
                 () => parts.join(' '),
@@ -570,7 +570,7 @@ export function getLocalResponse(
                 if (daysLeftGoal > 0 && falta > 0) {
                     const monthlyNeeded = falta / Math.max(daysLeftGoal / 30, 1);
                     const compareBase = m.settings.monthlySavingsGoal > 0 ? m.settings.monthlySavingsGoal : m.net;
-                    text += ` Te quedan ${daysLeftGoal} día(s); necesitás aportar ≈${fmtMoney(monthlyNeeded, g.currency)}/mes${compareBase > 0 ? ` (tu aporte de referencia actual es ${fmtQ(compareBase)}/mes)` : ''}.`;
+                    text += ` Te quedan ${daysLeftGoal} día(s); necesitas aportar ≈${fmtMoney(monthlyNeeded, g.currency)}/mes${compareBase > 0 ? ` (tu aporte de referencia actual es ${fmtQ(compareBase)}/mes)` : ''}.`;
                 } else if (daysLeftGoal <= 0 && falta > 0) {
                     text += ` La fecha límite ya pasó; te conviene ajustarla.`;
                 }
@@ -607,21 +607,21 @@ export function getLocalResponse(
                 const pctG = g.targetAmount > 0 ? Math.round((g.currentAmount / g.targetAmount) * 100) : 0;
                 return `"${g.name}" (${pctG}%)`;
             }).join(', ');
-            let text = `Tenés ${m.activeGoals.length} meta(s) activa(s): ${list}.`;
+            let text = `Tienes ${m.activeGoals.length} meta(s) activa(s): ${list}.`;
             if (m.completedGoalsCount > 0) text += ` Ya completaste ${m.completedGoalsCount} meta(s) antes.`;
-            text += ' Preguntame por el nombre de alguna para más detalle.';
+            text += ' Pregúntame por el nombre de alguna para más detalle.';
             return withQuote(text, m, 'random');
         }
 
         // (d) sin metas
         const variantsD = [
             () => {
-                let t = `Tu balance neto este período es ${fmtQ(m.net)} y no tenés metas de ahorro activas.`;
-                if (m.settings.monthlyIncome > 0) t += ` Probá separar un 10% de tu ingreso (${fmtQ(m.settings.monthlyIncome * 0.1)}) y creá una meta en Presupuesto → Metas.`;
+                let t = `Tu balance neto este período es ${fmtQ(m.net)} y no tienes metas de ahorro activas.`;
+                if (m.settings.monthlyIncome > 0) t += ` Prueba separar un 10% de tu ingreso (${fmtQ(m.settings.monthlyIncome * 0.1)}) y crea una meta en Presupuesto → Metas.`;
                 return t;
             },
             () => {
-                let t = `No tenés metas de ahorro activas. Tu balance neto actual es ${fmtQ(m.net)}.`;
+                let t = `No tienes metas de ahorro activas. Tu balance neto actual es ${fmtQ(m.net)}.`;
                 if (m.settings.monthlyIncome > 0) t += ` Te recomiendo crear una meta y apartar un 10% (${fmtQ(m.settings.monthlyIncome * 0.1)}) de tu ingreso.`;
                 return t;
             },
@@ -655,9 +655,9 @@ export function getLocalResponse(
         const parts: string[] = [];
         parts.push(`Compromisos de crédito (separados de tu patrimonio): ${fmtQ(m.installmentsPendingQ)} pendientes en visacuotas.`);
         if (m.activeInstallments.length === 0) {
-            parts.push('No tenés visacuotas activas en este momento.');
+            parts.push('No tienes visacuotas activas en este momento.');
         } else {
-            parts.push(`Tenés ${fmtQ(m.debt.cardInstallmentsQ + m.debt.loansQ)} en cuotas mensuales activas.`);
+            parts.push(`Tienes ${fmtQ(m.debt.cardInstallmentsQ + m.debt.loansQ)} en cuotas mensuales activas.`);
             const list = m.activeInstallments.slice(0, 3).map(c => `"${c.name}" (${c.totalInstallments - c.paidInstallments} cuotas restantes)`).join(', ');
             parts.push(`Visacuotas activas: ${list}.`);
         }
@@ -697,8 +697,8 @@ export function getLocalResponse(
             return variants9[pickVariant('cuentas', variants9.length, 'random')]();
         }
         const variants9b = [
-            () => 'No tenés cuentas bancarias configuradas. Podés agregarlas en la sección de Cuentas.',
-            () => 'Todavía no registraste ninguna cuenta. Agregalas desde la sección de Cuentas para que pueda darte tu patrimonio real.',
+            () => 'No tienes cuentas bancarias configuradas. Puedes agregarlas en la sección de Cuentas.',
+            () => 'Todavía no registraste ninguna cuenta. Agrégalas desde la sección de Cuentas para que pueda darte tu patrimonio real.',
         ];
         return variants9b[pickVariant('cuentas_vacio', variants9b.length, 'random')]();
     }
@@ -706,7 +706,7 @@ export function getLocalResponse(
     // 10. FIJOS
     if (/fijo|recurrente|servicios|pagos fijos/.test(msg)) {
         if (m.fixedActive.length === 0) {
-            return 'No tenés gastos fijos registrados. Agregalos en Presupuesto → Gastos Fijos para que te avise antes de cada pago.';
+            return 'No tienes gastos fijos registrados. Agrégalos en Presupuesto → Gastos Fijos para que te avise antes de cada pago.';
         }
         const fixedCycle = fixedCycleConfig(m.settings);
         const nowFixed = new Date();
@@ -716,7 +716,7 @@ export function getLocalResponse(
         }).join(', ');
         const variants10 = [
             () => `Gastos fijos activos: ${fmtQ(m.fixedTotalQ)}/período. Pendientes: ${fmtQ(m.fixedPendingQ)}.${next3 ? ` Próximos: ${next3}.` : ''}`,
-            () => `Tenés ${fmtQ(m.fixedTotalQ)} en gastos fijos este período, de los cuales ${fmtQ(m.fixedPendingQ)} siguen pendientes.${next3 ? ` Los próximos son: ${next3}.` : ''}`,
+            () => `Tienes ${fmtQ(m.fixedTotalQ)} en gastos fijos este período, de los cuales ${fmtQ(m.fixedPendingQ)} siguen pendientes.${next3 ? ` Los próximos son: ${next3}.` : ''}`,
         ];
         return variants10[pickVariant('fijos', variants10.length, 'random')]();
     }
@@ -724,15 +724,15 @@ export function getLocalResponse(
     // 11. CATEGORÍAS (genérico)
     if (/gaste|gasto mas|mayor gasto|gastos por|categor|donde|en que/.test(msg)) {
         if (m.catTotals.length === 0) {
-            return `Aún no tenés gastos registrados en este período (${m.fp.label}).`;
+            return `Aún no tienes gastos registrados en este período (${m.fp.label}).`;
         }
         const top3 = m.catTotals.slice(0, 3).map(c => {
             const pctOfTotal = m.expenseQ > 0 ? Math.round((c.amount / m.expenseQ) * 100) : 0;
             return `${c.label} ${fmtQ(c.amount)} (${pctOfTotal}%)`;
         }).join(', ');
         const variants11 = [
-            () => `Tus mayores gastos del período son: ${top3}. En total llevás ${fmtQ(m.expenseQ)} gastados.`,
-            () => `En total llevás ${fmtQ(m.expenseQ)} gastados; el top de categorías es: ${top3}.`,
+            () => `Tus mayores gastos del período son: ${top3}. En total llevas ${fmtQ(m.expenseQ)} gastados.`,
+            () => `En total llevas ${fmtQ(m.expenseQ)} gastados; el top de categorías es: ${top3}.`,
         ];
         return variants11[pickVariant('categorias_generico', variants11.length, 'random')]();
     }
@@ -774,7 +774,7 @@ export function getLocalResponse(
     // 14. FALLBACK
     const perDayFallback = perDayLine(m);
     const examples = HELP_EXAMPLES.slice(0, 4).map(e => `• ${e}`).join('\n');
-    return `${budgetLine(m)}${perDayFallback ? ` ${perDayFallback}` : ''}\n\nNo reconocí esa pregunta todavía. Probá con:\n${examples}`;
+    return `${budgetLine(m)}${perDayFallback ? ` ${perDayFallback}` : ''}\n\nNo reconocí esa pregunta todavía. Prueba con:\n${examples}`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -801,7 +801,7 @@ export function buildLocalOpening(
     const line1 = line1Variants[pickVariant('apertura_saludo', line1Variants.length, 'daily')]();
 
     if (!m.hasAnyData) {
-        return `${line1}\n\nTodavía no tengo movimientos en ${m.fp.label}. Registrá un gasto o definí tu presupuesto en Ajustes y te doy el análisis completo.`;
+        return `${line1}\n\nTodavía no tengo movimientos en ${m.fp.label}. Registra un gasto o define tu presupuesto en Ajustes y te doy el análisis completo.`;
     }
 
     const line2 = `${budgetLine(m)} ${perDayLine(m)}`.trim();
@@ -813,7 +813,7 @@ export function buildLocalOpening(
     } else if (m.hasBudget && m.projected > m.budgetLimit) {
         line3 = `A tu ritmo actual proyectas ${fmtQ(m.projected)}, por encima de tu presupuesto.`;
     } else if (m.fixedPendingList.length > 0) {
-        line3 = `Tenés ${m.fixedPendingList.length} gasto(s) fijo(s) pendiente(s) por ${fmtQ(m.fixedPendingQ)}.`;
+        line3 = `Tienes ${m.fixedPendingList.length} gasto(s) fijo(s) pendiente(s) por ${fmtQ(m.fixedPendingQ)}.`;
     } else if (m.catTotals[0]) {
         line3 = `Tu mayor categoría es "${m.catTotals[0].label}" con ${fmtQ(m.catTotals[0].amount)}.`;
     } else if (m.activeGoals[0]) {
@@ -822,7 +822,7 @@ export function buildLocalOpening(
         line3 = `Tu meta "${g.name}" va al ${pctG}%.`;
     }
 
-    const line4 = 'Tocá una sugerencia de abajo o escribime tu pregunta.';
+    const line4 = 'Toca una sugerencia de abajo o escríbeme tu pregunta.';
 
     const body = [line1, line2, line3, line4].filter(Boolean).join('\n\n');
     return `${body}\n\n${dailyQuote(m.tone)}`;

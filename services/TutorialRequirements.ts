@@ -35,7 +35,7 @@ export function missingRequirement(
   }
 }
 
-/** Cómo se nombra el requisito en la frase «Para este paso necesitás …». */
+/** Cómo se nombra el requisito en la frase «Para este paso necesitas …». */
 export function requirementLabel(req: TutorialRequirement): string {
   switch (req) {
     case 'bank_account': return 'la cuenta';
@@ -48,7 +48,7 @@ export function requirementLabel(req: TutorialRequirement): string {
 
 /** Texto del aviso que muestra el tutorial cuando falta el requisito. */
 export function requirementNoticeText(req: TutorialRequirement): string {
-  return `Para este paso necesitás ${requirementLabel(req)}. El tutorial se cierra para que lo crees; abrilo de nuevo después.`;
+  return `Para este paso necesitas ${requirementLabel(req)}. El tutorial se cierra para que lo crees; ábrelo de nuevo después.`;
 }
 
 /** Datos mínimos (estructurales) para calcular los hechos sin importar storage. */

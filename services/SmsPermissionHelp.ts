@@ -18,15 +18,15 @@ export function smsPermissionHelp(
     : "Android ya no muestra el aviso de permiso porque se rechazó antes con «No volver a preguntar».";
   const steps = restricted
     ? [
-      "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
-      "Tocá el menú de tres puntos arriba a la derecha y elegí «Permitir configuración restringida». Si no aparece, seguí al paso 3.",
-      "Entrá a Permisos → SMS → Permitir.",
-      "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
+      "Toca «Abrir ajustes» (se abre la ficha de BudgetMaster).",
+      "Toca el menú de tres puntos arriba a la derecha y elige «Permitir configuración restringida». Si no aparece, sigue al paso 3.",
+      "Entra a Permisos → SMS → Permitir.",
+      "Vuelve a BudgetMaster y toca sincronizar de nuevo.",
     ]
     : [
-      "Tocá «Abrir ajustes» (se abre la ficha de BudgetMaster).",
-      "Entrá a Permisos → SMS → Permitir.",
-      "Volvé a BudgetMaster y tocá sincronizar de nuevo.",
+      "Toca «Abrir ajustes» (se abre la ficha de BudgetMaster).",
+      "Entra a Permisos → SMS → Permitir.",
+      "Vuelve a BudgetMaster y toca sincronizar de nuevo.",
     ];
   const maker = perm.manufacturer.toLowerCase();
   const footnote = maker.includes("honor") || maker.includes("huawei")

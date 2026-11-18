@@ -303,15 +303,15 @@ const MAX_NAME = 40;
 
 export function validateName(s: string): Validation {
   const t = s.trim();
-  if (!t) return { ok: false, error: 'Escribí tu nombre para continuar.' };
-  if (t.length > MAX_NAME) return { ok: false, error: `Usá ${MAX_NAME} letras o menos.` };
+  if (!t) return { ok: false, error: 'Escribe tu nombre para continuar.' };
+  if (t.length > MAX_NAME) return { ok: false, error: `Usa ${MAX_NAME} letras o menos.` };
   return { ok: true };
 }
 
 export function validateIncome(s: string, parse: (s: string) => number): Validation {
   const n = parse(s);
   if (!Number.isFinite(n) || n <= 0) {
-    return { ok: false, error: 'Ingresá un monto mayor a 0. Un aproximado está bien.' };
+    return { ok: false, error: 'Ingresa un monto mayor a 0. Un aproximado está bien.' };
   }
   return { ok: true };
 }
@@ -319,9 +319,9 @@ export function validateIncome(s: string, parse: (s: string) => number): Validat
 /** Día entero 1..max escrito solo con dígitos ("15,30", "a" y "" son inválidos). */
 export function validateDay(s: string, max = 31): Validation {
   const t = s.trim();
-  if (!/^\d{1,2}$/.test(t)) return { ok: false, error: `Ingresá un día entre 1 y ${max}.` };
+  if (!/^\d{1,2}$/.test(t)) return { ok: false, error: `Ingresa un día entre 1 y ${max}.` };
   const n = Number(t);
-  if (n < 1 || n > max) return { ok: false, error: `Ingresá un día entre 1 y ${max}.` };
+  if (n < 1 || n > max) return { ok: false, error: `Ingresa un día entre 1 y ${max}.` };
   return { ok: true };
 }
 
@@ -340,7 +340,7 @@ export function validateBiweekly(a: string, b: string): Validation {
 export function validateSavings(s: string, income: number, parse: (s: string) => number): Validation {
   if (!s.trim()) return { ok: true };
   const n = parse(s);
-  if (!Number.isFinite(n) || n < 0) return { ok: false, error: 'Ingresá un monto válido.' };
+  if (!Number.isFinite(n) || n < 0) return { ok: false, error: 'Ingresa un monto válido.' };
   if (income > 0 && n >= income) return { ok: true, warning: 'Tu meta es igual o mayor que tu ingreso.' };
   return { ok: true };
 }
@@ -354,7 +354,7 @@ export function parseRate(s: string): number {
 
 export function validateRate(s: string): Validation {
   const n = parseRate(s);
-  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: 'Ingresá un tipo de cambio mayor a 0.' };
+  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: 'Ingresa un tipo de cambio mayor a 0.' };
   return { ok: true };
 }
 
@@ -363,7 +363,7 @@ export function validateCycle(d: OnboardingDraft): Validation {
   if (d.paymentCycle === 'monthly') return validateDay(d.paymentDay);
   if (d.paymentCycle === 'biweekly') return validateBiweekly(d.payDay1, d.payDay2);
   if (d.paymentCycle === 'weekly' && !(typeof d.payWeekday === 'string' && /^[0-6]$/.test(d.payWeekday))) {
-    return { ok: false, error: 'Elegí el día de la semana en que te pagan.' };
+    return { ok: false, error: 'Elige el día de la semana en que te pagan.' };
   }
   return { ok: true };
 }
@@ -386,10 +386,10 @@ export function canContinueRequired(draft: OnboardingDraft, step: number, parse:
 }
 
 export function validateAccount(a: DraftAccount, parse: (s: string) => number): Validation {
-  if (!a.name.trim()) return { ok: false, error: 'Escribí un nombre para la cuenta.' };
+  if (!a.name.trim()) return { ok: false, error: 'Escribe un nombre para la cuenta.' };
   if (a.kind !== 'credit' && a.balance.trim()) {
     const n = parse(a.balance);
-    if (!Number.isFinite(n)) return { ok: false, error: 'Ingresá un saldo válido' };
+    if (!Number.isFinite(n)) return { ok: false, error: 'Ingresa un saldo válido' };
   }
   if (a.kind === 'credit') {
     if (a.cutoffDay?.trim() && !validateDay(a.cutoffDay).ok) {
@@ -415,13 +415,13 @@ export function normalizeName(s: string): string {
 
 export function validateFixed(f: DraftFixed, existing: DraftFixed[], parse: (s: string) => number): Validation {
   const name = f.name.trim();
-  if (!name) return { ok: false, error: 'Escribí el nombre del gasto.' };
+  if (!name) return { ok: false, error: 'Escribe el nombre del gasto.' };
   const key = normalizeName(name);
   if (existing.some(e => e.id !== f.id && normalizeName(e.name) === key)) {
     return { ok: false, error: `Ya agregaste ${name}` };
   }
   const n = parse(f.amount);
-  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: 'Ingresá un monto mayor a 0.' };
+  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: 'Ingresa un monto mayor a 0.' };
   const day = validateDay(f.dayOfMonth);
   if (!day.ok) return day;
   return { ok: true };
@@ -468,7 +468,7 @@ export function periodSentence(
     case 'monthly':
       return {
         title: `Tu período de presupuesto: ${budgetRange}`,
-        body: 'Cada mes arranca el día que cobrás y termina el día antes del siguiente pago. Tus gastos fijos se cuentan una vez por período.',
+        body: 'Cada mes arranca el día que cobras y termina el día antes del siguiente pago. Tus gastos fijos se cuentan una vez por período.',
       };
     case 'biweekly':
       return {

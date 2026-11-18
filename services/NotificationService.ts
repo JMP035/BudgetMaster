@@ -64,38 +64,38 @@ const CAPACITY_NEAR_DAYS = 5;
 const AI_NUDGE_VARIANTS: { title: string; body: string }[] = [
     {
         title: '🤖 Tu Asesor IA te espera',
-        body: '¿Querés saber en qué gastaste más estas semanas? Preguntale al Asesor IA desde la pestaña Asesor.',
+        body: '¿Quieres saber en qué gastaste más estas semanas? Pregúntale al Asesor IA desde la pestaña Asesor.',
     },
     {
         title: '💡 ¿Dudas con tu presupuesto?',
-        body: 'El Asesor IA analiza tus movimientos y te dice dónde podés recortar. Abrilo desde la pestaña Asesor.',
+        body: 'El Asesor IA analiza tus movimientos y te dice dónde puedes recortar. Ábrelo desde la pestaña Asesor.',
     },
     {
-        title: '📈 Revisá tus hábitos',
-        body: 'Pedile al Asesor IA un análisis de tus gastos del mes y un plan para llegar a tu meta de ahorro.',
+        title: '📈 Revisa tus hábitos',
+        body: 'Pídele al Asesor IA un análisis de tus gastos del mes y un plan para llegar a tu meta de ahorro.',
     },
 ];
 
 const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'savings_goal' | 'gemini_key' | 'card_dates', { label: string; title: string; body: string }> = {
     budget: {
         label: 'tu ingreso y presupuesto mensual',
-        title: '⚙️ Configurá tu presupuesto',
-        body: 'Todavía no definiste tu ingreso mensual. Configuralo en Ajustes para que las alertas de presupuesto sean precisas.',
+        title: '⚙️ Configura tu presupuesto',
+        body: 'Todavía no definiste tu ingreso mensual. Configúralo en Ajustes para que las alertas de presupuesto sean precisas.',
     },
     fixed_expense: {
         label: 'tus gastos fijos',
-        title: '📅 Registrá tus gastos fijos',
-        body: 'Agregá tus gastos fijos (alquiler, servicios, etc.) en Presupuesto → Gastos Fijos y te recordamos 3 días antes de cada pago.',
+        title: '📅 Registra tus gastos fijos',
+        body: 'Agrega tus gastos fijos (alquiler, servicios, etc.) en Presupuesto → Gastos Fijos y te recordamos 3 días antes de cada pago.',
     },
     category_budget: {
         label: 'límites por categoría',
-        title: '📊 Poné límites por categoría',
-        body: 'Definí límites en Presupuesto → Categorías y te avisamos cuando estés cerca del tope.',
+        title: '📊 Pon límites por categoría',
+        body: 'Define límites en Presupuesto → Categorías y te avisamos cuando estés cerca del tope.',
     },
     savings_goal: {
         label: 'una meta de ahorro',
-        title: '🎯 Creá una meta de ahorro',
-        body: 'Creá una meta en Presupuesto → Metas y seguí tu avance con cada abono.',
+        title: '🎯 Crea una meta de ahorro',
+        body: 'Crea una meta en Presupuesto → Metas y sigue tu avance con cada abono.',
     },
     // El cuerpo real lo arma cardDatesNudgeBody con las tarjetas que faltan (este es solo el de respaldo).
     card_dates: {
@@ -105,8 +105,8 @@ const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'sav
     },
     gemini_key: {
         label: 'tu clave de Gemini',
-        title: '✨ Activá el Asesor IA avanzado',
-        body: 'Agregá tu API Key de Gemini en Ajustes → Inteligencia Artificial para recibir consejos personalizados.',
+        title: '✨ Activa el Asesor IA avanzado',
+        body: 'Agrega tu API Key de Gemini en Ajustes → Inteligencia Artificial para recibir consejos personalizados.',
     },
 };
 
@@ -793,8 +793,8 @@ Responde SOLO el texto, sin encabezados ni formato.
                 title = SETUP_NUDGES[pending[0]].title;
                 body = pending[0] === 'card_dates' ? cardDatesNudgeBody(cardsNoDates) : SETUP_NUDGES[pending[0]].body;
             } else {
-                title = '⚙️ Completá tu configuración';
-                body = `Te falta configurar ${joinEs(pending.map(id => SETUP_NUDGES[id].label))}. Hacelo desde Presupuesto, Cuentas y Ajustes para sacarle el máximo a BudgetMaster.`;
+                title = '⚙️ Completa tu configuración';
+                body = `Te falta configurar ${joinEs(pending.map(id => SETUP_NUDGES[id].label))}. Hazlo desde Presupuesto, Cuentas y Ajustes para sacarle el máximo a BudgetMaster.`;
             }
 
             const ok = await scheduleWithId(ID_SETUP, title, body, SETUP_NUDGE_DELAY_S, { kind: 'setup_nudge', refId: pending.join(',') });
@@ -819,7 +819,7 @@ Responde SOLO el texto, sin encabezados ni formato.
             );
         } else if (pct >= 50) {
             const body = daysLeft <= 0
-                ? `Te faltan ${goal.currency} ${remaining.toFixed(2)}. La fecha límite ya pasó; considerá ajustarla.`
+                ? `Te faltan ${goal.currency} ${remaining.toFixed(2)}. La fecha límite ya pasó; considera ajustarla.`
                 : `Te faltan ${goal.currency} ${remaining.toFixed(2)}. Ahorrando ${goal.currency} ${monthly}/mes llegas en ${Math.ceil(daysLeft / 30)} meses.`;
             await sendNotification(
                 `🎯 ${Math.round(pct)}% de tu meta "${goal.name}"`,

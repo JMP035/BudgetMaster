@@ -77,7 +77,7 @@ check('día sugerido irregular', suggestScheduleFromPreview({ day: 27, weekday: 
 
 // ── suggestionText ───────────────────────────────────────────
 check('sugerencia con declarado', suggestionText({ suggested: 7426.61, current: 6000 }).startsWith('Tu ingreso real es Q 7,426.61, ¿actualizar el declarado?'), suggestionText({ suggested: 7426.61, current: 6000 }));
-check('sugerencia sin declarado', !suggestionText({ suggested: 7426.61, current: 0 }).includes('hoy tenés'));
+check('sugerencia sin declarado', !suggestionText({ suggested: 7426.61, current: 0 }).includes('hoy tienes'));
 
 // ── validateIncomeForm ───────────────────────────────────────
 const form = (over: Partial<IncomeFormInput> = {}): IncomeFormInput => ({

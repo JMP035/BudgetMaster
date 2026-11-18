@@ -312,7 +312,7 @@ check('nombre de 41 letras inválido, de 40 válido', !validateName('a'.repeat(4
   check('cuenta sin nombre inválida', !validateAccount(acc('a', 'BAC', 'bank', { name: ' ' }), parse).ok);
   check('cuenta con saldo vacío = válida', validateAccount(acc('a', 'BAC', 'bank', { balance: '' }), parse).ok);
   const bad = validateAccount(acc('a', 'BAC', 'bank', { balance: 'abc' }), parse);
-  check('cuenta con saldo inválido: mensaje', !bad.ok && bad.error === 'Ingresá un saldo válido');
+  check('cuenta con saldo inválido: mensaje', !bad.ok && bad.error === 'Ingresa un saldo válido');
   check('tarjeta ignora el saldo', validateAccount(acc('a', 'BAC', 'credit', { balance: 'abc' }), parse).ok);
 
   // Día de corte y de pago de la tarjeta (opcionales, 1..31)
@@ -343,7 +343,7 @@ check('nombre de 41 letras inválido, de 40 válido', !validateName('a'.repeat(4
     && canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '', payWeekday: '0' }), 2, parse)
     && canContinueRequired(draftWith({ paymentCycle: 'weekly', paymentDay: '', payWeekday: '6' }), 2, parse));
   const vc = validateCycle(draftWith({ paymentCycle: 'weekly' }));
-  check('validateCycle semanal sin día: mensaje', !vc.ok && vc.error === 'Elegí el día de la semana en que te pagan.', String(vc.error));
+  check('validateCycle semanal sin día: mensaje', !vc.ok && vc.error === 'Elige el día de la semana en que te pagan.', String(vc.error));
   check('validateCycle semanal con día inválido', !validateCycle(draftWith({ paymentCycle: 'weekly', payWeekday: '7' })).ok);
   check('validateCycle semanal con día válido', validateCycle(draftWith({ paymentCycle: 'weekly', payWeekday: '3' })).ok);
   check('canContinueRequired paso 3 (ahorro vacío ok, inválido no)', canContinueRequired(d, 3, parse) && !canContinueRequired(draftWith({ savings: 'x' }), 3, parse));
@@ -567,7 +567,7 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
   check('API 33 sin instantDenial: mensaje de «No volver a preguntar»', smsPermissionHelp({ apiLevel: 33, instantDenial: false, manufacturer: '' }).message.includes('«No volver a preguntar»'));
   const nul = smsPermissionHelp({ apiLevel: null, instantDenial: false, manufacturer: '' });
   check('apiLevel null: 3 pasos', nul.steps.length === 3);
-  check('último paso invita a sincronizar de nuevo', a33.steps[3] === 'Volvé a BudgetMaster y tocá sincronizar de nuevo.');
+  check('último paso invita a sincronizar de nuevo', a33.steps[3] === 'Vuelve a BudgetMaster y toca sincronizar de nuevo.');
 }
 
 if (failures > 0) {

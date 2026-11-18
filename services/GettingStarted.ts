@@ -74,7 +74,7 @@ export function buildChecklist(input: ChecklistInput): ChecklistItem[] {
     {
       id: 'income',
       title: 'Enseñarle a la app tu pago',
-      hint: 'Pegá el SMS con el que te llega tu pago (sueldo, quincena, ventas…) y la app lo reconoce sola.',
+      hint: 'Pega el SMS con el que te llega tu pago (sueldo, quincena, ventas…) y la app lo reconoce sola.',
       done: input.incomePatternCount > 0,
       hidden: false,
     },

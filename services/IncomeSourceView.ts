@@ -137,7 +137,7 @@ export function buildIncomeList(
 
 /** «Tu ingreso real es Q 7,426.61, ¿actualizar el declarado?» (el declarado actual va entre paréntesis si hay). */
 export function suggestionText(s: { suggested: number; current: number }): string {
-  const tail = s.current > 0 ? ` (hoy tenés declarado ${formatMoney(s.current, 'Q')})` : '';
+  const tail = s.current > 0 ? ` (hoy tienes declarado ${formatMoney(s.current, 'Q')})` : '';
   return `Tu ingreso real es ${formatMoney(s.suggested, 'Q')}, ¿actualizar el declarado?${tail}`;
 }
 
@@ -172,9 +172,9 @@ export function applyPatternCorrection(
 /** Motivo (en español) por el que un SMS no sirvió de ejemplo. */
 export function patternFailText(reason: 'not_income' | 'no_amount' | 'not_bank'): string {
   switch (reason) {
-    case 'not_income': return 'Ese SMS no parece un depósito ni un ingreso. Elegí el mensaje en que el banco te avisa que te llegó el pago.';
-    case 'no_amount': return 'No encontré el monto en ese SMS. Pegalo completo, tal como lo mandó el banco.';
-    case 'not_bank': return 'Ese texto no parece un SMS de tu banco. Pegalo completo, tal como lo mandó el banco.';
+    case 'not_income': return 'Ese SMS no parece un depósito ni un ingreso. Elige el mensaje en que el banco te avisa que te llegó el pago.';
+    case 'no_amount': return 'No encontré el monto en ese SMS. Pégalo completo, tal como lo mandó el banco.';
+    case 'not_bank': return 'Ese texto no parece un SMS de tu banco. Pégalo completo, tal como lo mandó el banco.';
   }
 }
 
@@ -220,30 +220,30 @@ function wholeInRange(n: number, lo: number, hi: number): boolean {
 /** Valida el formulario y arma la fuente lista para guardar (o el mensaje de error en español). */
 export function validateIncomeForm(f: IncomeFormInput): IncomeFormResult {
   const name = f.name.replace(/\s+/g, ' ').trim();
-  if (!name) return { ok: false, error: 'Ponele un nombre a la fuente (por ejemplo: Sueldo).' };
-  if (!f.category) return { ok: false, error: 'Elegí la categoría de ingreso.' };
-  if (!Number.isFinite(f.amount) || !(f.amount > 0)) return { ok: false, error: 'Escribí cuánto te pagan (mayor a 0).' };
+  if (!name) return { ok: false, error: 'Ponle un nombre a la fuente (por ejemplo: Sueldo).' };
+  if (!f.category) return { ok: false, error: 'Elige la categoría de ingreso.' };
+  if (!Number.isFinite(f.amount) || !(f.amount > 0)) return { ok: false, error: 'Escribe cuánto te pagan (mayor a 0).' };
 
   let days: number[] = [];
   if (f.frequency === 'monthly') {
-    if (!wholeInRange(f.days[0], 1, 31)) return { ok: false, error: 'Escribí el día del mes en que te pagan (de 1 a 31).' };
+    if (!wholeInRange(f.days[0], 1, 31)) return { ok: false, error: 'Escribe el día del mes en que te pagan (de 1 a 31).' };
     days = [f.days[0]];
   } else if (f.frequency === 'biweekly') {
     const a = f.days[0];
     const b = f.days[1];
     if (!wholeInRange(a, 1, 31) || !wholeInRange(b, 1, 31)) {
-      return { ok: false, error: 'Escribí los dos días del mes en que te pagan (de 1 a 31).' };
+      return { ok: false, error: 'Escribe los dos días del mes en que te pagan (de 1 a 31).' };
     }
     if (a === b) return { ok: false, error: 'Los dos días de pago deben ser distintos.' };
     days = [a, b].sort((x, y) => x - y);
   } else if (f.frequency === 'weekly') {
-    if (!wholeInRange(f.days[0], 0, 6)) return { ok: false, error: 'Elegí el día de la semana en que te pagan.' };
+    if (!wholeInRange(f.days[0], 0, 6)) return { ok: false, error: 'Elige el día de la semana en que te pagan.' };
     days = [f.days[0]];
   }
 
   const months = Array.from(new Set(f.months.filter(m => wholeInRange(m, 1, 12)))).sort((x, y) => x - y);
   if (f.role === 'extra' && f.frequency !== 'irregular' && months.length === 0) {
-    return { ok: false, error: 'Marcá en qué mes llega este pago extra (por ejemplo julio o diciembre).' };
+    return { ok: false, error: 'Marca en qué mes llega este pago extra (por ejemplo julio o diciembre).' };
   }
 
   const anchors = f.role === 'base' && (f.frequency === 'monthly' || f.frequency === 'biweekly') && f.anchorsPeriod;

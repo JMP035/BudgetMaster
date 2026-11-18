@@ -57,13 +57,13 @@ export function computeFinancialScore(i: ScoreInput): ScoreResult {
     const rate = Math.round(((incomeQ - expenseQ) / incomeQ) * 100 * 1e6) / 1e6;
     savingsRate = rate;
     if (rate >= 20) {
-      savings = { id: 'savings', points: 20, state: 'good', text: `Ahorrás ${pctText(rate)} de tu ingreso del período (20% o más suma 20)` };
+      savings = { id: 'savings', points: 20, state: 'good', text: `Ahorras ${pctText(rate)} de tu ingreso del período (20% o más suma 20)` };
     } else if (rate >= 10) {
-      savings = { id: 'savings', points: 10, state: 'ok', text: `Ahorrás ${pctText(rate)} de tu ingreso del período (10% o más suma 10)` };
+      savings = { id: 'savings', points: 10, state: 'ok', text: `Ahorras ${pctText(rate)} de tu ingreso del período (10% o más suma 10)` };
     } else if (rate < 0) {
       savings = { id: 'savings', points: -15, state: 'bad', text: 'Gastaste más de lo que ingresó en el período (resta 15)' };
     } else {
-      savings = { id: 'savings', points: 0, state: 'ok', text: `Ahorrás ${pctText(rate)} de tu ingreso del período: con 10% o más empieza a sumar` };
+      savings = { id: 'savings', points: 0, state: 'ok', text: `Ahorras ${pctText(rate)} de tu ingreso del período: con 10% o más empieza a sumar` };
     }
   } else {
     savings = { id: 'savings', points: 0, state: 'pending', text: SAVINGS_PENDING_TEXT };
@@ -78,7 +78,7 @@ export function computeFinancialScore(i: ScoreInput): ScoreResult {
       budget = { id: 'budget', points: -10, state: 'bad', text: `Gastaste ${fmtQ(expenseQ)} y tu presupuesto era ${fmtQ(i.budgetForPeriod)} (resta 10)` };
     }
   } else {
-    budget = { id: 'budget', points: 0, state: 'pending', text: 'Todavía no tenés un presupuesto definido: no suma ni resta' };
+    budget = { id: 'budget', points: 0, state: 'pending', text: 'Todavía no tienes un presupuesto definido: no suma ni resta' };
   }
 
   // ── Gastos fijos ──
@@ -86,7 +86,7 @@ export function computeFinancialScore(i: ScoreInput): ScoreResult {
   const paidFixed = activeFixed.filter(f => f.isPaid).length;
   let fixed: ScoreFactor;
   if (activeFixed.length === 0) {
-    fixed = { id: 'fixed', points: 0, state: 'pending', text: 'No tenés gastos fijos activos: no suma ni resta' };
+    fixed = { id: 'fixed', points: 0, state: 'pending', text: 'No tienes gastos fijos activos: no suma ni resta' };
   } else if (paidFixed === activeFixed.length) {
     fixed = { id: 'fixed', points: 10, state: 'good', text: `Pagaste tus ${activeFixed.length} gastos fijos (suma 10)` };
   } else {
@@ -95,8 +95,8 @@ export function computeFinancialScore(i: ScoreInput): ScoreResult {
 
   // ── Cuentas ──
   const accounts: ScoreFactor = i.activeAccountsCount > 0
-    ? { id: 'accounts', points: 5, state: 'good', text: 'Tenés cuentas activas registradas (suma 5)' }
-    : { id: 'accounts', points: 0, state: 'pending', text: 'Registrá una cuenta activa para sumar 5' };
+    ? { id: 'accounts', points: 5, state: 'good', text: 'Tienes cuentas activas registradas (suma 5)' }
+    : { id: 'accounts', points: 0, state: 'pending', text: 'Registra una cuenta activa para sumar 5' };
 
   const factors = [savings, budget, fixed, accounts];
   const raw = SCORE_BASE + factors.reduce((s, f) => s + f.points, 0);

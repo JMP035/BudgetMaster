@@ -52,7 +52,7 @@ check('label card_dates', requirementLabel('card_dates') === 'una tarjeta con su
 check('label income_source', requirementLabel('income_source') === 'una fuente de ingreso');
 check('label sms_on', requirementLabel('sms_on') === 'activar los SMS');
 for (const r of REQS) {
-  check(`aviso ${r} empieza con «Para este paso necesitás»`, requirementNoticeText(r).startsWith('Para este paso necesitás '));
+  check(`aviso ${r} empieza con «Para este paso necesitas»`, requirementNoticeText(r).startsWith('Para este paso necesitas '));
   check(`aviso ${r} nombra el requisito`, requirementNoticeText(r).includes(requirementLabel(r)));
 }
 
