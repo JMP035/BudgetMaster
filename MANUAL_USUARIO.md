@@ -13,7 +13,7 @@ BudgetMaster es tu asesor financiero personal: registra tus gastos e ingresos (m
 3. [Registrar gastos e ingresos](#3-registrar-gastos-e-ingresos)
 4. [Sincronización automática por SMS (Android)](#4-sincronización-automática-por-sms-android)
 5. [Movimientos](#5-movimientos)
-6. [Presupuesto: gastos fijos, categorías y metas](#6-presupuesto)
+6. [Presupuesto: gastos fijos, categorías, metas e ingresos](#6-presupuesto)
 7. [Mis Cuentas y Visacuotas](#7-mis-cuentas-y-visacuotas)
 8. [Estadísticas](#8-estadísticas)
 9. [Asesor IA (tu CFO personal)](#9-asesor-ia)
@@ -115,6 +115,8 @@ Las transacciones importadas llevan la etiqueta **SMS** y guardan el mensaje ori
 
 **La app aprende de tus correcciones.** En los gastos recuerda el comercio. En los **ingresos por SMS recuerda el origen del depósito** (banco, cuenta y quién lo envía, por ejemplo «SECCIÓN DE OPERACIONES DE DEPÓSITOS»): si cambiás la categoría de un depósito y dejás activo **«Recordar para los depósitos de…»**, los próximos depósitos del mismo origen llegan ya clasificados. Si el SMS no dice de dónde viene el dinero, no se puede recordar.
 
+**Tus fuentes de ingreso.** Si creaste una fuente de ingreso con un SMS de ejemplo (ver [6.4](#64-ingresos)), un depósito que se le parece se vincula solo. Cuando la app no está segura, el **Centro de revisión** (aviso «Revisar» del Inicio, o Ajustes → «Revisar pendientes») te muestra la fila **«¿Es tu sueldo?»**: confirmás con **Sí** o la descartás con **No** (un «No» no vuelve a preguntarse).
+
 ---
 
 ## 5. Movimientos
@@ -128,6 +130,7 @@ Historial completo de transacciones, con:
 **Tocá una transacción** para abrir el detalle, donde podés:
 - Editar la **descripción**, la **moneda** y la **categoría**. En SMS de gastos podés activar **«Recordar»** para ese comercio; en SMS de ingresos, **«Recordar para los depósitos de…»** guarda el origen del depósito (banco, cuenta y quién lo envía). Con **«Aplicar a anteriores»** se corrigen también los movimientos parecidos que no editaste a mano.
 - Ver el **SMS original** (si vino de un SMS).
+- En un **ingreso**, **«Vincular a fuente de ingreso»** lo asigna a una de tus fuentes (toma su categoría y, si la fuente mueve tu período, el período empieza ese día); **«Quitar vínculo con la fuente»** lo suelta (la categoría se queda).
 - **Eliminarla** (pide confirmación; no se puede deshacer).
 
 También podés eliminar rápido con el ícono 🗑 de cada tarjeta.
@@ -136,7 +139,7 @@ También podés eliminar rápido con el ícono 🗑 de cada tarjeta.
 
 ## 6. Presupuesto
 
-La pestaña Presupuesto tiene **tres secciones**:
+La pestaña Presupuesto tiene **cuatro secciones**:
 
 ### 6.1 Gastos Fijos
 
@@ -167,6 +170,21 @@ Objetivos con nombre, monto, fecha límite, color e ícono (ej. "Laptop — Q8,0
 - **Crear**: botón ➕ → nombre, monto objetivo, cuánto ya tenés ahorrado, moneda, fecha límite (formato AAAA-MM-DD; si la dejás vacía se asumen 6 meses), color e ícono.
 - **Abonar**: botón "Abonar" en la tarjeta de la meta → ingresá el monto. Al alcanzar el objetivo la meta pasa a **Completadas** 🏆.
 - Cada meta muestra: % completado, restante, días de plazo y **cuánto necesitás ahorrar por mes** para llegar a tiempo.
+
+### 6.4 Ingresos
+
+De dónde y cuándo te pagan: sueldo, quincena, ventas semanales, aguinaldo, bono 14… Cada una es una **fuente de ingreso**. Con ellas la app reconoce tu pago cuando llega, sabe si ya llegó o se atrasó y puede mover el inicio de tu período al día real en que te pagan.
+
+- **Resumen**: arriba ves el **Ingreso base del período** (lo que de verdad te pagan tus fuentes base en un mes; los extras no cuentan). Si ese ingreso real difiere en más de 5 % del que declaraste, aparece un aviso «Tu ingreso real es Q X, ¿actualizar el declarado?» con el botón **Actualizar**.
+- **Lista**: cada fuente muestra su ciclo y su estado: **Esperado** (aún no llega), **Recibido** (ya llegó y la app lo reconoció) o **Atrasado** (pasó la tolerancia de días sin que llegara). Tocá una fuente para editarla o eliminarla.
+- **Crear una fuente**: botón ➕ flotante.
+  - **Nombre**, **categoría de ingreso** (con **+ Nueva categoría**), **monto**, **moneda** (Q/USD).
+  - **Cada cuánto**: Mensual (1 día), Quincenal (2 días), Semanal (día de la semana) o Irregular (sin día).
+  - **Si cae en fin de semana o feriado**: «La global» (la de Ajustes) o una regla propia de esa fuente.
+  - **Cuenta donde te pagan** y **tipo**: **Base** (tu ingreso regular) o **Extra** (llega solo en ciertos meses: *Bono 14 → julio*, *Aguinaldo → diciembre* o los meses que marques).
+  - **Mueve mi período cuando llega** (solo base mensual o quincenal): el período empieza el día que de verdad te pagan, dentro de la tolerancia.
+  - **SMS de ejemplo**: pegá el SMS que te mandó el banco cuando te pagaron, o (en Android, con SMS activo) tocá **Elegir de mis SMS**. La app muestra «Entendimos: banco · cuenta · de quién · monto aproximado» y vos tocás **Sí, es así** o **Corregir** (quién envía y monto). No se guarda ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola: vinculás cada depósito a mano desde su detalle en Movimientos.
+- El tutorial **«Tu sueldo»** recorre el proceso en orden: la cuenta, la fuente, el SMS de ejemplo, confirmar y esperar el pago.
 
 ---
 
@@ -285,8 +303,8 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 
 - **Tu Perfil** — tu nombre.
 - **Presupuesto mensual** — límite de gasto en Q (obligatorio, > 0) y opcional en USD.
-- **Ingresos y período** — muestra tu día de pago y el período actual. El botón **Cuándo empieza mi período** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
-  - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia). **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijás a mano siempre gana*: la app no lo cambia sola.
+- **Ingresos y período** — muestra tu día de pago y el período actual. **Mis fuentes de ingreso** te lleva a Presupuesto → Ingresos. En **Ciclo de pago** cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día o los dos días de pago; se guarda con **Guardar ciclo y día de pago** (no con *Guardar Cambios*). Cambiar el día mueve tu período; lo que fijaste a mano en un período anterior se conserva. El botón **Cuándo empieza mi período** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
+  - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia); nunca se ofrece una fecha futura. **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijás a mano siempre gana*: la app no lo cambia sola.
   - **Reglas** — qué hacer si el día de pago cae en fin de semana o feriado (**Viernes antes**, **Lunes después** o **Día exacto**), si cuentan los **feriados de Guatemala**, la **tolerancia** (de 1 a 7 días de diferencia máxima con el día de pago) y **Adelantar el período cuando llega el sueldo** (cuando la app reconoce por SMS el depósito de tu sueldo y cae antes o después de lo esperado, dentro de la tolerancia, el período empieza ese día). Se guardan con **Guardar reglas**, no con *Guardar Cambios*.
   - Solo aplica a ciclos **mensual** y **quincenal**; con ciclo semanal o irregular el inicio del período es fijo.
 - **Moneda principal** — Q, $, € o £.
@@ -340,6 +358,7 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real:
 6. Módulo de Cuentas.
 7. Estadísticas.
 8. **Cómo se mide tu período** (también en la guía del Inicio como «Tu período») — tu día de pago, fin de semana y feriados, el sueldo que llega antes y la edición a mano.
+9. **Tu sueldo** (también en la guía del Inicio) — cómo enseñarle a la app tu pago: la cuenta donde te pagan, la fuente de ingreso, un SMS de ejemplo y qué pasa cuando llega el pago.
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 

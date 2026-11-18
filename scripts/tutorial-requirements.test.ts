@@ -55,27 +55,28 @@ for (const r of REQS) {
 
 // ── buildRequirementFacts ────────────────────────────────────
 const acc = (type: string, isActive = true) => ({ type, isActive });
-const none = buildRequirementFacts({ accounts: [], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: false });
+const none = buildRequirementFacts({ accounts: [], incomeSources: [], smsOn: false });
 check('sin datos: nada existe', !none.hasBankAccount && !none.hasCreditCard && !none.hasIncomeSource && !none.smsOn);
 
-const bank = buildRequirementFacts({ accounts: [acc('bank')], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: true });
+const bank = buildRequirementFacts({ accounts: [acc('bank')], incomeSources: [], smsOn: true });
 check('cuenta bancaria activa', bank.hasBankAccount && !bank.hasCreditCard && bank.smsOn);
 
-const savings = buildRequirementFacts({ accounts: [acc('savings')], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: false });
+const savings = buildRequirementFacts({ accounts: [acc('savings')], incomeSources: [], smsOn: false });
 check('cuenta de ahorro cuenta como cuenta', savings.hasBankAccount);
 
-const cash = buildRequirementFacts({ accounts: [acc('cash')], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: false });
+const cash = buildRequirementFacts({ accounts: [acc('cash')], incomeSources: [], smsOn: false });
 check('efectivo no cuenta como cuenta bancaria', !cash.hasBankAccount && !cash.hasCreditCard);
 
-const credit = buildRequirementFacts({ accounts: [acc('credit')], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: false });
+const credit = buildRequirementFacts({ accounts: [acc('credit')], incomeSources: [], smsOn: false });
 check('tarjeta activa', credit.hasCreditCard && !credit.hasBankAccount);
 
-const inactive = buildRequirementFacts({ accounts: [acc('bank', false), acc('credit', false)], monthlyIncome: 0, hasIncomeTransaction: false, smsOn: false });
+const inactive = buildRequirementFacts({ accounts: [acc('bank', false), acc('credit', false)], incomeSources: [], smsOn: false });
 check('cuentas inactivas no cuentan', !inactive.hasBankAccount && !inactive.hasCreditCard);
 
-check('ingreso mensual > 0 es fuente', buildRequirementFacts({ accounts: [], monthlyIncome: 5000, hasIncomeTransaction: false, smsOn: false }).hasIncomeSource);
-check('un ingreso registrado es fuente', buildRequirementFacts({ accounts: [], monthlyIncome: 0, hasIncomeTransaction: true, smsOn: false }).hasIncomeSource);
-check('ingreso mensual NaN no es fuente', !buildRequirementFacts({ accounts: [], monthlyIncome: NaN, hasIncomeTransaction: false, smsOn: false }).hasIncomeSource);
+check('una fuente de ingreso activa cuenta', buildRequirementFacts({ accounts: [], incomeSources: [{ isActive: true }], smsOn: false }).hasIncomeSource);
+check('una fuente inactiva no cuenta', !buildRequirementFacts({ accounts: [], incomeSources: [{ isActive: false }], smsOn: false }).hasIncomeSource);
+check('sin fuentes no hay fuente de ingreso', !buildRequirementFacts({ accounts: [], incomeSources: [], smsOn: false }).hasIncomeSource);
+check('con varias basta una activa', buildRequirementFacts({ accounts: [], incomeSources: [{ isActive: false }, { isActive: true }], smsOn: false }).hasIncomeSource);
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);
 if (failures > 0) process.exit(1);

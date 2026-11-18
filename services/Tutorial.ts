@@ -82,7 +82,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'tour_5', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto',
-                description: 'Aquí planificás tu mes — gastos fijos, límites por categoría y metas de ahorro. Es donde convertís tus intenciones en un plan real.',
+                description: 'Aquí planificás tu mes — gastos fijos, límites por categoría, metas de ahorro y tus fuentes de ingreso (de dónde y cuándo te pagan). Es donde convertís tus intenciones en un plan real.',
             },
             {
                 id: 'tour_6', elementId: 'tab_advisor', position: 'top', icon: 'sparkles-outline', padding: 8,
@@ -183,7 +183,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'per_3', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'cash-outline', padding: 8,
                 requires: 'income_source',
                 title: 'El sueldo que llega antes',
-                description: 'Con «Adelantar el período cuando llega el sueldo» activado, cuando la app reconoce tu depósito de sueldo por SMS y cae antes o después de lo esperado (dentro de la tolerancia), el período empieza ese día. Arriba ves el rango del período y, al tocarlo, de dónde sale su inicio: «Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago».',
+                description: 'Con una fuente de ingreso creada en Presupuesto → Ingresos (con «Mueve mi período cuando llega» activado) y «Adelantar el período cuando llega el sueldo» activado, cuando la app reconoce tu depósito de sueldo por SMS y cae antes o después de lo esperado (dentro de la tolerancia), el período empieza ese día. Arriba ves el rango del período y, al tocarlo, de dónde sale su inicio: «Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago».',
                 emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
             },
             {
@@ -191,6 +191,45 @@ export const TUTORIALS: Tutorial[] = [
                 title: 'Editarlo a mano siempre gana',
                 description: 'Tocá el rango del período para abrir «Cuándo empieza tu período»: elegí la fecha en que de verdad te pagaron y tocá Guardar. Lo que fijás a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.',
                 emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
+            },
+        ],
+    },
+
+    // ── Tu sueldo (tutorial de proceso) ───────────────────────
+    {
+        id: 'tutorial_sueldo', title: 'Tu sueldo',
+        description: 'Enseñale a la app tu pago: la cuenta, la fuente y un SMS de ejemplo.',
+        icon: 'cash-outline', color: C.primary,
+        steps: [
+            {
+                id: 'sue_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
+                requires: 'bank_account',
+                title: '1. La cuenta donde te pagan',
+                description: 'Primero tiene que existir la cuenta donde cae tu pago (por ejemplo tu Monetaria). Si todavía no la tenés, creala en Cuentas con el botón +. Con ella la app sabe a qué cuenta llegó cada depósito.',
+                emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'sue_2', elementId: 'budget_income_fab', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'top', icon: 'add-circle-outline', padding: 8,
+                title: '2. Creá la fuente de ingreso',
+                description: 'En Presupuesto → Ingresos tocá el botón +. Poné un nombre (Sueldo, Quincena, Ventas…), la categoría, cuánto te pagan, cada cuánto y qué día, y elegí la cuenta donde te pagan. Si es un pago extra como el aguinaldo o el bono 14, marcalo como Extra y elegí su mes. Con «Mueve mi período cuando llega» tu período empieza el día que de verdad te pagan.',
+            },
+            {
+                id: 'sue_3', screen: 'budget', position: 'center', icon: 'chatbubble-ellipses-outline',
+                title: '3. Un SMS de ejemplo',
+                description: 'Dentro del formulario, en «SMS de ejemplo», tocá «Elegir de mis SMS» y escogé el depósito de tu último pago; también podés pegar el texto del SMS en el cuadro. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
+                noSmsDescription: 'Dentro del formulario, en «SMS de ejemplo», pegá el texto del SMS que te mandó el banco cuando te pagaron y tocá «Analizar SMS». La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
+            },
+            {
+                id: 'sue_4', screen: 'budget', position: 'center', icon: 'checkmark-circle-outline',
+                title: '4. Confirmá lo que entendió la app',
+                description: 'Después de analizar el SMS ves una tarjeta «Entendimos»: el banco, la cuenta, quién envía el dinero y el monto aproximado. Si es correcto tocá «Sí, es así»; si algo no cuadra tocá «Corregir» y cambiá quién envía o el monto. Recién entonces guardá la fuente.',
+            },
+            {
+                id: 'sue_5', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'cash-outline', padding: 8,
+                requires: 'income_source',
+                title: '5. Cuando llega el pago',
+                description: 'Cuando entra tu depósito, la app lo reconoce, le pone la categoría de la fuente y la marca «Recibido»; si la fuente mueve tu período, tu período arranca ese día. Si no está segura, te pregunta «¿Es tu sueldo?» en el centro de revisión. También podés vincular un depósito a mano desde su detalle en Movimientos.',
+                emptyHint: 'Todavía no tenés fuentes de ingreso. Creá la primera con el botón +.',
             },
         ],
     },
@@ -232,8 +271,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'mov_6', screen: 'transactions', position: 'center', icon: 'create-outline',
                 title: 'Editar un movimiento',
-                description: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, ver el SMS original si vino del banco, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
-                noSmsDescription: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, convertirlo en visacuota si fue una compra en cuotas o eliminarlo.',
+                description: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, ver el SMS original si vino del banco, convertirlo en visacuota si fue una compra en cuotas o eliminarlo. En un ingreso, «Vincular a fuente de ingreso» lo asigna a una de tus fuentes (sueldo, quincena…) y «Quitar vínculo con la fuente» lo suelta.',
+                noSmsDescription: 'Tocá cualquier movimiento para abrir su detalle: podés corregir la descripción, la moneda y la categoría, convertirlo en visacuota si fue una compra en cuotas o eliminarlo. En un ingreso, «Vincular a fuente de ingreso» lo asigna a una de tus fuentes (sueldo, quincena…) y «Quitar vínculo con la fuente» lo suelta.',
             },
             {
                 id: 'mov_7', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
@@ -323,7 +362,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_5', position: 'center', icon: 'pricetag-outline',
                 title: 'Clasificación automática',
-                description: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría: Restaurantes para comida preparada, Supermercado para la despensa y Comida para el resto. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía), así que los próximos depósitos del mismo origen llegan ya clasificados.',
+                description: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría: Restaurantes para comida preparada, Supermercado para la despensa y Comida para el resto. Si una categoría no es la correcta, cambiala en el detalle del movimiento y activá «Recordar»: la app aprende ese comercio. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía), así que los próximos depósitos del mismo origen llegan ya clasificados. Si ya creaste una fuente de ingreso, un depósito que se le parece se vincula solo; si la app no está segura, el centro de revisión te pregunta «¿Es tu sueldo?» y vos confirmás con Sí o No.',
             },
         ],
     },
@@ -336,8 +375,8 @@ export const TUTORIALS: Tutorial[] = [
         steps: [
             {
                 id: 'budget_1', elementId: 'budget_tabs', screen: 'budget', position: 'bottom', icon: 'wallet-outline', padding: 8,
-                title: 'Tres herramientas de planificación',
-                description: 'Presupuesto tiene tres pestañas: Gastos Fijos (tus compromisos mensuales), Categorías (límites de gasto) y Metas (ahorro con objetivo). Vamos a recorrer cada una.',
+                title: 'Cuatro herramientas de planificación',
+                description: 'Presupuesto tiene cuatro pestañas: Gastos Fijos (tus compromisos mensuales), Categorías (límites de gasto), Metas (ahorro con objetivo) e Ingresos (de dónde y cuándo te pagan). Vamos a recorrer cada una.',
             },
             {
                 id: 'budget_2', elementId: 'budget_fixed_summary', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'bottom', icon: 'calendar-outline', padding: 8,
@@ -381,6 +420,17 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'budget_8', elementId: 'budget_goals_fab', screen: 'budget', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Crear una meta',
                 description: 'Definí el nombre, el monto objetivo, cuánto ya tenés ahorrado, la moneda y la fecha límite con el calendario. Al completarla pasa a la sección Metas completadas.',
+            },
+            {
+                id: 'budget_9', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'cash-outline', padding: 8,
+                title: 'Tus fuentes de ingreso',
+                description: 'Arriba ves tu ingreso base del período: lo que de verdad te pagan tus fuentes base en un mes (los extras como aguinaldo o bono 14 no cuentan). Debajo, cada fuente con su estado: Esperado (aún no llega), Recibido (ya llegó y la app lo reconoció) o Atrasado (pasó la tolerancia). Tocá una fuente para editarla. Si tu ingreso real difiere en más de 5% del que declaraste, la app te lo sugiere y lo actualizás con un toque.',
+                emptyHint: 'Todavía no tenés fuentes de ingreso. Creá la primera con el botón + de esta pestaña.',
+            },
+            {
+                id: 'budget_10', elementId: 'budget_income_fab', screen: 'budget', scrollKey: 'budget_income', position: 'top', icon: 'add-circle-outline', padding: 8,
+                title: 'Crear una fuente de ingreso',
+                description: 'Con este botón registrás de dónde y cuándo te pagan: nombre, categoría, monto, moneda, cada cuánto (mensual, quincenal, semanal o irregular), el día, la cuenta donde te pagan y si es un ingreso base o un extra. Con un SMS de ejemplo la app aprende a reconocer tu pago sola. Mirá el tutorial «Tu sueldo» para el proceso completo.',
             },
         ],
     },
@@ -570,7 +620,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_period', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Ingresos y período',
-                description: 'Muestra tu día de pago y el período actual. «Cuándo empieza mi período» abre el detalle: de dónde sale el inicio (tu sueldo, un fin de semana o feriado, o lo que fijaste a mano), las fechas para elegir otro inicio y las reglas de fin de semana, feriados, tolerancia y sueldo adelantado. Esos cambios se guardan con los botones del propio detalle, no con Guardar Cambios.',
+                description: 'Muestra tu día de pago y el período actual. «Mis fuentes de ingreso» te lleva a Presupuesto → Ingresos. En «Ciclo de pago» cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día o los dos días de pago, y se guardan con su propio botón; cambiar el día mueve tu período, y lo que fijaste a mano en un período anterior se conserva. «Cuándo empieza mi período» abre el detalle: de dónde sale el inicio (tu sueldo, un fin de semana o feriado, o lo que fijaste a mano), las fechas para elegir otro inicio y las reglas de fin de semana, feriados, tolerancia y sueldo adelantado. Esos cambios se guardan con los botones del propio detalle, no con Guardar Cambios.',
             },
             {
                 id: 'set_3', elementId: 'settings_currency', screen: 'settings', position: 'bottom', icon: 'cash-outline', padding: 8,

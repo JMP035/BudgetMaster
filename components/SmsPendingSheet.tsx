@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { StorageService } from "../services/storage";
-import type { Account, FixedExpense, Transaction, UserSettings } from "../services/storage";
+import type { Account, FixedExpense, IncomeSource, Transaction, UserSettings } from "../services/storage";
 import { reviewImportedSms } from "../services/BankSmsParser";
 import type { SmsReviewItem } from "../services/BankSmsParser";
 import type { SyncResult } from "../services/SmsService";
@@ -15,6 +15,9 @@ import type { DupPair } from "../services/DuplicateDetector";
 import { findTransferPairs } from "../services/TransferPairs";
 import type { TransferPair } from "../services/TransferPairs";
 import { groupUnassigned } from "../services/AccountLinking";
+import { incomeProposalsTitle, liveIncomeProposals } from "../services/IncomeSourceView";
+import type { IncomeProposal } from "../services/IncomeSources";
+import { sanitizePayRules } from "../services/PayCalendar";
 import { GlassSheet } from "./GlassSheet";
 import { GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
@@ -23,10 +26,11 @@ import SmsInboxModal from "./SmsInboxModal";
 import DuplicateMergeModal from "./DuplicateMergeModal";
 import FixedExpenseMatchModal from "./FixedExpenseMatchModal";
 import TransferPairsModal from "./TransferPairsModal";
+import IncomeProposalsModal from "./IncomeProposalsModal";
 import UnassignedAccountsModal from "./UnassignedAccountsModal";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
-type Kind = "review" | "dups" | "fixed" | "transfers" | "unassigned" | "inbox";
+type Kind = "review" | "dups" | "fixed" | "transfers" | "income" | "unassigned" | "inbox";
 // 'sheet' = la hoja visible; 'none' = pausa entre dos ventanas (Android no maneja dos Modal a la vez)
 type ViewState = "sheet" | "none" | Kind;
 
@@ -38,6 +42,7 @@ export function countPending(r: SyncResult): number {
         + r.duplicates.length
         + r.fixedProposals.length
         + r.transferPairs.length
+        + (r.incomeProposals?.length ?? 0)
         + r.unassignedCount
         + r.inbox.length;
 }
@@ -94,6 +99,7 @@ export default function SmsPendingSheet({
     const [dupIgnored, setDupIgnored] = useState<string[]>([]);
     const [keptIds, setKeptIds] = useState<string[]>([]);
     const [inboxCount, setInboxCount] = useState(0);
+    const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
     const [tick, setTick] = useState(0);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -114,15 +120,17 @@ export default function SmsPendingSheet({
         let cancelled = false;
         (async () => {
             try {
-                const [ign, kept, inbox] = await Promise.all([
+                const [ign, kept, inbox, sources] = await Promise.all([
                     StorageService.getDupIgnored(),
                     StorageService.getSmsReviewKept(),
                     StorageService.getSmsInbox(),
+                    StorageService.getIncomeSources(),
                 ]);
                 if (cancelled) return;
                 setDupIgnored(ign);
                 setKeptIds(kept);
                 setInboxCount(inbox.length);
+                setIncomeSources(sources);
             } catch (e) {
                 console.warn("[SmsPendingSheet] carga:", e);
             }
@@ -197,6 +205,21 @@ export default function SmsPendingSheet({
         }
     }, [visible, result, transactions, dupIgnored, accounts]);
 
+    // «¿Es tu sueldo?»: con resultado se revisan solo los ingresos de esa sincronización; sin resultado, todos los
+    // ingresos de SMS sin fuente. Siempre se vuelve a correr matchIncome, así que lo ya resuelto desaparece.
+    const incomeProposals: IncomeProposal[] = useMemo(() => {
+        if (!visible) return [];
+        try {
+            return liveIncomeProposals(
+                transactions, incomeSources, sanitizePayRules(settings.payRules), new Set(dupIgnored),
+                result ? result.incomeProposals.map(p => p.txId) : null,
+            );
+        } catch (e) {
+            console.warn("[SmsPendingSheet] ingresos:", e);
+            return [];
+        }
+    }, [visible, result, transactions, incomeSources, dupIgnored, settings.payRules]);
+
     const unassignedGroups = useMemo(() => {
         if (!visible) return [];
         // Sin cuentas con banco no hay a dónde vincular (misma regla que la sincronización).
@@ -231,7 +254,7 @@ export default function SmsPendingSheet({
     }, [visible, result, transactions, keptIds, txIds]);
 
     const total = liveReview.length + dupPairs.length + fixedMatches.length
-        + transferPairs.length + unassignedCount + inboxCount;
+        + transferPairs.length + incomeProposals.length + unassignedCount + inboxCount;
 
     // Una sola ventana a la vez: cerrar la actual y abrir la siguiente con una pausa.
     const goTo = useCallback((next: ViewState) => {
@@ -298,6 +321,15 @@ export default function SmsPendingSheet({
                                     onPress={() => goTo("transfers")}
                                 />
                             )}
+                            {incomeProposals.length > 0 && (
+                                <PendingRow
+                                    icon="cash-outline"
+                                    title={incomeProposalsTitle(incomeProposals)}
+                                    hint="Depósitos que se parecen a una de tus fuentes de ingreso"
+                                    count={incomeProposals.length}
+                                    onPress={() => goTo("income")}
+                                />
+                            )}
                             {unassignedCount > 0 && (
                                 <PendingRow
                                     icon="card-outline"
@@ -348,6 +380,13 @@ export default function SmsPendingSheet({
             <TransferPairsModal
                 visible={view === "transfers"}
                 pairs={transferPairs}
+                transactions={transactions}
+                onClose={backToSheet}
+                onChanged={childChanged}
+            />
+            <IncomeProposalsModal
+                visible={view === "income"}
+                proposals={incomeProposals}
                 transactions={transactions}
                 onClose={backToSheet}
                 onChanged={childChanged}

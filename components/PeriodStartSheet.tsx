@@ -96,8 +96,14 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
     useEffect(() => { setSelected(startYmd); }, [startYmd, period.key]);
 
     const nominal = period.nominalStart;
+    // Nunca se ofrece un inicio posterior a hoy: si no, el período «actual» saltaría al anterior.
+    const todayYmd = ymd(new Date());
     const chips: Date[] = [];
-    for (let i = -tol; i <= tol; i++) chips.push(addDays(nominal, i));
+    for (let i = -tol; i <= tol; i++) {
+        const d = addDays(nominal, i);
+        if (ymd(d) <= todayYmd) chips.push(d);
+    }
+    if (chips.length === 0) chips.push(period.start);
 
     const origin = originOf(period);
     const canSave = adjustable && !busy && (selected !== startYmd || period.startSource !== "manual");
@@ -186,7 +192,7 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
                     {/* ELEGIR OTRO INICIO */}
                     <Text style={s.sectionLabel}>ELEGÍ OTRO INICIO</Text>
                     <Text style={s.hint}>
-                        Tu día de pago es el {nominal.getDate()}, pero a veces te pagan antes o después. Tocá la fecha en que de verdad te llegó el sueldo.
+                        Tu día de pago es el {nominal.getDate()}, pero a veces te pagan antes o después. Tocá la fecha en que de verdad te llegó el sueldo (no se ofrecen fechas futuras).
                     </Text>
                     <View style={s.chips}>
                         {chips.map(d => {

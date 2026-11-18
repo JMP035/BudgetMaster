@@ -3,7 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
     FlatList, KeyboardAvoidingView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
-import { Account, CreditInstallment, Currency, FixedExpense, StorageService, Transaction, UserSettings } from "../services/storage";
+import { Account, CreditInstallment, Currency, FixedExpense, IncomeSource, StorageService, Transaction, UserSettings } from "../services/storage";
+import { matchIncome } from "../services/IncomeSources";
+import { sanitizePayRules, ymd } from "../services/PayCalendar";
+import { storedToLocalDate } from "../services/FixedCycle";
 import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds } from "../services/MerchantRules";
 import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds } from "../services/IncomeRules";
@@ -68,6 +71,21 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
     const [remember, setRemember] = useState(true);
     const [applyPast, setApplyPast] = useState(true);
     const [accountId, setAccountId] = useState<string | null>(tx.accountId ?? null);
+
+    // Fuente de ingreso: solo para ingresos que no son la mitad de una transferencia propia.
+    const canLinkIncome = tx.type === 'income' && !tx.transferPairId;
+    const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+    const [choosingSource, setChoosingSource] = useState(false);
+    const [incomeBusy, setIncomeBusy] = useState(false);
+    useEffect(() => {
+        if (!canLinkIncome) return;
+        let cancelled = false;
+        StorageService.getIncomeSources()
+            .then(list => { if (!cancelled) setIncomeSources(list.filter(x => x.isActive || x.id === tx.incomeSourceId)); })
+            .catch(() => { });
+        return () => { cancelled = true; };
+    }, [canLinkIncome, tx.incomeSourceId]);
+    const linkedSource = tx.incomeSourceId ? incomeSources.find(x => x.id === tx.incomeSourceId) : undefined;
 
     // Una sola ventana a la vez: el detalle y «Nueva categoría» se alternan con una pausa ('none' = entre ambos).
     const [phase, setPhase] = useState<'detail' | 'newCat' | 'none'>('detail');
@@ -216,6 +234,41 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
             await dialog.alert({ title: "No se pudo desvincular", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleLinkIncome = async (source: IncomeSource) => {
+        if (incomeBusy) return;
+        setIncomeBusy(true);
+        try {
+            // Ciclo del pago: el que mejor encaja con la fecha del depósito; si no encaja con ninguno, su propio día.
+            const m = matchIncome(tx, [source], sanitizePayRules(settings.payRules));
+            const when = storedToLocalDate(tx.date);
+            const occKey = m?.occKey ?? (when ? ymd(when) : tx.date.slice(0, 10));
+            const r = await StorageService.linkIncome(tx.id, source.id, occKey);
+            if (!r) throw new Error("linkIncome devolvió null");
+            onReplaceAll(await StorageService.getTransactions());
+            onClose();
+        } catch (e) {
+            console.warn("[Transactions] vincular fuente de ingreso:", e);
+            await dialog.alert({ title: "No se pudo vincular", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
+        } finally {
+            setIncomeBusy(false);
+        }
+    };
+
+    const handleUnlinkIncome = async () => {
+        if (incomeBusy) return;
+        setIncomeBusy(true);
+        try {
+            const next = await StorageService.unlinkIncome(tx.id);
+            onReplaceAll(next);
+            onClose();
+        } catch (e) {
+            console.warn("[Transactions] quitar vínculo de fuente de ingreso:", e);
+            await dialog.alert({ title: "No se pudo quitar el vínculo", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
+        } finally {
+            setIncomeBusy(false);
         }
     };
 
@@ -464,6 +517,67 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                     />
                 )}
             </View>
+
+            {/* FUENTE DE INGRESO */}
+            {canLinkIncome && (
+                <View style={m.section}>
+                    <Text style={m.sectionLabel}>FUENTE DE INGRESO</Text>
+                    {tx.incomeSourceId ? (
+                        <>
+                            <View style={m.statusChip}>
+                                <Ionicons name="cash-outline" size={14} color={C.primaryLight} />
+                                <Text style={m.statusChipTxt} numberOfLines={2}>
+                                    {linkedSource ? `Pago de: ${linkedSource.name}` : "Vinculado a una fuente de ingreso"}
+                                </Text>
+                            </View>
+                            <GlassButton
+                                kind="ghost"
+                                icon="unlink-outline"
+                                label="Quitar vínculo con la fuente"
+                                onPress={() => { void handleUnlinkIncome(); }}
+                                disabled={incomeBusy || saving}
+                                style={m.incomeBtn}
+                            />
+                        </>
+                    ) : (
+                        <>
+                            <GlassButton
+                                kind="secondary"
+                                icon="cash-outline"
+                                label="Vincular a fuente de ingreso"
+                                onPress={() => setChoosingSource(v => !v)}
+                                disabled={incomeBusy || saving}
+                            />
+                            {choosingSource && (
+                                incomeSources.length === 0 ? (
+                                    <Text style={m.hint}>
+                                        Todavía no tenés fuentes de ingreso. Creá una en Presupuesto → Ingresos.
+                                    </Text>
+                                ) : (
+                                    <>
+                                        <Text style={m.hint}>Elegí a qué fuente pertenece este depósito. Tomará su categoría y, si la fuente mueve tu período, el período empieza ese día.</Text>
+                                        <View style={[m.accWrap, { marginTop: 10 }]}>
+                                            {incomeSources.map(src => (
+                                                <TouchableOpacity
+                                                    key={src.id}
+                                                    style={m.accChip}
+                                                    onPress={() => { void handleLinkIncome(src); }}
+                                                    disabled={incomeBusy}
+                                                    accessibilityRole="button"
+                                                    accessibilityLabel={`Vincular a ${src.name}`}
+                                                >
+                                                    <Ionicons name="cash-outline" size={14} color={C.primaryLight} />
+                                                    <Text style={m.accChipTxt} numberOfLines={1}>{src.name}</Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    </>
+                                )
+                            )}
+                        </>
+                    )}
+                </View>
+            )}
 
             {/* DESCRIPCIÓN EDITABLE */}
             <View style={m.section}>
@@ -991,5 +1105,6 @@ const m = StyleSheet.create({
     switchLabel: { color: C.text, fontSize: 13, fontWeight: "700" },
     footerRow: { flexDirection: "row", gap: 10, paddingTop: 12, alignItems: "center" },
     moreActions: { gap: 8 },
+    incomeBtn: { marginTop: 8 },
     delBtn: { width: 50, height: 50, borderRadius: 14, backgroundColor: C.danger + "11", borderWidth: 1, borderColor: C.danger + "66", alignItems: "center", justifyContent: "center" },
 });

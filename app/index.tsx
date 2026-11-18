@@ -8,7 +8,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Account, AppData, CategoryBudget, CreditInstallment,
-  DEFAULT_SETTINGS, FixedExpense, parseAmount, SavingsGoal,
+  DEFAULT_SETTINGS, FixedExpense, IncomeSource, parseAmount, SavingsGoal,
   StorageService, Transaction, UserSettings
 } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
@@ -39,6 +39,7 @@ import AddScreen from "../components/AddScreen";
 import AIAdvisor from "../components/AIAdvisor";
 import BiometricGate, { setBiometricRuntimeEnabled } from "../components/BiometricGate";
 import BudgetScreen from "../components/BudgetScreen";
+import type { BudgetRequest } from "../components/BudgetScreen";
 import CardsOnboardingScreen from "../components/CardsOnboardingScreen";
 import DashboardScreen from "../components/Dashboard";
 import OnboardingScreen from "../components/OnboardingScreen";
@@ -132,6 +133,10 @@ function AppContent() {
   const [savingsGoals, setSavingsGoals] = useState<SavingsGoal[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [creditInstallments, setCreditInstallments] = useState<CreditInstallment[]>([]);
+  // Fuentes de ingreso (Presupuesto → Ingresos): alimentan el requisito «income_source» del tutorial.
+  const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+  // Pedido de ir a Presupuesto → Ingresos (Ajustes, «Crearlo ahora» del tutorial); BudgetScreen lo atiende y lo limpia.
+  const [budgetRequest, setBudgetRequest] = useState<BudgetRequest | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showAI, setShowAI] = useState(false);
   const [showAccounts, setShowAccounts] = useState(false);
@@ -178,6 +183,7 @@ function AppContent() {
     setSavingsGoals(data.savingsGoals);
     setAccounts(data.accounts);
     setCreditInstallments(data.creditInstallments);
+    setIncomeSources(await StorageService.getIncomeSources());
 
     void NotificationService.syncFixedExpenseReminders(data.fixedExpenses).catch(e => console.warn("[loadData] recordatorios:", e));
 
@@ -392,13 +398,11 @@ function AppContent() {
 
   // Requisitos de los pasos del tutorial: qué existe ya en los datos del usuario.
   const smsOnNow = isSmsFeatureOn(settings);
-  const hasIncomeTx = useMemo(() => txs.some(t => t.type === "income"), [txs]);
   const requirementFacts = useMemo(() => buildRequirementFacts({
     accounts,
-    monthlyIncome: settings.monthlyIncome,
-    hasIncomeTransaction: hasIncomeTx,
+    incomeSources,
     smsOn: smsOnNow,
-  }), [accounts, settings.monthlyIncome, hasIncomeTx, smsOnNow]);
+  }), [accounts, incomeSources, smsOnNow]);
 
   // «Crearlo ahora»: lleva al usuario a donde se crea lo que falta (el tutorial ya se cerró).
   const handleFulfillRequirement = useCallback((req: TutorialRequirement) => {
@@ -411,10 +415,10 @@ function AppContent() {
         setShowAccounts(true);
         break;
       case "income_source":
-        // TODO(B4): cuando exista la pestaña Ingresos, llevar a ella. Por ahora la fuente de ingreso
-        // (ingreso mensual / movimientos de ingreso) se administra desde Presupuesto.
+        // Presupuesto → Ingresos con el formulario de la fuente ya abierto (una sola ventana a la vez).
         setShowAccounts(false);
         setShowAI(false);
+        setBudgetRequest({ tab: 3, openIncome: true, n: Date.now() });
         setTab("budget");
         break;
       case "sms_on":
@@ -490,6 +494,9 @@ function AppContent() {
               savingsGoals={savingsGoals}
               setSavingsGoals={setSavingsGoals}
               onRefresh={hRefresh}
+              request={budgetRequest}
+              onRequestHandled={() => setBudgetRequest(null)}
+              onIncomeSourcesChanged={setIncomeSources}
             />
           )}
           {tab === "stats" && !showAI && (
@@ -503,6 +510,11 @@ function AppContent() {
               focusSection={settingsFocus}
               onFocusHandled={() => setSettingsFocus(null)}
               onOpenGuide={() => switchTab("dashboard")}
+              onOpenIncomeSources={() => {
+                setBudgetRequest({ tab: 3, n: Date.now() });
+                switchTab("budget");
+              }}
+              onDataChanged={() => { void loadData(); }}
             />
           )}
           {showAI && (

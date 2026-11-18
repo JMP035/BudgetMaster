@@ -7,7 +7,7 @@ import {
     TouchableOpacity, View
 } from "react-native";
 import {
-    CategoryBudget, Currency, FixedExpense, SavingsGoal,
+    Account, CategoryBudget, Currency, FixedExpense, IncomeSource, SavingsGoal,
     StorageService, Transaction, UserSettings,
     formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
     parseAmount, parseDateOnly, storedDateToDateOnly
@@ -36,6 +36,11 @@ import {
     CategoryBreakdown, buildPeriodBreakdown, currencyNoun, foreignTotalsOf, formatShortDay, uncoveredCategories
 } from "../services/BudgetBreakdown";
 import CategoryBreakdownSheet from "./CategoryBreakdownSheet";
+import IncomeSourceModal from "./IncomeSourceModal";
+import { baseMonthlyIncome, incomeDeltaSuggestion } from "../services/IncomeSources";
+import { buildIncomeList, suggestionText } from "../services/IncomeSourceView";
+import type { StatusTone } from "../services/IncomeSourceView";
+import { sanitizePayRules } from "../services/PayCalendar";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -72,7 +77,7 @@ const bar = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────
 // TABS INTERNOS ANIMADOS
 // ─────────────────────────────────────────────────────────────
-const TAB_LABELS = ["Gastos Fijos", "Categorías", "Metas"];
+const TAB_LABELS = ["Gastos Fijos", "Categorías", "Metas", "Ingresos"];
 
 function InternalTabs({ active, onChange }: { active: number; onChange: (i: number) => void }) {
     const [width, setWidth] = useState(0);
@@ -90,10 +95,10 @@ function InternalTabs({ active, onChange }: { active: number; onChange: (i: numb
     }, [active]);
 
     const PAD = 4;
-    const segW = width > 0 ? (width - PAD * 2) / 3 : 0;
+    const segW = width > 0 ? (width - PAD * 2) / TAB_LABELS.length : 0;
     const translateX = indicatorX.interpolate({
-        inputRange: [0, 1, 2],
-        outputRange: [0, segW, segW * 2],
+        inputRange: [0, 1, 2, 3],
+        outputRange: [0, segW, segW * 2, segW * 3],
     });
 
     return (
@@ -1191,8 +1196,201 @@ function SavingsGoalsTab({
 }
 
 // ─────────────────────────────────────────────────────────────
+// SECCIÓN 4 — INGRESOS (fuentes de ingreso)
+// ─────────────────────────────────────────────────────────────
+const TONE_COLOR: Record<StatusTone, string> = {
+    success: C.success,
+    info: C.primaryLight,
+    danger: C.danger,
+    muted: C.textSub,
+};
+
+function IncomeTab({
+    transactions, settings, autoCreate, onAutoCreateHandled, onSourcesChanged,
+}: {
+    transactions: Transaction[];
+    settings: UserSettings;
+    /** Cambia (n distinto de 0) cuando otra pantalla pide abrir el formulario de una fuente nueva. */
+    autoCreate: number;
+    onAutoCreateHandled: () => void;
+    onSourcesChanged?: (list: IncomeSource[]) => void;
+}) {
+    const [sources, setSources] = useState<IncomeSource[]>([]);
+    const [accounts, setAccounts] = useState<Account[]>([]);
+    const [showModal, setShowModal] = useState(false);
+    const [editing, setEditing] = useState<IncomeSource | undefined>();
+    const [updating, setUpdating] = useState(false);
+    const [notice, setNotice] = useState<{ variant: "success" | "error"; text: string } | null>(null);
+    const tutScroll = useTutorialScroll('budget_income');
+    const listRef = useTutorialRef('budget_income_list');
+    const fabRef = useTutorialRef('budget_income_fab');
+
+    useEffect(() => {
+        let cancelled = false;
+        Promise.all([StorageService.getIncomeSources(), StorageService.getAccounts()])
+            .then(([list, accs]) => { if (!cancelled) { setSources(list); setAccounts(accs); } })
+            .catch(e => console.warn("[Ingresos] carga:", e));
+        return () => { cancelled = true; };
+    }, []);
+
+    useEffect(() => {
+        if (!autoCreate) return;
+        setEditing(undefined);
+        setShowModal(true);
+        onAutoCreateHandled();
+    }, [autoCreate]);
+
+    const rules = sanitizePayRules(settings.payRules);
+    const items = buildIncomeList(sources, transactions, new Date(), rules);
+    const baseIncome = baseMonthlyIncome(sources, transactions, settings.exchangeRate);
+    const activeCount = sources.filter(x => x.isActive).length;
+    const suggestion = incomeDeltaSuggestion(settings, sources, transactions);
+
+    const handleSaved = (list: IncomeSource[]) => {
+        setSources(list);
+        onSourcesChanged?.(list);
+    };
+
+    const applySuggestion = async () => {
+        if (!suggestion || updating) return;
+        setUpdating(true);
+        setNotice(null);
+        try {
+            const fresh = await StorageService.getSettings();
+            const next: UserSettings = {
+                ...fresh,
+                monthlyIncome: suggestion.suggested,
+                // Solo se toca el equivalente en dólares si ya estaba declarado (el onboarding lo deja en 0 para quien gana en Q).
+                ...(fresh.monthlyIncomeUSD > 0 && fresh.exchangeRate > 0
+                    ? { monthlyIncomeUSD: Math.round((suggestion.suggested / fresh.exchangeRate) * 100) / 100 }
+                    : {}),
+            };
+            await StorageService.saveSettings(next);
+            setNotice({ variant: "success", text: `Listo: tu ingreso declarado ahora es ${formatMoney(suggestion.suggested, "Q")}.` });
+        } catch (e) {
+            console.warn("[Ingresos] actualizar declarado:", e);
+            setNotice({ variant: "error", text: "No se pudo actualizar tu ingreso. Probá de nuevo." });
+        } finally {
+            setUpdating(false);
+        }
+    };
+
+    return (
+        <View style={{ flex: 1 }}>
+            <ScrollView {...tutScroll} showsVerticalScrollIndicator={false}>
+                <GlassCard radius={16} blur={false} style={s.summaryCard} contentStyle={s.incSummary}>
+                    <Text style={s.incKicker}>INGRESO BASE DEL PERÍODO</Text>
+                    <Money amount={baseIncome} currency="Q" size="lg" tone="income" align="left" containerStyle={s.incSummaryMoney} />
+                    <Text style={s.incSummaryHint}>
+                        {activeCount === 0
+                            ? "Se calcula con lo que de verdad te pagan tus fuentes base. Todavía no hay ninguna."
+                            : "Lo que de verdad te pagan tus fuentes base en un mes. Los extras (aguinaldo, bono 14) no cuentan."}
+                    </Text>
+                </GlassCard>
+
+                {!!suggestion && (
+                    <InlineNotice
+                        variant="info"
+                        icon="trending-up-outline"
+                        text={suggestionText(suggestion)}
+                        actionLabel={updating ? "Guardando…" : "Actualizar"}
+                        onAction={() => { void applySuggestion(); }}
+                        style={s.incNotice}
+                    />
+                )}
+                {!!notice && <InlineNotice variant={notice.variant} text={notice.text} style={s.incNotice} />}
+
+                <View ref={listRef} collapsable={false} style={{ marginTop: 6 }}>
+                    {items.length === 0 ? (
+                        <View style={s.empty}>
+                            <Ionicons name="cash-outline" size={48} color={C.textMuted} />
+                            <Text style={s.emptyTitle}>Sin fuentes de ingreso</Text>
+                            <Text style={s.emptyDesc}>Todavía no tenés fuentes de ingreso. Creá la primera con el botón + y enseñale a la app de dónde y cuándo te pagan.</Text>
+                        </View>
+                    ) : (
+                        items.map(({ source, status, view, schedule }) => {
+                            const color = TONE_COLOR[view.tone];
+                            const shown = status.amount ?? source.amount;
+                            return (
+                                <TouchableOpacity
+                                    key={source.id}
+                                    activeOpacity={0.8}
+                                    onPress={() => { setEditing(source); setShowModal(true); }}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Editar ${source.name}. ${view.label}`}
+                                >
+                                    <GlassCard
+                                        radius={16}
+                                        blur={false}
+                                        leftAccentColor={color}
+                                        style={[s.incCard, !source.isActive && { opacity: 0.6 }]}
+                                        contentStyle={s.incContent}
+                                    >
+                                        <View style={{ flex: 1, flexShrink: 1 }}>
+                                            <View style={s.incTitleRow}>
+                                                <Text style={s.incName} numberOfLines={2}>{source.name}</Text>
+                                                <View style={[s.incChip, { borderColor: color + "66", backgroundColor: color + "22" }]}>
+                                                    <Text style={[s.incChipTxt, { color }]}>{view.label.toUpperCase()}</Text>
+                                                </View>
+                                                {source.role === "extra" && (
+                                                    <View style={s.autoBadge}><Text style={s.autoTxt}>EXTRA</Text></View>
+                                                )}
+                                            </View>
+                                            <Text style={s.incSched}>{schedule}</Text>
+                                            <Text style={s.incDetail}>{view.detail}</Text>
+                                            {!source.pattern && (
+                                                <Text style={s.incNoPattern}>Sin SMS de ejemplo: no se detecta sola</Text>
+                                            )}
+                                        </View>
+                                        <View style={s.incAmt}>
+                                            <Money
+                                                amount={shown}
+                                                currency={source.currency}
+                                                size="sm"
+                                                tone="income"
+                                                gradient={false}
+                                                align="right"
+                                                containerStyle={s.incMoney}
+                                            />
+                                        </View>
+                                    </GlassCard>
+                                </TouchableOpacity>
+                            );
+                        })
+                    )}
+                </View>
+                <View style={{ height: 100 }} />
+            </ScrollView>
+
+            <View ref={fabRef} collapsable={false} style={s.fabWrap}>
+                <TouchableOpacity
+                    style={s.fab}
+                    onPress={() => { setEditing(undefined); setShowModal(true); }}
+                    accessibilityRole="button"
+                    accessibilityLabel="Agregar fuente de ingreso"
+                >
+                    <Ionicons name="add" size={28} color={C.onPrimary} />
+                </TouchableOpacity>
+            </View>
+
+            {showModal && (
+                <IncomeSourceModal
+                    existing={editing}
+                    settings={settings}
+                    accounts={accounts}
+                    onSaved={handleSaved}
+                    onClose={() => { setShowModal(false); setEditing(undefined); }}
+                />
+            )}
+        </View>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
+export interface BudgetRequest { tab: number; openIncome?: boolean; n: number }
+
 interface Props {
     transactions: Transaction[];
     setTransactions: (t: Transaction[]) => void;
@@ -1204,6 +1402,11 @@ interface Props {
     savingsGoals: SavingsGoal[];
     setSavingsGoals: (g: SavingsGoal[]) => void;
     onRefresh?: () => void;
+    /** Pedido de otra pantalla: abrir una pestaña (3 = Ingresos) y, si se indica, el formulario de una fuente nueva. */
+    request?: BudgetRequest | null;
+    onRequestHandled?: () => void;
+    /** Avisa a la app cuando cambia la lista de fuentes de ingreso (alta, edición o baja). */
+    onIncomeSourcesChanged?: (list: IncomeSource[]) => void;
 }
 
 export default function BudgetScreen({
@@ -1211,9 +1414,10 @@ export default function BudgetScreen({
     fixedExpenses, setFixedExpenses,
     categoryBudgets, setCategoryBudgets,
     savingsGoals, setSavingsGoals,
-    onRefresh,
+    onRefresh, request, onRequestHandled, onIncomeSourcesChanged,
 }: Props) {
-    const [activeTab, setActiveTab] = useState(0);
+    const [activeTab, setActiveTab] = useState(request ? request.tab : 0);
+    const [incomeAutoCreate, setIncomeAutoCreate] = useState(0);
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const headerRef = useTutorialRef('budget_header');
 
@@ -1225,10 +1429,18 @@ export default function BudgetScreen({
         setTimeout(() => setActiveTab(i), 120);
     }, []);
 
+    // Otra pantalla (Ajustes, «Crearlo ahora» del tutorial) pide ir directo a una pestaña.
+    useEffect(() => {
+        if (!request) return;
+        setActiveTab(request.tab);
+        if (request.openIncome) setIncomeAutoCreate(request.n);
+        onRequestHandled?.();
+    }, [request]);
+
     // Permite que el tutorial cambie de pestaña interna
     useTutorialAction('budget:setTab', arg => {
         const i = Number(arg);
-        if (i >= 0 && i <= 2 && i !== activeTab) handleTabChange(i);
+        if (i >= 0 && i < TAB_LABELS.length && i !== activeTab) handleTabChange(i);
     });
 
     return (
@@ -1267,6 +1479,15 @@ export default function BudgetScreen({
                         savingsGoals={savingsGoals}
                         setSavingsGoals={setSavingsGoals}
                         settings={settings}
+                    />
+                )}
+                {activeTab === 3 && (
+                    <IncomeTab
+                        transactions={transactions}
+                        settings={settings}
+                        autoCreate={incomeAutoCreate}
+                        onAutoCreateHandled={() => setIncomeAutoCreate(0)}
+                        onSourcesChanged={onIncomeSourcesChanged}
                     />
                 )}
             </Animated.View>
@@ -1365,6 +1586,24 @@ const s = StyleSheet.create({
     abonoCancelBtn: { width: 36, height: 36, borderRadius: 18, overflow: "hidden", alignItems: "center", justifyContent: "center" },
     completedTitleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16, marginBottom: 10 },
     completedTitle: { color: C.textSub, fontSize: 11, fontWeight: "800", letterSpacing: 1.5 },
+
+    // Ingresos
+    incSummary: { padding: 16 },
+    incKicker: { color: C.textSub, fontSize: 11, fontWeight: "800", letterSpacing: 1.2 },
+    incSummaryMoney: { alignSelf: "stretch", marginTop: 6 },
+    incSummaryHint: { color: C.textSub, fontSize: 12, lineHeight: 17, marginTop: 6 },
+    incNotice: { marginBottom: 12 },
+    incCard: { marginBottom: 10 },
+    incContent: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14 },
+    incTitleRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8 },
+    incName: { color: C.text, fontSize: 15, fontWeight: "800", flexShrink: 1 },
+    incChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
+    incChipTxt: { fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+    incSched: { color: C.textSub, fontSize: 12, marginTop: 4 },
+    incDetail: { color: C.text, fontSize: 12, fontWeight: "600", marginTop: 2 },
+    incNoPattern: { color: C.warning, fontSize: 11, marginTop: 4 },
+    incAmt: { width: "34%", alignItems: "stretch" },
+    incMoney: { alignSelf: "stretch" },
 
     // Shared
     empty: { alignItems: "center", paddingTop: 60, gap: 12 },

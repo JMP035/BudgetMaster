@@ -5,7 +5,7 @@ import {
     TextInput, TouchableOpacity, View, ActivityIndicator
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
-import { Account, Currency, CustomCategory, FixedExpense, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
+import { Account, Currency, CustomCategory, FixedExpense, PaymentCycle, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
 import { PeriodStartSheet, payDayText } from "./PeriodStartSheet";
 import SmsPendingSheet from "./SmsPendingSheet";
 import { ExchangeRateService, RateResult } from "../services/ExchangeRateService";
@@ -107,9 +107,20 @@ interface Props {
     onFocusHandled?: () => void;
     /** «Guía y primeros pasos» en Academia: reabre la tarjeta y vuelve al Inicio. */
     onOpenGuide?: () => void;
+    /** «Mis fuentes de ingreso»: lleva a Presupuesto → Ingresos. */
+    onOpenIncomeSources?: () => void;
+    /** Algo cambió en los movimientos desde un sheet de Ajustes (p. ej. al confirmar un ingreso): la app los relee. */
+    onDataChanged?: () => void;
 }
 
-export default function SettingsScreen({ settings, onSave, onClearAll, focusSection, onFocusHandled, onOpenGuide }: Props) {
+const CYCLE_OPTIONS: { value: PaymentCycle; label: string }[] = [
+    { value: "monthly", label: "Mensual" },
+    { value: "biweekly", label: "Quincenal" },
+    { value: "weekly", label: "Semanal" },
+    { value: "irregular", label: "Irregular" },
+];
+
+export default function SettingsScreen({ settings, onSave, onClearAll, focusSection, onFocusHandled, onOpenGuide, onOpenIncomeSources, onDataChanged }: Props) {
     const dialog = useGlassDialog();
     const kb = useKeyboardHeight();
 
@@ -152,12 +163,15 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const undo = useUndoLastSync(() => { void reloadSmsCounts(); });
     const [pendingData, setPendingData] = useState<{ accounts: Account[]; transactions: Transaction[]; fixedExpenses: FixedExpense[] } | null>(null);
     const [showPending, setShowPending] = useState(false);
+    const loadPendingData = async () => {
+        const [accounts, transactions, fixedExpenses] = await Promise.all([
+            StorageService.getAccounts(), StorageService.getTransactions(), StorageService.getFixedExpenses(),
+        ]);
+        setPendingData({ accounts, transactions, fixedExpenses });
+    };
     const openPending = async () => {
         try {
-            const [accounts, transactions, fixedExpenses] = await Promise.all([
-                StorageService.getAccounts(), StorageService.getTransactions(), StorageService.getFixedExpenses(),
-            ]);
-            setPendingData({ accounts, transactions, fixedExpenses });
+            await loadPendingData();
             setShowPending(true);
         } catch (e) { console.warn("[Settings] pendientes:", e); }
     };
@@ -170,6 +184,12 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const [saved, setSaved] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [showPeriod, setShowPeriod] = useState(false);
+    // Ciclo y día(s) de pago: se guardan con su propio botón (StorageService.updatePaymentSchedule), no con «Guardar Cambios».
+    const [cycle, setCycle] = useState<PaymentCycle>(settings.paymentCycle);
+    const [payDay1, setPayDay1] = useState(String(settings.paymentCycle === "biweekly" ? (settings.paymentDays?.[0] ?? 15) : settings.paymentDay));
+    const [payDay2, setPayDay2] = useState(String(settings.paymentDays?.[1] ?? 30));
+    const [schedBusy, setSchedBusy] = useState(false);
+    const [schedNotice, setSchedNotice] = useState<{ variant: "success" | "error"; text: string } | null>(null);
     // Sube cuando el sheet del período guarda algo: el resumen de «Ingresos y período» se relee.
     const [, setPeriodTick] = useState(0);
     const [showNewCat, setShowNewCat] = useState(false);
@@ -349,6 +369,55 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
             await dialog.alert({ variant: "error", title: "No se pudo sincronizar", message: "Intentá de nuevo." });
         } finally {
             setSyncingFull(false);
+        }
+    };
+
+    // ── Ciclo y día(s) de pago ────────────────────────────────
+    const savedDays = [...(settings.paymentDays ?? [15, 30])].sort((a, b) => a - b);
+    const changeCycle = (v: PaymentCycle) => {
+        setCycle(v);
+        setSchedNotice(null);
+        if (v === "monthly") setPayDay1(String(settings.paymentDay));
+        else if (v === "biweekly") { setPayDay1(String(savedDays[0] ?? 15)); setPayDay2(String(savedDays[1] ?? 30)); }
+    };
+    const schedDirty = cycle !== settings.paymentCycle
+        || (cycle === "monthly" && parseInt(payDay1, 10) !== settings.paymentDay)
+        || (cycle === "biweekly" && (parseInt(payDay1, 10) !== savedDays[0] || parseInt(payDay2, 10) !== savedDays[1]));
+
+    const saveSchedule = async () => {
+        if (schedBusy) return;
+        const inRange = (n: number) => Number.isFinite(n) && n >= 1 && n <= 31;
+        const a = parseInt(payDay1, 10);
+        const b = parseInt(payDay2, 10);
+        if (cycle === "monthly" && !inRange(a)) {
+            setSchedNotice({ variant: "error", text: "Escribí el día del mes en que te pagan (de 1 a 31)." });
+            return;
+        }
+        if (cycle === "biweekly") {
+            if (!inRange(a) || !inRange(b)) {
+                setSchedNotice({ variant: "error", text: "Escribí los dos días del mes en que te pagan (de 1 a 31)." });
+                return;
+            }
+            if (a === b) {
+                setSchedNotice({ variant: "error", text: "Los dos días de pago deben ser distintos." });
+                return;
+            }
+        }
+        setSchedBusy(true);
+        setSchedNotice(null);
+        try {
+            const upd = await StorageService.updatePaymentSchedule({
+                paymentCycle: cycle,
+                ...(cycle === "monthly" ? { paymentDay: a } : {}),
+                ...(cycle === "biweekly" ? { paymentDays: [a, b] } : {}),
+            });
+            onSave(upd);
+            setSchedNotice({ variant: "success", text: `Listo. ${payDayText(upd)}. Tu período se recalculó con el nuevo día.` });
+        } catch (e) {
+            console.warn("[Settings] ciclo de pago:", e);
+            setSchedNotice({ variant: "error", text: "No se pudo guardar el día de pago. Probá de nuevo." });
+        } finally {
+            setSchedBusy(false);
         }
     };
 
@@ -662,6 +731,83 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                         style={s.ghostBtn}
                         onPress={() => setShowPeriod(true)}
                     />
+                    {!!onOpenIncomeSources && (
+                        <GlassButton
+                            kind="secondary"
+                            icon="cash-outline"
+                            label="Mis fuentes de ingreso"
+                            style={s.ghostBtn}
+                            onPress={onOpenIncomeSources}
+                        />
+                    )}
+
+                    <Text style={[s.subLabel, { marginTop: 20 }]}>CICLO DE PAGO</Text>
+                    <GlassSegmented options={CYCLE_OPTIONS} value={cycle} onChange={changeCycle} height={44} />
+                    {cycle === "monthly" && (
+                        <View style={[s.inputRow, { marginTop: 10 }]}>
+                            <Ionicons name="calendar-outline" size={18} color={C.primary} style={{ marginRight: 10 }} />
+                            <TextInput
+                                style={s.input}
+                                value={payDay1}
+                                onChangeText={v => { setPayDay1(v); setSchedNotice(null); }}
+                                keyboardType="number-pad"
+                                maxLength={2}
+                                placeholder="Día del mes (1-31)"
+                                placeholderTextColor={C.textMuted}
+                                returnKeyType="done"
+                                {...focusProps("period")}
+                            />
+                        </View>
+                    )}
+                    {cycle === "biweekly" && (
+                        <View style={[s.rateRow, { marginTop: 10 }]}>
+                            <View style={[s.inputRow, { flex: 1 }]}>
+                                <TextInput
+                                    style={s.input}
+                                    value={payDay1}
+                                    onChangeText={v => { setPayDay1(v); setSchedNotice(null); }}
+                                    keyboardType="number-pad"
+                                    maxLength={2}
+                                    placeholder="1.er día"
+                                    placeholderTextColor={C.textMuted}
+                                    {...focusProps("period")}
+                                />
+                            </View>
+                            <View style={[s.inputRow, { flex: 1 }]}>
+                                <TextInput
+                                    style={s.input}
+                                    value={payDay2}
+                                    onChangeText={v => { setPayDay2(v); setSchedNotice(null); }}
+                                    keyboardType="number-pad"
+                                    maxLength={2}
+                                    placeholder="2.º día"
+                                    placeholderTextColor={C.textMuted}
+                                    {...focusProps("period")}
+                                />
+                            </View>
+                        </View>
+                    )}
+                    {cycle === "weekly" && (
+                        <Text style={s.hint}>Con ciclo semanal el período siempre empieza el domingo: no hay un día que elegir.</Text>
+                    )}
+                    {cycle === "irregular" && (
+                        <Text style={s.hint}>Con ingresos irregulares el período es el mes calendario: no hay un día que elegir.</Text>
+                    )}
+                    <InlineNotice
+                        variant="info"
+                        text="Cambiar el día de pago mueve tu período. Lo que fijaste a mano en un período anterior se conserva."
+                        style={{ marginTop: 12 }}
+                    />
+                    {!!schedNotice && <InlineNotice variant={schedNotice.variant} text={schedNotice.text} style={{ marginTop: 10 }} />}
+                    <GlassButton
+                        kind="primary"
+                        icon="save-outline"
+                        label="Guardar ciclo y día de pago"
+                        loading={schedBusy}
+                        disabled={!schedDirty}
+                        style={s.ghostBtn}
+                        onPress={() => { void saveSchedule(); }}
+                    />
                 </Section>
 
                 {/* MONEDA PRINCIPAL */}
@@ -896,7 +1042,12 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     transactions={pendingData.transactions}
                     fixedExpenses={pendingData.fixedExpenses}
                     onClose={() => setShowPending(false)}
-                    onChanged={() => { void reloadSmsCounts(); void undo.reload(); }}
+                    onChanged={() => {
+                        void reloadSmsCounts();
+                        void undo.reload();
+                        void loadPendingData().catch(e => console.warn("[Settings] pendientes:", e));
+                        onDataChanged?.();
+                    }}
                 />
             )}
         </KeyboardAvoidingView>

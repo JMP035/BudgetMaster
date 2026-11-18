@@ -48,8 +48,8 @@ export function requirementNoticeText(req: TutorialRequirement): string {
 /** Datos mínimos (estructurales) para calcular los hechos sin importar storage. */
 export interface RequirementSources {
   accounts: Array<{ type: string; isActive: boolean }>;
-  monthlyIncome: number;
-  hasIncomeTransaction: boolean;
+  /** Fuentes de ingreso creadas (Presupuesto → Ingresos); basta una activa para cumplir el requisito. */
+  incomeSources: Array<{ isActive: boolean }>;
   smsOn: boolean;
 }
 
@@ -58,7 +58,7 @@ export function buildRequirementFacts(src: RequirementSources): RequirementFacts
   return {
     hasBankAccount: active.some(a => a.type === 'bank' || a.type === 'savings'),
     hasCreditCard: active.some(a => a.type === 'credit'),
-    hasIncomeSource: (Number.isFinite(src.monthlyIncome) && src.monthlyIncome > 0) || src.hasIncomeTransaction,
+    hasIncomeSource: src.incomeSources.some(s => s.isActive),
     smsOn: src.smsOn,
   };
 }
