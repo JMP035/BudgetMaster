@@ -183,7 +183,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'per_3', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'cash-outline', padding: 8,
                 requires: 'income_source',
                 title: 'El sueldo que llega antes',
-                description: 'Con «Adelantar el período cuando llega el sueldo» activado, si tu sueldo cae antes o después de lo esperado (dentro de la tolerancia), el período empieza ese día. Arriba ves el rango del período y, al tocarlo, de dónde sale su inicio: «Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago».',
+                description: 'Con «Adelantar el período cuando llega el sueldo» activado, cuando la app reconoce tu depósito de sueldo por SMS y cae antes o después de lo esperado (dentro de la tolerancia), el período empieza ese día. Arriba ves el rango del período y, al tocarlo, de dónde sale su inicio: «Empezó con tu sueldo del vie 25», «Adelantado por fin de semana o feriado», «Fijado por vos» o «Es tu día de pago».',
                 emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
             },
             {

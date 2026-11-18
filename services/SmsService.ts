@@ -18,11 +18,25 @@ import { fixedCycleConfig } from './FixedCycle';
 import { merchantKey, merchantOfTransaction } from './MerchantRules';
 import { findManualSmsDuplicates } from './DuplicateDetector';
 import { findTransferPairs } from './TransferPairs';
+import { matchIncome } from './IncomeSources';
+import type { IncomeProposal } from './IncomeSources';
+import { sanitizePayRules } from './PayCalendar';
+import { extractIncomeOrigin } from './IncomeOrigin';
 
 // El motor de parseo vive en BankSmsParser (puro, probado con `npm run test:sms`).
 // Aquí solo queda lo que toca APIs de Android: permisos y lectura de la bandeja.
 export { buildRecordFromClassification };
 export type { ParsedSmsResult, SmsImportStats, SmsKind, SmsReviewItem };
+
+/** SMS de ingreso recientes que el usuario puede elegir como ejemplo para aprender una fuente de ingreso. */
+export interface IncomeSmsCandidate {
+  body: string;
+  address?: string;
+  receivedAt: number;
+  bank: string;
+  amount: number;
+  originLabel: string | null;
+}
 
 // ─────────────────────────────────────────────────────────────
 // RESULTADO DEL SYNC
@@ -60,6 +74,8 @@ export interface SyncResult {
   unassignedCount: number;
   /** Pares "transferencia enviada + recibida" probables que el usuario debe confirmar (los `auto` ya se vincularon). */
   transferPairs: TransferPair[];
+  /** Ingresos nuevos que podrían ser de una fuente de ingreso pero no alcanzan para vincularse solos. */
+  incomeProposals: IncomeProposal[];
 }
 
 export type SmsSyncMode = 'auto' | 'manual' | 'full';
@@ -79,6 +95,7 @@ function emptySyncResult(mode: SmsSyncMode = 'manual'): SyncResult {
     transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
     stats: emptySmsStats(), reviewItems: [], diagnostics: [], inbox: [],
     batchId: null, mode, fixedAutoMarked: [], fixedProposals: [], duplicates: [], unassignedCount: 0, transferPairs: [],
+    incomeProposals: [],
   };
 }
 
@@ -160,6 +177,45 @@ export const SmsService = {
   parseSimpleSms(body: string, smsDate?: number, accounts: Account[] = []): ParsedSmsResult | null {
     const c = classifyBankSms({ body, receivedAt: smsDate });
     return buildRecordFromClassification(c, body, accounts);
+  },
+
+  /**
+   * Los SMS más recientes que el motor toma como ingreso (depósito, transferencia recibida, planilla), para
+   * «Elegir de mis SMS» al crear una fuente de ingreso. Solo Android y con el permiso ya concedido (nunca lo
+   * pide): fuera de eso devuelve [].
+   */
+  async listRecentIncomeSms(limit: number = 30): Promise<IncomeSmsCandidate[]> {
+    if (Platform.OS !== 'android') return [];
+    if (!this.isSmsModuleAvailable() || !(await this.hasReadSmsPermission())) return [];
+    try {
+      const sixMonthsAgo = new Date(new Date().getFullYear(), new Date().getMonth() - 6, 1).getTime();
+      const raw = await listSms({ box: 'inbox', minDate: sixMonthsAgo, indexFrom: 0, maxCount: 1500 });
+      let list: Array<{ body?: string; date?: number | string; address?: string }> = [];
+      try { list = JSON.parse(raw); } catch { return []; }
+      const out: IncomeSmsCandidate[] = [];
+      const seen = new Set<string>();
+      const sorted = (Array.isArray(list) ? list : [])
+        .filter(m => typeof m?.body === 'string')
+        .sort((a, b) => Number(b.date) - Number(a.date));
+      for (const m of sorted) {
+        const body = m.body as string;
+        const receivedAt = Number(m.date);
+        const c = classifyBankSms({ body, address: m.address, receivedAt: isNaN(receivedAt) ? undefined : receivedAt });
+        if (!c.accepted || c.txType !== 'income' || c.amount === null) continue;
+        if (c.kind !== 'transfer_in' && c.kind !== 'deposit' && c.kind !== 'payroll') continue;
+        if (seen.has(c.fingerprint)) continue;
+        seen.add(c.fingerprint);
+        out.push({
+          body, address: m.address, receivedAt: isNaN(receivedAt) ? Date.now() : receivedAt,
+          bank: c.bank, amount: c.amount, originLabel: extractIncomeOrigin(body),
+        });
+        if (out.length >= limit) break;
+      }
+      return out;
+    } catch (e) {
+      console.warn('listRecentIncomeSms error:', e instanceof Error ? e.message : 'desconocido');
+      return [];
+    }
   },
 
   /** Explica en español por qué un SMS se aceptó o no (para mensajes de UI). */
@@ -356,6 +412,42 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       console.warn('SMS sync (transferencias) error:', e instanceof Error ? e.message : 'desconocido');
     }
 
+    // (d3) Ingresos nuevos del lote contra las fuentes de ingreso: los `auto` se vinculan solos (categoría, regla
+    // y, si la fuente es base y ancla el período, ancla automática del inicio del período) y quedan en el lote
+    // para Deshacer; el resto se propone. Va tras las transferencias para no tocar los pares entre cuentas propias.
+    const incomeLinks: NonNullable<SmsBatchRecord['incomeLinks']> = [];
+    const incomeProposals: IncomeProposal[] = [];
+    try {
+      const sources = (await StorageService.getIncomeSources()).filter(s => s.isActive);
+      if (sources.length > 0) {
+        const txsNow = mutated ? await StorageService.getTransactions() : allTxs;
+        const payRules = sanitizePayRules(settings.payRules);
+        // Un ciclo solo se cubre una vez: si ya hay un depósito vinculado, el siguiente solo se propone.
+        const taken = new Set<string>();
+        for (const t of txsNow) if (t.incomeSourceId && t.incomeCycleKey) taken.add(`${t.incomeSourceId}|${t.incomeCycleKey}`);
+        const fresh = txsNow
+          .filter(t => newIds.has(t.id))
+          .sort((a, b) => Date.parse(a.date) - Date.parse(b.date));
+        for (const t of fresh) {
+          const m = matchIncome(t, sources, payRules);
+          if (!m) continue;
+          const cycle = `${m.sourceId}|${m.occKey}`;
+          if (m.auto && !taken.has(cycle)) {
+            const r = await StorageService.linkIncome(t.id, m.sourceId, m.occKey);
+            if (r) {
+              taken.add(cycle);
+              incomeLinks.push({ txId: t.id, prevCategory: r.prevCategory, ...(r.anchorKey ? { anchorKey: r.anchorKey } : {}) });
+              mutated = true;
+              continue;
+            }
+          }
+          incomeProposals.push({ ...m, auto: false, txId: t.id });
+        }
+      }
+    } catch (e) {
+      console.warn('SMS sync (fuentes de ingreso) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
     if (mutated) allTxs = await StorageService.getTransactions();
 
     // (f) Lote para "Deshacer".
@@ -370,6 +462,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
         installmentIds: newInsts.map(i => i.id),
         fixedMarks,
         ...(fixedMerges.length > 0 ? { fixedMerges } : {}),
+        ...(incomeLinks.length > 0 ? { incomeLinks } : {}),
       });
     }
 
@@ -403,7 +496,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       `rechazados=${s.declined}, info=${s.info}, avisos=${s.notices}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
       `no_reconocidos=${s.unparsed}, buzon=${inbox.length}, revision=${reviewItems.length}, ` +
       `fijos_auto=${fixedAutoMarked.length}, fijos_prop=${fixedProposals.length}, dup=${duplicates.length}, ` +
-      `transf=${transferPairs.length}, sin_cuenta=${unassignedCount}`
+      `transf=${transferPairs.length}, ingresos_auto=${incomeLinks.length}, ingresos_prop=${incomeProposals.length}, sin_cuenta=${unassignedCount}`
     );
 
     return {
@@ -424,6 +517,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       duplicates,
       unassignedCount,
       transferPairs,
+      incomeProposals,
     };
   } catch (e) {
     console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
@@ -439,6 +533,7 @@ export function hasSomethingToShow(r: SyncResult): boolean {
     || r.fixedProposals.length > 0
     || r.duplicates.length > 0
     || r.transferPairs.length > 0
+    || (r.incomeProposals?.length ?? 0) > 0
     || r.unassignedCount > 0
     || r.inbox.length > 0
     || r.reviewItems.length > 0;

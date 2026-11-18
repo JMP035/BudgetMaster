@@ -6,7 +6,8 @@ import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
 import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPairKey } from './TransferPairs';
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule } from './IncomeRules';
-import { planSmsUndo } from './SmsUndoPlan';
+import { planIncomeLinksUndo, planSmsUndo } from './SmsUndoPlan';
+import { planIncomeLink, sanitizeIncomeSources } from './IncomeSources';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
   periodFor, planFixedPeriodReset, setPeriodStartResolver, storedToLocalDate,
@@ -14,8 +15,10 @@ import {
 import type { FixedCycleConfig } from './FixedCycle';
 import { DEFAULT_PAY_RULES, sanitizePayRules } from './PayCalendar';
 import type { PayRules } from './PayCalendar';
-import { buildStartResolver, clearManualAnchor, sanitizeAnchors, setManualAnchor } from './PeriodAnchors';
-import type { PeriodAnchor } from './PeriodAnchors';
+import {
+  buildStartResolver, clearManualAnchor, removeAnchorsForTx, sanitizeAnchors, sanitizePaymentSchedule, setManualAnchor,
+} from './PeriodAnchors';
+import type { PeriodAnchor, PaymentSchedule } from './PeriodAnchors';
 import { computeFinancialPeriod, daysUntilNextPay } from './FinancialPeriod';
 import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
@@ -80,6 +83,10 @@ export interface Transaction {
   transferPairId?: string;
   /** Tipo y categoría antes de marcar el par como neutro (permite revertir). */
   transferPrev?: { type: 'income' | 'expense' | 'transfer'; category: string };
+  /** Fuente de ingreso (IncomeSource.id) a la que pertenece este depósito. */
+  incomeSourceId?: string;
+  /** Ciclo de la fuente que cubre este depósito: fecha nominal del pago ('YYYY-MM-DD'). */
+  incomeCycleKey?: string;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -147,6 +154,45 @@ export interface MerchantRule { key: string; label: string; category: string; cr
 export interface IncomeRule {
   key: string; label: string; category: string; sourceId?: string;
   createdAt: string; updatedAt: string; hits: number;
+}
+
+/** Patrón aprendido de un SMS de ejemplo: cómo reconocer el depósito de una fuente (ver services/IncomeSources.ts). */
+export interface IncomePattern {
+  bank: string;
+  /** Últimos 4 dígitos de la cuenta enmascarada del SMS. */
+  acctKey?: string;
+  /** Clave normalizada de quién envía (igual que IncomeOrigin.originKey). */
+  originKey?: string;
+  originLabel?: string;
+  amount: number;
+  /** Tolerancia del monto en % (los centavos cambian de un mes a otro). */
+  tolerancePct: number;
+  learnedAt: string;
+  /** SMS de ejemplo ya enmascarado (sin dígitos de cuenta). */
+  sampleMasked: string;
+}
+
+/** De dónde y cuándo me pagan: sueldo, pago quincenal, ventas semanales, aguinaldo, etc. */
+export interface IncomeSource {
+  id: string;
+  name: string;
+  category: string;
+  amount: number;
+  currency: Currency;
+  frequency: 'monthly' | 'biweekly' | 'weekly' | 'irregular';
+  /** Día(s) del mes (mensual / quincenal) o día de la semana 0-6 (semanal). */
+  days: number[];
+  weekendRule?: PayRules['weekendRule'];
+  accountId?: string;
+  /** 'base' = ingreso regular que cuenta para el ingreso mensual; 'extra' = opcional (aguinaldo, bono 14). */
+  role: 'base' | 'extra';
+  /** Extras: meses (1-12) en que llegan, p. ej. 7 = bono 14, 12 = aguinaldo. */
+  months?: number[];
+  /** El día real en que cae esta fuente mueve el inicio del período. */
+  anchorsPeriod: boolean;
+  pattern?: IncomePattern;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface SmsInboxItem {
@@ -258,6 +304,8 @@ export interface SmsBatchRecord {
   fixedMarks: Array<{ expenseId: string; prev: Pick<FixedExpense, 'isPaid' | 'paidDate' | 'paidTxId' | 'paidBy' | 'lastTxId' | 'paidCycleKey'> }>;
   /** Uniones gasto fijo <-> SMS hechas en este lote (para deshacer: se restaura el manual). */
   fixedMerges?: Array<{ smsId: string; expenseId: string; manual: Transaction }>;
+  /** Ingresos que el lote vinculó solo a una fuente (para deshacer: categoría previa y ancla del período). */
+  incomeLinks?: Array<{ txId: string; prevCategory: string; anchorKey?: string }>;
 }
 
 export interface SmsLinkSeen { key: string; count: number; lastAt: string; }
@@ -313,6 +361,7 @@ const K = {
   SMS_REVIEW_KEPT: '@bm_sms_review_kept',
   MERCHANT_RULES: '@bm_merchant_rules',
   INCOME_RULES: '@bm_income_rules',
+  INCOME_SOURCES: '@bm_income_sources',
   PERIOD_ANCHORS: '@bm_period_anchors',
   SMS_INBOX: '@bm_sms_inbox',
   SMS_INBOX_IGNORED: '@bm_sms_inbox_ignored',
@@ -637,6 +686,14 @@ export const StorageService = {
     // Mitad de un par de transferencia: la otra queda neutra pero sin transferPairId (sin huérfanos).
     if (target?.transferPairId) updated = clearPairIdOfPartner(updated, target.transferPairId);
     await this.saveTransactions(updated);
+    // Un sueldo vinculado a una fuente pudo haber movido el inicio del período: esa ancla se va con él.
+    if (target?.incomeSourceId) {
+      try {
+        const anchors = await this.getPeriodAnchors();
+        const left = removeAnchorsForTx(anchors, id);
+        if (left.length !== anchors.length) await this.savePeriodAnchors(left);
+      } catch { }
+    }
     // Si el movimiento pagaba un gasto fijo, ese gasto vuelve a "no pagado". Solo se toca
     // si el vínculo vigente apunta a este movimiento (uno de un mes anterior no desmarca el actual).
     if (target?.fixedExpenseId) {
@@ -864,6 +921,97 @@ export const StorageService = {
     return { transactions: next, affected };
   },
 
+  // ── Fuentes de ingreso ────────────────────────────────────
+  async getIncomeSources(): Promise<IncomeSource[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.INCOME_SOURCES);
+      return sanitizeIncomeSources(data ? JSON.parse(data) : []);
+    } catch { return []; }
+  },
+
+  async saveIncomeSources(list: IncomeSource[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.INCOME_SOURCES, JSON.stringify(list)); } catch { }
+  },
+
+  async addIncomeSource(source: IncomeSource): Promise<IncomeSource[]> {
+    const next = [...(await this.getIncomeSources()).filter(s => s.id !== source.id), source];
+    await this.saveIncomeSources(next);
+    return next;
+  },
+
+  async updateIncomeSource(source: IncomeSource): Promise<IncomeSource[]> {
+    const next = (await this.getIncomeSources()).map(s => (s.id === source.id ? source : s));
+    await this.saveIncomeSources(next);
+    return next;
+  },
+
+  /** Borra la fuente. NO borra movimientos: solo les quita incomeSourceId / incomeCycleKey (y el vínculo de las reglas). */
+  async deleteIncomeSource(id: string): Promise<IncomeSource[]> {
+    const next = (await this.getIncomeSources()).filter(s => s.id !== id);
+    await this.saveIncomeSources(next);
+    const txs = await this.getTransactions();
+    if (txs.some(t => t.incomeSourceId === id)) {
+      await this.saveTransactions(txs.map(t => {
+        if (t.incomeSourceId !== id) return t;
+        const { incomeSourceId: _s, incomeCycleKey: _c, ...rest } = t;
+        return rest;
+      }));
+    }
+    const rules = await this.getIncomeRules();
+    if (rules.some(r => r.sourceId === id)) {
+      await this.saveIncomeRules(rules.map(r => {
+        if (r.sourceId !== id) return r;
+        const { sourceId: _x, ...rest } = r;
+        return rest;
+      }));
+    }
+    return next;
+  },
+
+  /**
+   * Vincula un ingreso a su fuente en el ciclo `occKey` (fecha nominal del pago): le pone la categoría de la
+   * fuente, aprende la regla del origen y, si la fuente es base y ancla el período, mueve el inicio del período
+   * al día real del depósito (ancla automática; ver planIncomeLink). Devuelve null si no existe el movimiento
+   * o la fuente. `prevCategory` y `anchorKey` sirven para deshacer el lote.
+   */
+  async linkIncome(
+    txId: string, sourceId: string, occKey: string,
+  ): Promise<{ tx: Transaction; prevCategory: string; anchorKey?: string } | null> {
+    const [txs, sources, incomeRules, anchors, settings] = await Promise.all([
+      this.getTransactions(), this.getIncomeSources(), this.getIncomeRules(), this.getPeriodAnchors(), this.getSettings(),
+    ]);
+    const tx = txs.find(t => t.id === txId);
+    const source = sources.find(s => s.id === sourceId);
+    if (!tx || !source || tx.type !== 'income') return null;
+    const plan = planIncomeLink({
+      tx, source, occKey, settings, rules: sanitizePayRules(settings.payRules),
+      incomeRules, anchors, nowIso: new Date().toISOString(),
+    });
+    await this.saveTransactions(txs.map(t => (t.id === txId ? plan.tx : t)));
+    if (plan.incomeRules !== incomeRules) await this.saveIncomeRules(plan.incomeRules);
+    await this.savePeriodAnchors(plan.anchors);   // también reconstruye el resolvedor del período
+    return { tx: plan.tx, prevCategory: plan.prevCategory, ...(plan.anchorKey ? { anchorKey: plan.anchorKey } : {}) };
+  },
+
+  /** Quita el vínculo del ingreso con su fuente y las anclas automáticas que nacieron de él. La categoría se queda. */
+  async unlinkIncome(txId: string): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const target = txs.find(t => t.id === txId);
+    const next = target && (target.incomeSourceId || target.incomeCycleKey)
+      ? txs.map(t => {
+        if (t.id !== txId) return t;
+        const { incomeSourceId: _s, incomeCycleKey: _c, ...rest } = t;
+        return rest;
+      })
+      : txs;
+    if (next !== txs) await this.saveTransactions(next);
+    const anchors = await this.getPeriodAnchors();
+    const left = removeAnchorsForTx(anchors, txId);
+    if (left.length !== anchors.length) await this.savePeriodAnchors(left);
+    else refreshPeriodResolver(await this.getSettings());
+    return next;
+  },
+
   // ── Buzón de SMS sin clasificar ───────────────────────────
   async getSmsInbox(): Promise<SmsInboxItem[]> {
     try {
@@ -1011,14 +1159,19 @@ export const StorageService = {
     const safeExpenses = Array.isArray(expenses) ? expenses : [];
     const plan = planSmsUndo(batch, txs, insts, safeExpenses, !!opts.includeEdited);
 
-    if (plan.removeTxs.length > 0) {
-      // saveTransactions es el punto por donde se revertirán los saldos cuando exista el saldo automático.
-      // Los registros manuales que el lote había unido a un SMS vuelven (no reciben lápida: no son SMS).
-      await this.saveTransactions([
-        ...txs.filter(t => !plan.removedTxIds.has(t.id)),
-        ...plan.restoreManuals,
-      ]);
+    // saveTransactions es el punto por donde se revertirán los saldos cuando exista el saldo automático.
+    // Los registros manuales que el lote había unido a un SMS vuelven (no reciben lápida: no son SMS).
+    const remaining = plan.removeTxs.length > 0
+      ? [...txs.filter(t => !plan.removedTxIds.has(t.id)), ...plan.restoreManuals]
+      : txs;
+    // Ingresos que el lote vinculó solo a una fuente: categoría previa en los que se quedan y fuera sus anclas.
+    const incomeUndo = (batch.incomeLinks && batch.incomeLinks.length > 0)
+      ? planIncomeLinksUndo(batch.incomeLinks, remaining, await this.getPeriodAnchors())
+      : null;
+    if (plan.removeTxs.length > 0 || incomeUndo?.txsChanged) {
+      await this.saveTransactions(incomeUndo ? incomeUndo.txs : remaining);
     }
+    if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
     if (plan.removeInsts.length > 0) {
       const instIds = new Set(plan.removeInsts.map(i => i.id));
       await this.saveCreditInstallments(insts.filter(i => !instIds.has(i.id)));
@@ -1518,6 +1671,18 @@ export const StorageService = {
     try { await AsyncStorage.setItem(K.SETTINGS, JSON.stringify(s)); } catch { }
     refreshPeriodResolver(s);
     emitSettingsChanged(s);
+  },
+
+  /**
+   * Cambia el ciclo y/o el día de pago (hasta ahora solo se definían en el onboarding). Valida con
+   * sanitizePaymentSchedule, guarda y reconstruye el resolvedor del período (saveSettings). Las anclas no se
+   * borran: las de claves que ya no son día de pago efectivo las ignora el resolvedor.
+   */
+  async updatePaymentSchedule(patch: Partial<PaymentSchedule>): Promise<UserSettings> {
+    const s = await this.getSettings();
+    const next: UserSettings = { ...s, ...sanitizePaymentSchedule(s, patch) };
+    await this.saveSettings(next);
+    return next;
   },
 
   /** Agrega una categoría propia y devuelve los ajustes ya guardados. */

@@ -23,6 +23,7 @@
     "test:assistant-gemini": "sucrase-node scripts/assistant-gemini.test.ts",
     "test:income-rules": "sucrase-node scripts/income-rules.test.ts",
     "test:period-anchors": "sucrase-node scripts/period-anchors.test.ts",
+    "test:income-sources": "sucrase-node scripts/income-sources.test.ts",
     "test:tutorial-requirements": "sucrase-node scripts/tutorial-requirements.test.ts"
   },
   "dependencies": {

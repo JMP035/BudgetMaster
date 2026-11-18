@@ -1,6 +1,38 @@
 // Plan para deshacer un lote de sincronización SMS (módulo PURO, sin escribir nada).
 // Sin react-native ni AsyncStorage: de ./storage solo `import type`.
 import type { CreditInstallment, FixedExpense, SmsBatchRecord, Transaction } from './storage';
+import { removeAnchorsForTx } from './PeriodAnchors';
+import type { PeriodAnchor } from './PeriodAnchors';
+
+/**
+ * Revierte los vínculos de ingreso del lote sobre los movimientos que SE QUEDAN (los editados que no se
+ * eliminan): restaura la categoría previa y quita la fuente y el ciclo. Las anclas automáticas nacidas de
+ * esos movimientos (y de los que se eliminan) se quitan siempre. Puro: no escribe nada.
+ */
+export function planIncomeLinksUndo(
+  links: SmsBatchRecord['incomeLinks'] | undefined,
+  remainingTxs: Transaction[],
+  anchors: PeriodAnchor[],
+): { txs: Transaction[]; anchors: PeriodAnchor[]; txsChanged: boolean; anchorsChanged: boolean; reverted: number } {
+  if (!links || links.length === 0) {
+    return { txs: remainingTxs, anchors, txsChanged: false, anchorsChanged: false, reverted: 0 };
+  }
+  const byTx = new Map(links.map(l => [l.txId, l] as const));
+  let txsChanged = false;
+  let reverted = 0;
+  const txs = remainingTxs.map(t => {
+    const l = byTx.get(t.id);
+    if (!l || !t.incomeSourceId) return t;
+    txsChanged = true;
+    reverted++;
+    const { incomeSourceId: _s, incomeCycleKey: _c, ...rest } = t;
+    // Si el usuario cambió la categoría a mano después, su elección se respeta.
+    return t.categoryEditedAt ? rest : { ...rest, category: l.prevCategory };
+  });
+  let nextAnchors = anchors;
+  for (const l of links) nextAnchors = removeAnchorsForTx(nextAnchors, l.txId);
+  return { txs, anchors: nextAnchors, txsChanged, anchorsChanged: nextAnchors.length !== anchors.length, reverted };
+}
 
 /** Plan (sin escribir nada) para deshacer un lote de sincronización. Criterio de "editado": D6. */
 export function planSmsUndo(

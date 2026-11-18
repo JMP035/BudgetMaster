@@ -18,7 +18,7 @@ export interface PeriodAnchor {
   source: 'auto' | 'manual';
   /** Movimiento de sueldo que originó el ancla automática. */
   txId?: string;
-  /** Origen del depósito (clave de IncomeRules) que originó el ancla automática. */
+  /** Fuente de ingreso (IncomeSource.id) que originó el ancla automática. */
   sourceId?: string;
   /** ISO de cuándo se creó o actualizó. */
   at: string;
@@ -114,6 +114,33 @@ export function setManualAnchor(list: PeriodAnchor[], key: string, start: string
 /** Quita el ancla manual de `key` (vuelve a regir la automática o la esperada). */
 export function clearManualAnchor(list: PeriodAnchor[], key: string): PeriodAnchor[] {
   return list.filter(a => !(a.key === key && a.source === 'manual'));
+}
+
+/** Ciclo y día(s) de pago editables desde Ajustes (los mismos campos que define el onboarding). */
+export type PaymentSchedule = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'>;
+
+/**
+ * Cambio de ciclo o día de pago ya validado: mensual con un día 1..31, quincenal con dos días distintos
+ * 1..31 (orden ascendente) y semanal / irregular conservan el día guardado. Lo inválido se descarta y se
+ * deja lo que había. Las anclas NO se tocan: las de claves que dejan de ser día de pago efectivo las
+ * ignora el resolvedor (buildStartResolver), y si el usuario vuelve a ese día reviven.
+ */
+export function sanitizePaymentSchedule(current: PaymentSchedule, patch: Partial<PaymentSchedule>): PaymentSchedule {
+  const cycle = patch.paymentCycle === 'monthly' || patch.paymentCycle === 'biweekly'
+    || patch.paymentCycle === 'weekly' || patch.paymentCycle === 'irregular'
+    ? patch.paymentCycle : current.paymentCycle;
+  const day = (n: unknown): number | null => {
+    const v = Math.round(Number(n));
+    return Number.isFinite(v) && v >= 1 && v <= 31 ? v : null;
+  };
+  const patchDay = day(patch.paymentDay);
+  const paymentDay = patchDay ?? current.paymentDay;
+  let paymentDays = Array.isArray(current.paymentDays) ? current.paymentDays : [15, 30];
+  if (Array.isArray(patch.paymentDays)) {
+    const ds = Array.from(new Set(patch.paymentDays.map(day).filter((n): n is number => n !== null))).sort((a, b) => a - b);
+    if (ds.length === 2) paymentDays = ds;
+  }
+  return { paymentCycle: cycle, paymentDay, paymentDays };
 }
 
 /** Lista válida a partir de lo guardado (descarta entradas mal formadas). */
