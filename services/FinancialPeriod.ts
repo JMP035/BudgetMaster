@@ -163,7 +163,10 @@ export function computeFinancialPeriod(
   };
 }
 
-/** Días hasta el próximo pago (inicio del período siguiente cuando el ciclo es mensual o quincenal). */
+/**
+ * Días hasta el próximo pago. Con ciclo irregular no hay fecha de cobro: devuelve 0 (no significa «hoy cobras»;
+ * para mostrarlo usa `hasPayDate` y, en su lugar, `daysLeftInPeriod`).
+ */
 export function daysUntilNextPay(
   settings: CycleSettings,
   now: Date,
@@ -175,4 +178,23 @@ export function daysUntilNextPay(
     return dayNumOf(fp.nextStart) - dayNumOf(now);
   }
   return 0;
+}
+
+/** true si el ciclo tiene una fecha de cobro que contar (mensual, quincenal o semanal); el irregular no la tiene. */
+export function hasPayDate(settings: Pick<CycleSettings, 'paymentCycle'>): boolean {
+  return settings.paymentCycle !== 'irregular';
+}
+
+/**
+ * Días que le quedan al período actual. Con ciclo mensual, quincenal o semanal es lo mismo que los días al próximo pago;
+ * con ciclo irregular (mes calendario) son los días hasta el primero del mes siguiente. Nunca es menor que 1.
+ */
+export function daysLeftInPeriod(
+  settings: CycleSettings,
+  now: Date,
+  resolve: PeriodStartResolver | null,
+): number {
+  if (hasPayDate(settings)) return Math.max(1, daysUntilNextPay(settings, now, resolve));
+  const fp = computeFinancialPeriod(settings, now, resolve);
+  return Math.max(1, dayNumOf(fp.nextStart) - dayNumOf(now));
 }

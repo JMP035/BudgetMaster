@@ -95,8 +95,10 @@ export interface PeriodSnapshot {
   remaining: number;
   daysPassed: number;
   daysTotal: number;
-  /** Días hasta el próximo pago (lo da el llamador: depende del ciclo y de las anclas). */
+  /** Días que le quedan al período (lo da el llamador: depende del ciclo y de las anclas; con ciclo irregular, hasta fin de mes). */
   daysLeft: number;
+  /** Días hasta el próximo pago; null con ciclo irregular, que no tiene fecha de cobro (no es 0: no hay «hoy cobras»). */
+  daysToPay: number | null;
   unpaidFixedCount: number;
   unpaidFixedTotal: number;
   catRows: CatRow[];
@@ -140,6 +142,7 @@ export function periodSnapshot(input: {
     period, label: `${fmtDM(period.start)} – ${fmtDM(period.end)}`,
     spentQ, incomeQ, budgetLimit, hasBudget, pct, remaining: budgetLimit - spentQ,
     daysPassed, daysTotal, daysLeft: input.daysLeft,
+    daysToPay: settings.paymentCycle === 'irregular' ? null : input.daysLeft,
     unpaidFixedCount: unpaid.length, unpaidFixedTotal: unpaid.reduce((s, f) => s + f.amount, 0),
     catRows, catAlerts: catRows.filter(r => r.pct >= 80).length,
   };
@@ -169,7 +172,7 @@ Período de pago actual: ${snap.label} (según lo registrado)
 Gastado en este período en Q: ${snap.spentQ.toFixed(2)}
 Ingresos registrados en este período: Q${snap.incomeQ.toFixed(2)}
 Días transcurridos: ${snap.daysPassed} de ${snap.daysTotal}
-Días hasta próximo pago: ${snap.daysLeft}
+${snap.daysToPay === null ? `Cobro: sin fecha fija (ingresos irregulares). Días que le quedan al período (mes calendario): ${snap.daysLeft}` : `Días hasta próximo pago: ${snap.daysToPay}`}
 Tasa diaria de gasto: Q${dailyRate.toFixed(2)}/día
 Proyección fin de período: Q${projected.toFixed(2)}
 Gastos por categoría: ${catSummary || 'Sin presupuesto por categoría definido'}
@@ -193,7 +196,9 @@ export function buildWeeklySummaryBodyText(snap: PeriodSnapshot, now: Date): str
         : `Superaste el presupuesto por ${fmtQ(Math.abs(snap.remaining))}.`,
     );
   }
-  parts.push(`Próximo ingreso en ${snap.daysLeft} día(s).`);
+  parts.push(snap.daysToPay === null
+    ? `Al período le quedan ${snap.daysLeft} día(s).`
+    : `Próximo ingreso en ${snap.daysToPay} día(s).`);
   if (snap.unpaidFixedCount) parts.push(`${snap.unpaidFixedCount} gasto(s) fijo(s) pendiente(s).`);
   if (snap.catAlerts) parts.push(`${snap.catAlerts} categoría(s) al 80% o más.`);
   return parts.join(' ');

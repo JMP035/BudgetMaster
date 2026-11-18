@@ -624,8 +624,8 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                             </View>
                             <Text style={s.hint}>
                                 {smsOpt
-                                    ? "Botón de sincronizar en Inicio, «Leer SMS» en Agregar y tutoriales de SMS visibles."
-                                    : "Todo lo relacionado con SMS queda oculto. Tus movimientos ya importados se conservan y Android no te pedirá el permiso."}
+                                    ? "Botón de sincronizar en Inicio, «Elegir de mis SMS» y tutoriales de SMS visibles."
+                                    : "La lectura de SMS queda oculta (sincronización, «Elegir de mis SMS» y sus tutoriales). Tus movimientos ya importados se conservan y Android no te pedirá el permiso. Pegar un SMS en Agregar → «Pegar SMS» sigue disponible."}
                             </Text>
                         </View>
                         <Switch value={smsOpt} onValueChange={toggleSms} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
@@ -943,7 +943,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* AHORROS EXTERNOS */}
-                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero fuera de tus cuentas registradas. Solo se usa si no tienes cuentas creadas.">
+                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero fuera de tus cuentas registradas. Solo cuenta en tu patrimonio cuando ninguna de tus cuentas lleva saldo.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>

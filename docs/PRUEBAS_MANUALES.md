@@ -3,7 +3,7 @@
 Para: quien prueba la app en su teléfono Android (sin conocimientos técnicos).
 Objetivo: comprobar, función por función, que todo sirve antes de escribir el manual de usuario.
 
-Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-90** (91 en total). Las pruebas T-77 a T-90 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local y tono «tú»).
+Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-95** (96 en total). Las pruebas T-77 a T-95 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares y la regla exacta del patrimonio).
 
 Cómo usarlo: sigue cada prueba en orden. Marca **✅ pasó**, **❌ falló** o **⚠️ raro** y anota qué viste.
 Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Cómo reportar un problema" al final).
@@ -20,7 +20,7 @@ Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Có
 - Para ver los números exactos de los avisos, **no** pegues una clave de Gemini mientras pruebas notificaciones (con clave, el texto lo redacta la IA).
 
 ### Datos de ejemplo para pegar (no necesitan SMS reales)
-Úsalos en **Agregar → Leer SMS → pegar → Analizar SMS** (el botón «Leer SMS» aparece si la lectura de SMS está activada en Ajustes). Cambia la fecha `dd/mm/aa` por una reciente. Todos se comprobaron con el motor de lectura de la app el 18 de noviembre de 2026.
+Úsalos en **Agregar → Pegar SMS → pegar → Analizar SMS** (el botón «Pegar SMS» está siempre visible, aunque la lectura de SMS esté apagada en Ajustes). Cambia la fecha `dd/mm/aa` por una reciente. Todos se comprobaron con el motor de lectura de la app el 18 de noviembre de 2026.
 
 | Para probar | Texto a pegar | Debe detectar |
 |---|---|---|
@@ -101,7 +101,7 @@ Al final hay una tabla resumen. Mientras pruebas, anota el código de la prueba 
 ## 3. Pantalla de Inicio
 
 **T-04 — Encabezado y período**
-- Esperado: nombre, rango del período, «Día N de M del período» y, a la derecha, los días al próximo pago (por ejemplo «5d»; rojo si faltan ≤3; no aparece si tu ciclo es irregular).
+- Esperado: nombre, rango del período, «Día N de M del período» y, a la derecha, los días al próximo pago (por ejemplo «5d»; rojo si faltan ≤3; no aparece si tu ciclo es irregular). En Presupuesto → Gastos fijos, el resumen «PRÓX. PAGO» muestra «—» con ciclo irregular.
 - Toca el rango del período: se abre «Cuándo empieza tu período» con **de dónde sale el inicio** ("Empezó con tu sueldo del…", "Adelantado por fin de semana o feriado", "Fijado por ti" o "Es tu día de pago").
 
 **T-05 — Tarjetas del Inicio**
@@ -136,7 +136,7 @@ Al final hay una tabla resumen. Mientras pruebas, anota el código de la prueba 
 - Repite desde el **detalle de un movimiento** y desde el **buzón de SMS sin clasificar**.
 
 **T-11 — Pegar un SMS**
-1. Agregar → **Leer SMS** → pega "Compra con tarjeta" → Analizar SMS.
+1. Agregar → **Pegar SMS** → pega "Compra con tarjeta" → Analizar SMS.
 - Esperado: monto, banco y comercio rellenados; puedes guardar.
 2. Pega "Compra en cuotas" y "Pago de tarjeta".
 - Esperado: cada uno muestra su aviso (ver la tabla de la sección 0) y no llena el formulario.
@@ -416,7 +416,7 @@ Al final hay una tabla resumen. Mientras pruebas, anota el código de la prueba 
 **T-67 — Contenido**
 - Pequeño: disponible del período y días al cobro. Mediano: disponible por día, barra de presupuesto, próximo pago de tarjeta, próximo fijo, semáforo y saldos.
 - Anota si el mediano se ve **apretado o cortado** en tu pantalla.
-- Si tu ciclo es irregular, el pequeño dice «Hoy cobras» (no hay próximo pago que contar); es una limitación conocida.
+- Si tu ciclo es irregular, el pequeño dice «N días en el período» (los que quedan del mes; no hay próximo pago que contar) y nunca «Hoy cobras» (ver T-92).
 
 **T-68 — El ojo**
 - Por defecto los montos salen ocultos (••••). Toca el **ojo**: se ven; vuelve a tocarlo: se ocultan. Vale para los dos widgets. Días, % y semáforo se ven siempre.
@@ -458,7 +458,7 @@ Recorre cada uno desde la guía del Inicio (Centro de ayuda): **Tu período**, *
 
 ---
 
-## 20. Correcciones recientes (T-77 a T-90)
+## 20. Correcciones recientes (T-77 a T-95)
 
 Estas pruebas comprueban lo corregido en los últimos cambios. Varias cambian tu ciclo o tu presupuesto **temporalmente**: al terminar, vuelve a poner tu configuración real (anótala antes, ver la sección 0).
 
@@ -625,12 +625,57 @@ La app habla de «tú». Recorre rápido estas pantallas y fíjate en cada instr
 2. **Presupuesto → Categorías:** la ayuda de «Agregar presupuesto» y el aviso al guardar un límite.
 3. **Cuentas:** el formulario de tarjeta, el estado de cuenta («Paga antes del…»), «Registrar pago».
 4. **Ajustes:** Presupuesto Mensual, Ingresos y período, Notificaciones.
-5. **Agregar → Leer SMS:** pega un texto que no sea del banco y lee el aviso «No se registró».
+5. **Agregar → Pegar SMS:** pega un texto que no sea del banco y lee el aviso «No se registró» (termina en «ingrésalo manualmente»).
 6. **Asesor:** el mensaje de bienvenida, las acciones guiadas y las respuestas.
 7. **Un tutorial** (por ejemplo «Movimientos», o el «?» de Cuentas) y el Centro de revisión (si tienes pendientes).
 - Esperado: todas las instrucciones usan «tú»: **toca, elige, escribe, puedes, tienes, revisa, agrega, registra**.
 - Esperado: **ninguna** usa el voseo. Se reconoce por dos señales: el pronombre propio del voseo, y verbos cuya última sílaba lleva tilde (terminados en -á, -é o -í al dar una instrucción, o en -ás, -és, -ís al hablarte), a veces pegados a «lo», «la», «las» o «los». Si lees «toca» o «tienes» está bien; si la tilde cae al final del verbo, no.
 - Si ves una, anota la pantalla y el texto exacto (captura): es un ❌ de tono.
+
+### Pegar SMS sin permiso, widget irregular, patrimonio y voseo residual
+
+**T-91 — «Pegar SMS» sin lectura de SMS (iPhone, web o Android con SMS apagado)**
+Prepara una de estas dos situaciones: un iPhone (o la versión web), o un Android con Ajustes → Sincronización de SMS en **Desactivado**.
+1. Abre **Agregar**. Esperado: arriba a la derecha, junto al «?», está el botón **«Pegar SMS»** (con ícono de portapapeles). No dice «Leer SMS».
+2. Tócalo, pega "Compra con tarjeta" (sección 0) y presiona **Analizar SMS**. Esperado: aviso «Detectado» y el formulario con monto, banco y comercio. Android **no** pide ningún permiso.
+3. Pega "Pago de tarjeta". Esperado: el aviso termina en «…por eso no se carga en el formulario.» (con SMS apagado **no** dice nada de la sincronización de SMS en Inicio; con SMS activo sí dice «La sincronización de SMS en Inicio lo registra como neutro.»).
+4. Con SMS apagado, comprueba que sigue oculto lo que lee la bandeja: en Inicio no aparece el botón de sincronizar, y en una fuente de ingreso el cuadro «SMS de ejemplo» solo trae **Analizar SMS** (sin «Elegir de mis SMS»). Esperado: pegar funciona; leer la bandeja no se ofrece.
+5. Abre el «?» de **Agregar**. Esperado: el paso «Atajo: pegar un SMS» aparece también con SMS apagado y dice «Pegar SMS».
+6. Ajustes → Sincronización de SMS (apagado). Esperado: el texto dice que la lectura queda oculta y que «Pegar SMS» en Agregar sigue disponible.
+
+**T-92 — Widget con ingresos irregulares (solo Android)**
+1. Ajustes → Ciclo de pago → **Irregular**; abre la app una vez (el widget se rehace 1 s después del último cambio).
+2. Mira el widget **pequeño**. Esperado: «N días en el período», donde N son los días que faltan para el primero del mes siguiente (el 12 de noviembre: «19 días en el período»; el último día del mes: «1 día en el período»). **Nunca** «Hoy cobras» ni «al cobro».
+3. Mira el **mediano**. Esperado: «Q… · N días en el período» y «Disponible por día» = lo disponible entre esos N días.
+4. Vuelve a **Mensual** y abre la app. Esperado: «N días al cobro» como siempre.
+5. (Si ya tenías el widget puesto antes de actualizar la app, con ciclo irregular y sin abrir la app todavía) Esperado: con la foto vieja el widget no dice «Hoy cobras»; muestra «Sin fecha de cobro» hasta que abras la app.
+
+**T-93 — Ingresos irregulares: ningún contador dice «0 días»**
+Con el ciclo en **Irregular**:
+1. Presupuesto → Gastos fijos. Esperado: el resumen superior muestra «—» bajo «PRÓX. PAGO» (no «0d» en rojo).
+2. Estadísticas, primera tarjeta (flujo de caja proyectado). Esperado: termina en «Días que le quedan al período: N.» (no «Días hasta próximo ingreso: 0»).
+3. Con el ciclo en Mensual, las mismas pantallas muestran «Nd» y «Días hasta próximo ingreso: N».
+4. Notificaciones (si puedes forzar el resumen semanal o el resumen del día): con irregular dicen «Al período le quedan N día(s).» o «te quedan Q… para N día(s)», nunca «Próximo ingreso en 0 día(s)».
+
+**T-94 — Patrimonio total: con y sin cuentas que llevan saldo**
+Anota tu patrimonio actual antes de empezar y al final restaura tus datos.
+1. Sin ninguna cuenta que lleve saldo (todas «Sin seguimiento», o ninguna cuenta): Ajustes → **Ahorros externos** Q 5,000 y USD 100. Esperado en Inicio: el patrimonio es Q 5,000 + (todos tus ingresos − todos tus gastos registrados en quetzales) y debajo «+$ 100.00»; la leyenda dice «Estimado por ingresos y gastos • ninguna cuenta lleva saldo».
+2. Crea una cuenta de banco en **Manual** con Q 1,000. Esperado: el patrimonio pasa a **Q 1,000** (los ahorros externos de Q 5,000 y USD 100 **dejan de sumarse**); la leyenda dice «Solo cuentas que llevan saldo (sin tarjetas de crédito)».
+3. Crea otra cuenta «Sin seguimiento» y una tarjeta de crédito. Esperado: no cambian el patrimonio.
+4. Crea una cuenta en dólares con $ 200 (Manual). Esperado: el Q 1,000 se queda arriba y aparece «+$ 200.00» **debajo**, sin convertirse a quetzales.
+5. Registra una visacuota. Esperado: el patrimonio **no baja**; la deuda aparece aparte en «Compromisos de crédito (aparte)».
+6. Toca el ícono ⓘ del patrimonio. Esperado: dice que suma lo de las cuentas que llevan saldo, que si ninguna lo lleva es un estimado (ahorros externos más ingresos menos gastos) y que NO incluye cuentas «Sin seguimiento», tarjetas, visacuotas ni ahorros externos mientras alguna cuenta lleve saldo.
+7. Ajustes → **Ahorros externos**. Esperado: la descripción dice «Solo cuenta en tu patrimonio cuando ninguna de tus cuentas lleva saldo.».
+8. Tutoriales: el paso «Patrimonio total» del tour del Inicio y el paso «Ahorros externos» de Ajustes dicen lo mismo.
+
+**T-95 — Voseo residual corregido**
+Cada frase debe estar en «tú»:
+1. Agregar → Pegar SMS → pega un texto que no sea del banco: el pie dice «Si es un movimiento real, **ingrésalo** manualmente.».
+2. Inicio → sincroniza un SMS que sea una compra en cuotas: el pie del resumen dice «**Revísalas** en Cuentas → Visacuotas.».
+3. Centro de revisión (con compras sin cuenta): la fila «Compras sin cuenta» dice «**Asígnalas** a una cuenta para organizarlas por cuenta».
+4. Tutorial «Movimientos» → «Clasifica bien tus movimientos» (con SMS activo): dice «**corrige** la categoría de un depósito».
+5. Presupuesto → Ingresos → una fuente → «SMS de ejemplo» (Android con SMS activo): dice «o **elígelo** de tus mensajes».
+- Esperado: las formas con «lo/la/las» llevan la tilde en la penúltima sílaba («ingrésalo», «revísalas», «asígnalas», «elígelo») y «corrige» no lleva tilde. Si la tilde cae en la última sílaba del verbo, es un ❌ de tono (ver T-90).
 
 ---
 
@@ -664,6 +709,11 @@ La app habla de «tú». Recorre rápido estas pantallas y fíjate en cada instr
 | T-88 (mensual e irregular no cambian) | | |
 | T-89 (asesor local: cuota pausada no cuenta) | | |
 | T-90 (tono «tú», sin voseo) | | |
+| T-91 («Pegar SMS» sin lectura de SMS) | | |
+| T-92 (widget con ingresos irregulares) | | |
+| T-93 (irregular: ningún contador dice «0 días») | | |
+| T-94 (patrimonio con y sin cuentas que llevan saldo) | | |
+| T-95 (voseo residual corregido) | | |
 
 ## Cómo reportar un problema
 
@@ -674,4 +724,4 @@ Anota, para cada ❌:
 4. **Una captura de pantalla**.
 5. Si fue con un SMS, el texto **con los números de cuenta tapados**.
 
-> Importante: el **widget** (T-66 a T-70, y la parte del widget de T-78) y la apertura de la app tras el cambio de punto de entrada solo pueden validarse en un teléfono real con este build. Si la app no abre al instalarla, repórtalo primero.
+> Importante: el **widget** (T-66 a T-70, T-92 y la parte del widget de T-78) y la apertura de la app tras el cambio de punto de entrada solo pueden validarse en un teléfono real con este build. Si la app no abre al instalarla, repórtalo primero.

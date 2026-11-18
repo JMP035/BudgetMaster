@@ -5,7 +5,7 @@ import {
     StyleSheet, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
-import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
+import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysLeftInPeriod, hasPayDate } from "../services/storage";
 import { monthlyDebtLoad } from "../services/DebtLoad";
 import { periodBudgetLimit } from "../services/PeriodBudget";
 import { getAllExpenseCategories } from "../categories";
@@ -314,7 +314,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     const selectedCatData = byCat.find(s => s.id === selectedSlice);
 
     // ── Stats ────────────────────────────────────────────────
-    const daysLeft = getDaysUntilNextPayment(settings);
+    const daysLeft = getDaysLeftInPeriod(settings);
 
     // Días inclusivos entre dos fechas (ignora horas)
     const dayDiff = (a: Date, b: Date) => Math.round((new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime() - new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime()) / 86400000) + 1;
@@ -429,7 +429,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     // ── Subtítulo STAT 1 (Flujo de Caja Proyectado) ──────────
     const q0 = (n: number) => formatMoney(n, "Q", { decimals: 0, sign: "never" });
     const stat1Subtitle = period === "current"
-        ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este período. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`} Días hasta próximo ingreso: ${daysLeft}.`
+        ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este período. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`} ${hasPayDate(settings) ? `Días hasta próximo ingreso: ${daysLeft}.` : `Días que le quedan al período: ${daysLeft}.`}`
         : period === "year"
             ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este año. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`}`
             : `Gastaste ${q0(projected)} en ${periodLabel} (${q0(avgDaily)}/día). ${projBalance >= 0 ? `Te sobró ${q0(projBalance)}.` : `Te faltaron ${q0(projBalance)}.`}`;

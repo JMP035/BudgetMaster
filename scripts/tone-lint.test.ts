@@ -1,7 +1,8 @@
-// Prueba anti-voseo: la app habla de «tú», nunca de «vos». Recorre services/, app/, context/ y components/
+// Prueba anti-voseo: la app habla de «tú», nunca de «vos». Recorre services/, app/, context/, components/ y widgets/
 // (.ts/.tsx) y falla si encuentra voseo en algo que el usuario puede leer (cadenas, plantillas, JSX, regex).
-// Ignora los comentarios (// y /* */). Solo usa listas CERRADAS de palabras (sin heurísticas de terminaciones:
-// «más», «después», «estás», «verás»… son legítimas). Sin dependencias:
+// Ignora los comentarios (// y /* */). Usa listas CERRADAS de voseo y, además, dos búsquedas generales con lista
+// cerrada de palabras LEGÍTIMAS (un enclítico sin tilde —«ingresalo», «revisalas»— o un acabado en á/é/í que no se
+// conozca falla hasta que se clasifique); «más», «después», «estás», «verás»… son legítimas. Sin dependencias:
 //   npm run test:tone-lint   →   sucrase-node scripts/tone-lint.test.ts
 import * as fs from 'fs';
 import * as path from 'path';
@@ -34,6 +35,8 @@ const PRESENT_AND_IMPERATIVE = [
   'podes', 'tocás', 'gastás', 'asignás', 'superás', 'llamás', 'ingresás', 'ganás', 'intentá', 'protegé', 'instalá',
   'verificá', 'sincronizá', 'planificá', 'personalizá', 'pagá', 'obtené', 'crecé', 'controlá', 'cerrá', 'asigná',
   'apuntá',
+  // F1: voseo que el detector no veía (enclíticos sin tilde y un imperativo en -í)
+  'corregí',
 ];
 
 // Imperativo + pronombre enclítico (lista de T1). «dame» NO va: es igual en «tú» («dame un consejo»).
@@ -47,6 +50,8 @@ const ENCLITICS = [
   'programame', 'reinicialos', 'incluílas', 'vení', 'andá', 'contame', 'fijate', 'avisame',
   // T2
   'copiala', 'pegala',
+  // F1
+  'ingresalo', 'revisalas', 'asignalas', 'elegilo',
 ];
 
 const WORDS = Array.from(new Set([...PRESENT_AND_IMPERATIVE, ...ENCLITICS]));
@@ -181,6 +186,44 @@ function findVoseo(src: string): Finding[] {
   return found;
 }
 
+// Búsqueda GENERAL 1: verbo + enclítico sin tilde (alo/ala/elo/ela/ilo/ila/ame/eme/ime…). En «tú» estas formas llevan
+// tilde («ingrésalo», «revísalas», «asígnalas»); sin tilde son voseo. Solo palabras ASCII (la tilde las excluye) y sin
+// mayúsculas internas (los identificadores camelCase no entran). Las palabras que solo se le parecen se listan aquí.
+const GENERAL_ENCLITIC_RE = new RegExp(
+  '(?<![\\p{L}\\p{N}_])[A-Za-z][a-z]*(?:alo|ala|alos|alas|elo|ela|elos|elas|ilo|ila|ilos|ilas|ame|eme|ime)(?![\\p{L}\\p{N}_])', 'gu');
+const LEGIT_ENCLITIC_LOOKALIKES = new Set([
+  'cancela', 'congela', 'instala', 'llame', 'dalo', 'dame', 'dilo', 'dime', // imperativos o subjuntivos iguales en «tú»
+  'estilo', 'fila', 'filas', 'halo', 'modelos', 'vuelo', 'guatemala',        // sustantivos
+  'name', 'pathname', 'same', 'time', 'theme', 'prime', 'frame',             // identificadores de código
+]);
+
+// Búsqueda GENERAL 2: palabras que acaban en á/é/í. Los imperativos del voseo («tocá», «corregí», «poné») acaban así,
+// pero también los pretéritos («gasté», «entendí»), los futuros («borrará») y «qué», «aquí», «está»… Lista cerrada de
+// las legítimas que hoy existen en el código; una nueva (voseo o no) falla hasta que se clasifique.
+const GENERAL_ACCENT_RE = new RegExp('(?<![\\p{L}\\p{N}_])[A-Za-záéíóúñ][a-záéíóúñ]*[áéí](?![\\p{L}\\p{N}_])', 'gu');
+const LEGIT_ACCENT_WORDS = new Set([
+  'ahí', 'aquí', 'así', 'sí', 'qué', 'allá', 'está', 'esté', 'dé', 'sé', 'caché', 'mié', 'aá',
+  'actualicé', 'descarté', 'eché', 'encontré', 'entendí', 'gasté', 'identifiqué', 'logré', 'recibí', 'reconocí', 'revisé',
+  'aparecerá', 'armará', 'borrará', 'corregirá', 'creará', 'dejará', 'descontará', 'detectará', 'marcará', 'mostrará',
+  'pedirá', 'podrá', 'preguntará', 'quitará', 'seguirá', 'tomará', 'unirá', 'usará', 'volverá',
+]);
+
+/** Busca las formas «generales» de voseo (ver arriba) en el texto sin comentarios. */
+function findGeneral(src: string): Finding[] {
+  const lines = stripComments(src).split(/\r?\n/);
+  const found: Finding[] = [];
+  lines.forEach((text, idx) => {
+    for (const [re, legit] of [[GENERAL_ENCLITIC_RE, LEGIT_ENCLITIC_LOOKALIKES], [GENERAL_ACCENT_RE, LEGIT_ACCENT_WORDS]] as const) {
+      re.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(text)) !== null) {
+        if (!legit.has(m[0].toLowerCase())) found.push({ line: idx + 1, word: m[0], text: text.trim() });
+      }
+    }
+  });
+  return found;
+}
+
 function isWhitelistedLine(file: string, f: Finding): boolean {
   return WHITELIST_LINES.some(w => w.file === file && w.word === f.word.toLowerCase() && f.text.includes(w.contains));
 }
@@ -201,6 +244,24 @@ check('marca voseo dentro de regex (es código)', words('if (/que podes hacer/.t
 check('marca texto con «//» dentro de una cadena', words('const u = "http://x.com vos";').join() === 'vos');
 check('marca tras un comentario de bloque cerrado', words('/* hola */ const a = "usás";').join() === 'usás');
 check('informa la línea correcta', findVoseo('a\n// nada\n/* x\n y */\nconst b = "Pegá";')[0]?.line === 5);
+
+// Formas nuevas (F1) y búsqueda general
+check('marca «ingresalo manualmente» (lista cerrada)', words('footnote: "ingresalo manualmente"').join() === 'ingresalo');
+check('marca «Revisalas en Cuentas» (lista cerrada)', words('"Revisalas en Cuentas"').join() === 'revisalas');
+check('marca «Asignalas a una cuenta» (lista cerrada)', words('"Asignalas a una cuenta"').join() === 'asignalas');
+check('marca «elegilo» (lista cerrada)', words('"o elegilo de tus mensajes"').join() === 'elegilo');
+check('marca «corregí la categoría» (lista cerrada)', words("'corregí la categoría'").join() === 'corregí');
+const gen = (s: string) => findGeneral(s).map(f => f.word.toLowerCase());
+check('general: marca un enclítico sin tilde desconocido («tomalo»)', gen('"Tomalo ya"').join() === 'tomalo');
+check('general: marca «ingresala», «revisalo», «asignalos», «elegila»', gen('"ingresala revisalo asignalos elegila"').join() === 'ingresala,revisalo,asignalos,elegila');
+check('general: marca «dejame» y «mostrame»', gen('"dejame y mostrame"').join() === 'dejame,mostrame');
+check('general: marca un imperativo en -á/-é/-í desconocido («Revisá», «Poné», «Decí»)', gen('"Revisá, Poné, Decí"').join() === 'revisá,poné,decí');
+check('general: no marca la forma en «tú» con tilde («ingrésalo», «revísalas», «asígnalas»)', gen('"ingrésalo, revísalas, asígnalas, elígelo"').length === 0);
+check('general: no marca palabras que solo se le parecen («regalo» NO está, «vuelo», «fila», «name»)', gen('"vuelo fila name time theme"').length === 0);
+check('general: no marca identificadores camelCase', gen('const accountName = bankName; setTheme(prime);').join() === '');
+check('general: no marca pretéritos y futuros conocidos', gen('"gasté, borrará, qué, aquí, está, entendí"').length === 0);
+check('general: no marca comentarios', gen('// ingresalo ya\n/* Poné */ const a = 1;').length === 0);
+check('general: «regalo» sin clasificar sí se marca (aviso de lista cerrada)', gen('"un regalo"').join() === 'regalo');
 
 // No debe marcar
 check('no marca «Toca aquí»', words('const a = "Toca aquí";').length === 0);
@@ -226,7 +287,7 @@ check('lista blanca: no ampara otros archivos', !isWhitelistedLine('components/D
 
 // ── Recorrido de los archivos ────────────────────────────────────────────────────────────────────────
 const ROOT = path.resolve(__dirname, '..');
-const DIRS = ['services', 'app', 'context', 'components'];
+const DIRS = ['services', 'app', 'context', 'components', 'widgets'];
 
 function walk(dir: string, acc: string[] = []): string[] {
   if (!fs.existsSync(dir)) return acc;
@@ -251,12 +312,14 @@ for (const dir of DIRS) {
     const rel = path.relative(ROOT, abs).split(path.sep).join('/');
     if (WHITELIST_FILES.has(rel)) continue;
     scanned++;
-    const found = findVoseo(fs.readFileSync(abs, 'utf8')).filter(f => !isWhitelistedLine(rel, f));
+    const text = fs.readFileSync(abs, 'utf8');
+    const found = [...findVoseo(text), ...findGeneral(text)].filter(f => !isWhitelistedLine(rel, f));
     check(`sin voseo: ${rel}`, found.length === 0);
     for (const f of found) console.log(`  ${rel}:${f.line}:${f.word}   ${f.text.slice(0, 110)}`);
   }
 }
-check('se recorrieron archivos de las 4 carpetas', scanned > 50, `solo ${scanned}`);
+check('se recorrieron archivos de las 5 carpetas', scanned > 50, `solo ${scanned}`);
+check('se recorrió widgets/', walk(path.join(ROOT, 'widgets')).length >= 4);
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);
 if (failures > 0) process.exit(1);

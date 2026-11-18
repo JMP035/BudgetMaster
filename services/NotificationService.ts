@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import {
     CategoryBudget, FixedExpense, SavingsGoal,
     Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment, refreshPeriodResolver,
+    getCurrentFinancialPeriod, getDaysLeftInPeriod, refreshPeriodResolver,
     parseDateOnly, storedDateToDateOnly,
     StorageService,
 } from './storage';
@@ -159,7 +159,7 @@ function toPlanData(i: Inputs, now: Date): PlanData {
         creditInstallments: i.creditInstallments,
         incomeSources: i.incomeSources,
         categoryBudgets: i.categoryBudgets,
-        daysLeft: getDaysUntilNextPayment(i.settings, now),
+        daysLeft: getDaysLeftInPeriod(i.settings, now),
         periodAt: periodAtFor(i.settings),
         labelOfCategory: id => categoryLabelOf(id, i.settings.customCategories, 'expense'),
     };
@@ -189,7 +189,7 @@ function snapshotOf(
     return periodSnapshot({
         settings: i.settings, txs: i.transactions, categoryBudgets: i.categoryBudgets, fixed: i.fixedExpenses, now,
         period: { start: fp.start, end: fp.end, nextStart: fp.nextStart },
-        daysLeft: getDaysUntilNextPayment(i.settings, now),
+        daysLeft: getDaysLeftInPeriod(i.settings, now),
         labelOfCategory: id => categoryLabelOf(id, i.settings.customCategories, 'expense'),
     });
 }
@@ -647,7 +647,7 @@ export const NotificationService = {
         const periodLimit = fig.budgetLimit;
         const pct = fig.pct;
         const remaining = fig.remaining;
-        const daysLeft = getDaysUntilNextPayment(settings, now);
+        const daysLeft = getDaysLeftInPeriod(settings, now);
         const dailyLeft = daysLeft > 0 ? remaining / daysLeft : remaining;
         const ctx = { settings, transactions, categoryBudgets, fixedExpenses };
 
@@ -852,7 +852,7 @@ Responde SOLO el texto, sin encabezados ni formato.
             const ctx = buildFinancialContextText(settings, snap, await debtLoadOf(settings, transactions));
             const prompt = `
 Eres el CFO personal de ${settings.userName}. Genera un briefing financiero breve (máximo 4 oraciones).
-Menciona: presupuesto actual (${snap.pct}% del período ${snap.label}), días hasta próximo pago (${snap.daysLeft}), gastos fijos pendientes (${snap.unpaidFixedCount}), categorías en alerta (${snap.catAlerts}).
+Menciona: presupuesto actual (${snap.pct}% del período ${snap.label}), ${snap.daysToPay === null ? `días que le quedan al período (${snap.daysLeft}; ingresos irregulares, sin fecha de cobro)` : `días hasta próximo pago (${snap.daysToPay})`}, gastos fijos pendientes (${snap.unpaidFixedCount}), categorías en alerta (${snap.catAlerts}).
 Sé directo, usa datos reales, aclara que es según lo registrado y termina con una frase motivacional corta.
 Contexto: ${ctx}
 Responde SOLO el texto del briefing.

@@ -24,7 +24,7 @@ import {
   buildStartResolver, clearManualAnchor, removeAnchorsForTx, sanitizeAnchors, sanitizePaymentSchedule, setManualAnchor,
 } from './PeriodAnchors';
 import type { PeriodAnchor, PaymentSchedule } from './PeriodAnchors';
-import { computeFinancialPeriod, daysUntilNextPay, normalizeWeekday } from './FinancialPeriod';
+import { computeFinancialPeriod, daysLeftInPeriod, daysUntilNextPay, hasPayDate, normalizeWeekday } from './FinancialPeriod';
 import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 import {
@@ -570,10 +570,21 @@ export function refreshPeriodResolver(settings: UserSettings): void {
   setPeriodStartResolver(buildStartResolver(settings, anchorsCache));
 }
 
-/** Días hasta próximo pago (inicio real del período siguiente: sueldo, fin de semana o feriado incluidos). */
+/**
+ * Días hasta próximo pago (inicio real del período siguiente: sueldo, fin de semana o feriado incluidos).
+ * Con ciclo irregular no hay fecha de cobro y devuelve 0: para mostrarlo usa `hasPayDate` y `getDaysLeftInPeriod`.
+ */
 export function getDaysUntilNextPayment(settings: UserSettings, now: Date = new Date()): number {
   return daysUntilNextPay(settings, now, buildStartResolver(settings, anchorsCache));
 }
+
+/** Días que le quedan al período actual (mensual/quincenal/semanal: hasta el cobro; irregular: hasta fin de mes). Mínimo 1. */
+export function getDaysLeftInPeriod(settings: UserSettings, now: Date = new Date()): number {
+  return daysLeftInPeriod(settings, now, buildStartResolver(settings, anchorsCache));
+}
+
+/** true si el ciclo tiene fecha de cobro que contar (el irregular no la tiene). */
+export { hasPayDate };
 
 // ─────────────────────────────────────────────────────────────
 // PERÍODO FINANCIERO (basado en día de pago, no mes calendario)

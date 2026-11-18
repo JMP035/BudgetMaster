@@ -101,7 +101,7 @@ Es tu centro de mando. De arriba hacia abajo:
   | **Cuentas activas** | Tienes al menos una cuenta activa: **+5** |
 
   80+ Excelente · 60+ Bueno · 40+ Regular · menos de 40 Crítico. **Si tu ingreso del período todavía no está registrado** (por ejemplo, el primer día del período, antes de que llegue tu sueldo), el ahorro queda **«pendiente»**: no suma ni resta, y el Inicio lo dice («Tu ingreso de este período aún no aparece: el ahorro todavía no suma»). Cuando registras o la app reconoce el ingreso, el ahorro se calcula. Las transferencias entre tus cuentas y los movimientos en otras monedas no cuentan.
-- **Patrimonio Total** — con cuentas que llevan saldo, es la suma de esas cuentas de activos (efectivo, bancos, ahorro, inversión; las tarjetas de crédito no suman). Si ninguna cuenta lleva saldo, es un estimado: tus ahorros externos más tus ingresos menos tus gastos registrados. Lo que todavía debes en visacuotas se muestra aparte como «Compromisos de crédito (aparte)», no se resta. Toca el ícono ⓘ para ver la explicación.
+- **Patrimonio Total** — con cuentas que llevan saldo, es la suma de esas cuentas de activos (efectivo, bancos, ahorro, inversión); las cuentas «Sin seguimiento» y las tarjetas de crédito no suman, y los ahorros externos tampoco. Los quetzales van arriba y los dólares (u otras monedas) debajo, sin convertirse. Si ninguna cuenta lleva saldo, es un estimado: tus ahorros externos más tus ingresos menos tus gastos registrados en quetzales (en dólares solo cuentan tus ahorros externos en dólares). Lo que todavía debes en visacuotas se muestra aparte como «Compromisos de crédito (aparte)», no se resta. Toca el ícono ⓘ para ver la explicación.
 - **Balance por moneda** — ingresos, gastos y neto del período en Q (y en USD si tienes movimientos en dólares).
 - **Comparativa con el período anterior** — cuánto más (rojo) o menos (verde) llevas gastado respecto al período pasado.
 - **Presupuesto del período (anillo)** — porcentaje del presupuesto **del período** ya consumido («% USADO», «de Q …»). Tu presupuesto mensual de Ajustes se reparte según tu ciclo: con ciclo **mensual** o **irregular** el anillo mide el presupuesto completo; con **quincenal** la mitad; con **semanal** 12/52 del mensual. Cambia a amarillo al superar el 80 % y a rojo al excederlo.
@@ -142,7 +142,7 @@ Al guardar un gasto, la app NO te manda un aviso por cada uno: lo suma a tu **re
 
 ### Pegar un SMS bancario
 
-Con la lectura de SMS activada en Ajustes, arriba a la derecha aparece **«Leer SMS»**. Tócalo, pega el texto del mensaje de tu banco y presiona **«Analizar SMS»**. La app detecta automáticamente el monto, la moneda, el tipo (gasto/ingreso) y el banco, y te deja el formulario listo para guardar. Si el mensaje es un pago de tarjeta o una compra en cuotas, te lo explica en un aviso (el pago de tarjeta es un movimiento neutro; la compra en cuotas se registra desde Cuentas → Visacuotas). Si el texto no es un movimiento bancario, te dice «No se registró» y por qué.
+Arriba a la derecha, junto al «?», está el botón **«Pegar SMS»**. Está siempre visible: en iPhone, en la versión web y en Android aunque la lectura de SMS esté apagada en Ajustes, porque pegar un texto no pide permiso ni lee tu bandeja de mensajes. Tócalo, pega el texto del mensaje de tu banco y presiona **«Analizar SMS»**. La app detecta automáticamente el monto, la moneda, el tipo (gasto/ingreso) y el banco, y te deja el formulario listo para guardar. Si el mensaje es un pago de tarjeta o una compra en cuotas, te lo explica en un aviso (el pago de tarjeta es un movimiento neutro; la compra en cuotas se registra desde Cuentas → Visacuotas). Si el texto no es un movimiento bancario, te dice «No se registró» y por qué.
 
 ---
 
@@ -208,7 +208,7 @@ Tus compromisos recurrentes: renta, internet, seguros, cuota del gym…
 - **Marcar como pagado**: toca la casilla a la izquierda; la app te pregunta en qué fecha se pagó. Se tacha y suma al progreso del período.
 - **Editar**: mantén presionada la tarjeta. **Eliminar**: ícono 🗑.
 - Si pasa el día de vencimiento sin pagar, aparece la insignia roja **VENCIDO**.
-- El resumen superior muestra pagados/total, monto cubierto, pendiente y días hasta tu próximo pago.
+- El resumen superior muestra pagados/total, monto cubierto, pendiente y días hasta tu próximo pago (con ingresos irregulares no hay fecha de cobro y en su lugar aparece «—»).
 - **Deuda programada**: debajo de tus gastos fijos lista las tarjetas (lo que falta de su estado) y los préstamos que vencen en el período, y se suma a lo «Comprometido este período» junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo.
 
 > 🔄 **Al empezar un nuevo período de gastos fijos, las casillas se desmarcan automáticamente** (con ciclo mensual, el período va de pago a pago; con quincenal, semanal o irregular, los gastos fijos se cuentan por mes) para que empieces de nuevo.
@@ -414,7 +414,7 @@ Puedes acotar el rango con frases como «este período», «período anterior»,
 Las secciones, de arriba hacia abajo:
 
 - **Tu Perfil** — tu nombre.
-- **Sincronización de SMS** — activar/desactivar la lectura de SMS (apagada, la app oculta todo lo relacionado con SMS y conserva lo ya importado), «Sincronizar al abrir la app» y las herramientas de la [sección 4](#4-sincronización-automática-por-sms-android).
+- **Sincronización de SMS** — activar/desactivar la lectura de SMS (apagada, la app oculta la lectura de SMS —la sincronización y «Elegir de mis SMS»— y conserva lo ya importado; «Pegar SMS» en Agregar sigue disponible), «Sincronizar al abrir la app» y las herramientas de la [sección 4](#4-sincronización-automática-por-sms-android).
 - **Presupuesto Mensual** — límite de gasto **al mes** en Q (obligatorio, > 0) y opcional en USD. Si cobras por quincena o por semana, la app lo reparte por período: debajo del monto ves **«Por período: Q{x} por quincena»** (o «por semana») y con ese monto se miden el anillo del Inicio, los avisos, el presupuesto diario, el score y el asesor. Con ciclo mensual o irregular no aparece esa línea (el período es el mes completo). El valor sugerido al configurar la app es el 80 % de tu ingreso mensual.
 - **Ingresos y período** — muestra tu día de pago («Tu día de pago: el 27 de cada mes», «Cobras cada martes»…) y el período actual. **Mis fuentes de ingreso** te lleva a Presupuesto → Ingresos. En **Ciclo de pago** cambias el ciclo (Mensual, Quincenal, Semanal o Irregular) y el día o los dos días de pago; con **Semanal** eliges el **día de la semana** en que te pagan (chips Dom a Sáb) y ves «Tu semana va de martes a lunes». Si tu fuente de ingreso semanal dice otro día, aparece «Tu fuente «{nombre}» dice que cobras el {día}.» con el botón «Usar el {día}». Con **Irregular** ves «Con ingresos irregulares tu período es el mes calendario (del 1 al último día): no hay un día que elegir.» Se guarda con **«Guardar ciclo y día de pago»** (no con *Guardar Cambios*). Cambiar el día mueve tu período; lo que fijaste a mano en un período anterior se conserva. El botón **«Cuándo empieza mi período»** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
   - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia); nunca se ofrece una fecha futura. **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijas a mano siempre gana*: la app no lo cambia sola.
@@ -422,7 +422,7 @@ Las secciones, de arriba hacia abajo:
   - Solo aplica a ciclos **mensual** y **quincenal**. Con ciclo **semanal** el período empieza siempre el día de la semana que elegiste, sin ajustes por feriados. Con ciclo **irregular** el período es el **mes calendario** y no hay nada que ajustar.
 - **Moneda Principal** — Q, $, € o £.
 - **Tipo de Cambio USD → Q** — se actualiza solo cada 6 horas desde el **Banco de Guatemala (Banguat)**, con respaldo del mercado internacional. Puedes forzar la actualización con ⟳ o escribirlo manualmente.
-- **Ahorros Externos** — dinero guardado fuera de la app (Q y USD). Solo se usa en el Patrimonio Total cuando ninguna de tus cuentas lleva saldo; también se suma a la proyección de ahorro de Estadísticas.
+- **Ahorros Externos** — dinero guardado fuera de la app (Q y USD). Solo se usa en el Patrimonio Total cuando ninguna de tus cuentas lleva saldo; también se suma a la proyección de ahorro de Estadísticas (solo los quetzales).
 - **Seguridad Biométrica** — ver [sección 11](#11-seguridad-biométrica). Solo aparece si tu teléfono tiene huella/rostro configurado.
 - **Inteligencia Artificial (Gemini)** — tu API Key.
 - **Notificaciones** — resume tus avisos («Resumen diario 8:00 pm · Recordatorios 8:00 am · Silencio 10 pm–7 am») y **Configurar notificaciones** abre el detalle (ver [sección 12](#12-notificaciones-y-alertas)). Se guarda con su propio botón **Guardar**, no con *Guardar Cambios*.
@@ -491,14 +491,14 @@ Un **widget en la pantalla de inicio de tu teléfono** para ver cómo vas sin ab
 
 | Tamaño | Qué muestra |
 |--------|-------------|
-| Pequeño (2×2) | Lo **disponible del período** y los **días al cobro**. |
+| Pequeño (2×2) | Lo **disponible del período** y los **días al cobro** (con ingresos irregulares no hay cobro: dice «N días en el período», hasta fin de mes). |
 | Mediano (4×2) | Lo **disponible por día**, la **barra del presupuesto** gastado, el **próximo pago de tarjeta** (fecha y monto; «estimado» si todavía no escribes el estado de cuenta real), el **próximo gasto fijo**, el **semáforo de capacidad de pago** y los **saldos** de las cuentas que llevan seguimiento. |
 
 - **El ojo (ocultar los montos):** por defecto los montos salen ocultos (••••). Toca el **ojo** para verlos y tócalo otra vez para ocultarlos de nuevo; vale para los dos widgets. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.
 - **«+ gasto»:** abre BudgetMaster directo en la pestaña **Agregar**. Si tienes la seguridad biométrica activada, te la pide primero.
 - Tocar cualquier otra parte del widget abre la app.
 - Las cifras son las mismas del Inicio (período de pago real, presupuesto del período, sin traslados ni pagos de tarjeta). Se actualizan cuando abres la app o registras algo, y el sistema los repinta cada ~30 minutos.
-- Si tus ingresos son **irregulares** no hay un «próximo pago» que contar: el widget muestra «Hoy cobras» (ver [sección 17](#17-limitaciones-conocidas)).
+- Si tus ingresos son **irregulares** no hay un «próximo pago» que contar: el widget muestra «N días en el período» (los que quedan del mes calendario) y reparte lo disponible entre esos días; nunca dice «Hoy cobras».
 - Un tutorial lo cuenta: **Widget** en la guía del Inicio.
 
 ---
@@ -585,13 +585,12 @@ Revisa en Ajustes → Ingresos y período tu ciclo y día(s) de pago. Para quinc
 
 Lo que BudgetMaster todavía **no** hace, dicho con honestidad:
 
-- **Solo Android** para la lectura de SMS, la sincronización automática, «Elegir de mis SMS» y el widget. En iPhone y en la versión web puedes registrar a mano y pegar un SMS en Agregar → «Leer SMS» (si la lectura de SMS está activada en Ajustes; la configuración inicial la deja apagada fuera de Android), pero no hay lectura automática ni widget.
+- **Solo Android** para la lectura de SMS, la sincronización automática, «Elegir de mis SMS» y el widget. En iPhone y en la versión web puedes registrar a mano y pegar un SMS en Agregar → «Pegar SMS» (siempre disponible, no necesita la lectura de SMS ni ningún permiso; la configuración inicial deja la lectura apagada fuera de Android), pero no hay lectura automática ni widget.
 - **BAC no manda el total de la tarjeta por SMS**: el estado de cuenta llega por correo. La app estima el saldo con tus cargos y tú escribes el monto real con «Ingresar monto real».
 - **Sin respaldo en la nube**: tus datos viven solo en el teléfono. Si lo pierdes o desinstalas la app, se pierden.
-- **Período irregular = mes calendario.** Si tus ingresos no tienen fecha fija, no hay período de pago real: se usa el mes natural, el día de pago no se calcula y el contador de días no aparece.
+- **Período irregular = mes calendario.** Si tus ingresos no tienen fecha fija, no hay período de pago real: se usa el mes natural, el día de pago no se calcula y el contador de días al cobro no aparece (el widget y los avisos cuentan los días que quedan del mes).
 - **Semanal sin feriados ni anclas.** Con ciclo semanal el período arranca siempre el día elegido: no se mueve por feriados, no hay «Cuándo empieza mi período» editable y el sueldo reconocido por SMS no mueve el inicio. Tampoco se programa el aviso de fin de período (el resumen semanal lo reemplaza).
 - **Euros y libras 1:1.** La app solo tiene tipo de cambio Q↔USD. El EUR y la libra (£) se toman 1:1 con el quetzal al consolidar, así que sus totales son aproximados y no hay conversión confiable USD↔EUR/£.
-- **Widget con ingresos irregulares:** como no hay un próximo pago, el widget pequeño muestra «Hoy cobras».
 - **El ratio deuda/ingreso solo mide cuotas** (visacuotas y préstamos activos), no el consumo de tarjeta que pagas completo cada mes.
 - La lectura de SMS depende de permisos de Android y de las políticas de Google Play (para una versión pública puede cambiar). Cada banco manda sus mensajes distinto: si uno no se reconoce, llega a «Sin clasificar» o lo registras a mano.
 

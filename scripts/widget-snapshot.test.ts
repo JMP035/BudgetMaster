@@ -3,9 +3,9 @@ process.env.TZ = 'America/Guatemala';
 //   npm run test:widget-snapshot   →   sucrase-node scripts/widget-snapshot.test.ts
 
 import { resetMemoryStorage } from './_async-storage-mock';
-import { buildWidgetSnapshot, maskForPrivacy, sanitizeWidgetSnapshot, widgetShortDate } from '../services/WidgetSnapshot';
+import { buildWidgetSnapshot, maskForPrivacy, sanitizeWidgetSnapshot, widgetDaysText, widgetShortDate } from '../services/WidgetSnapshot';
 import type { WidgetSnapshotData } from '../services/WidgetSnapshot';
-import { computeFinancialPeriod, daysUntilNextPay } from '../services/FinancialPeriod';
+import { computeFinancialPeriod, daysLeftInPeriod, daysUntilNextPay, hasPayDate } from '../services/FinancialPeriod';
 import { StorageService } from '../services/storage';
 import type { Account, FixedExpense, Transaction, UserSettings } from '../services/storage';
 
@@ -85,6 +85,8 @@ function dataOf(over: Partial<WidgetSnapshotData> = {}): WidgetSnapshotData {
   const spent = 500 + 275.51; // el traslado y el pago emparejado nunca suman al gasto
   check('versión 1, moneda Q', s.v === 1 && s.currency === 'Q');
   check('días al cobro: 27-nov menos 12-nov = 15', s.daysToPay === 15, String(s.daysToPay));
+  check('días del período = días al cobro con ciclo mensual', s.daysLeftInPeriod === 15, String(s.daysLeftInPeriod));
+  check('texto con cobro: «15 días al cobro»', widgetDaysText(s) === '15 días al cobro', widgetDaysText(s));
   check('disponible = presupuesto − gastado (sin traslados)', near(s.availablePeriod, 6000 - spent), String(s.availablePeriod));
   check('disponible por día = disponible / días', near(s.availablePerDay, (6000 - spent) / 15), String(s.availablePerDay));
   check('porcentaje del presupuesto', s.hasBudget && s.budgetPct === Math.round((spent / 6000) * 100), String(s.budgetPct));
@@ -161,12 +163,54 @@ function dataOf(over: Partial<WidgetSnapshotData> = {}): WidgetSnapshotData {
   check('vacío: enmascarar tampoco revienta', m.masked === true && m.nextCard === undefined && m.balances === undefined);
   const noDays = buildWidgetSnapshot(dataOf({ daysLeft: 0 }), NOW);
   check('0 días: por día = disponible entero', near(noDays.availablePerDay, noDays.availablePeriod));
-  const irr = buildWidgetSnapshot(dataOf({ settings: { ...settings, paymentCycle: 'irregular' } as UserSettings, daysLeft: 0 }), NOW);
-  check('ciclo irregular no revienta', irr.daysToPay === 0);
+}
+
+// ── Ciclo irregular: sin fecha de cobro, nunca «Hoy cobras» ──
+{
+  const irrSettings = { ...settings, paymentCycle: 'irregular' } as UserSettings;
+  const periodAt = (x: Date) => computeFinancialPeriod(irrSettings, x, null);
+  check('hasPayDate: irregular no tiene, el resto sí',
+    !hasPayDate(irrSettings) && hasPayDate(settings) && hasPayDate({ paymentCycle: 'weekly' }) && hasPayDate({ paymentCycle: 'biweekly' }));
+  // 12-nov: el mes calendario termina el 30-nov -> el primero del mes siguiente está 19 días después.
+  const left = daysLeftInPeriod(irrSettings, NOW, null);
+  check('irregular: días que le quedan al mes = 19', left === 19, String(left));
+  check('irregular: daysUntilNextPay sigue en 0 (no hay cobro)', daysUntilNextPay(irrSettings, NOW, null) === 0);
+  check('irregular: el último día del mes queda 1 día (nunca 0)', daysLeftInPeriod(irrSettings, d(2026, 11, 30, 20), null) === 1);
+  const irr = buildWidgetSnapshot(dataOf({ settings: irrSettings, daysLeft: left, periodAt }), NOW);
+  check('irregular: daysToPay es null (sin cobro)', irr.daysToPay === null, String(irr.daysToPay));
+  check('irregular: daysLeftInPeriod = 19', irr.daysLeftInPeriod === 19, String(irr.daysLeftInPeriod));
+  check('irregular: el widget dice «19 días en el período»', widgetDaysText(irr) === '19 días en el período', widgetDaysText(irr));
+  check('irregular: nunca «Hoy cobras» ni «al cobro»', !/cobras|al cobro/.test(widgetDaysText(irr)));
+  check('irregular: disponible por día = disponible / días del período', near(irr.availablePerDay, irr.availablePeriod / 19), String(irr.availablePerDay));
+  check('irregular: enmascarar conserva los días', maskForPrivacy(irr).daysToPay === null && maskForPrivacy(irr).daysLeftInPeriod === 19);
+  check('irregular: último día dice «1 día en el período»', widgetDaysText({ daysToPay: null, daysLeftInPeriod: 1 }) === '1 día en el período');
+  check('irregular sin dato de días: «Sin fecha de cobro»', widgetDaysText({ daysToPay: null, daysLeftInPeriod: 0 }) === 'Sin fecha de cobro');
+  const noRevienta = buildWidgetSnapshot(dataOf({ settings: irrSettings, daysLeft: 0, periodAt }), NOW);
+  check('irregular con 0 días no revienta', noRevienta.daysToPay === null && near(noRevienta.availablePerDay, noRevienta.availablePeriod));
+  check('textos con cobro: 1 día, hoy y varios',
+    widgetDaysText({ daysToPay: 1, daysLeftInPeriod: 1 }) === '1 día al cobro'
+    && widgetDaysText({ daysToPay: 0, daysLeftInPeriod: 0 }) === 'Hoy cobras'
+    && widgetDaysText({ daysToPay: 5, daysLeftInPeriod: 5 }) === '5 días al cobro');
 }
 
 // ── Lectura segura ──
 check('sanitize: basura -> null', sanitizeWidgetSnapshot(null) === null && sanitizeWidgetSnapshot({ v: 2 }) === null && sanitizeWidgetSnapshot('x') === null);
+{
+  // Foto nueva: pasa intacta (con y sin fecha de cobro).
+  const nueva = buildWidgetSnapshot(dataOf(), NOW);
+  const okNueva = sanitizeWidgetSnapshot(JSON.parse(JSON.stringify(nueva)));
+  check('sanitize: foto nueva intacta', !!okNueva && okNueva.daysToPay === 15 && okNueva.daysLeftInPeriod === 15);
+  const irrN = buildWidgetSnapshot(dataOf({ settings: { ...settings, paymentCycle: 'irregular' } as UserSettings, daysLeft: 19 }), NOW);
+  const okIrr = sanitizeWidgetSnapshot(JSON.parse(JSON.stringify(irrN)));
+  check('sanitize: foto nueva irregular conserva daysToPay null', !!okIrr && okIrr.daysToPay === null && okIrr.daysLeftInPeriod === 19);
+  // Foto vieja (sin daysLeftInPeriod): con cobro conserva los días; con 0 (irregular o ambiguo) no dice «Hoy cobras».
+  const vieja = { v: 1, updatedAt: NOW.toISOString(), currency: 'Q', availablePeriod: 100, daysToPay: 7, availablePerDay: 14, budgetPct: 0, hasBudget: false };
+  const okVieja = sanitizeWidgetSnapshot(vieja);
+  check('sanitize: foto vieja con cobro conserva los días', !!okVieja && okVieja.daysToPay === 7 && okVieja.daysLeftInPeriod === 7 && widgetDaysText(okVieja) === '7 días al cobro');
+  const viejaIrr = sanitizeWidgetSnapshot({ ...vieja, daysToPay: 0 });
+  check('sanitize: foto vieja con 0 días no dice «Hoy cobras»', !!viejaIrr && viejaIrr.daysToPay === null && widgetDaysText(viejaIrr) === 'Sin fecha de cobro', viejaIrr ? widgetDaysText(viejaIrr) : 'null');
+  check('sanitize: daysToPay inválido -> null', sanitizeWidgetSnapshot({ ...vieja, daysToPay: 'x' }) === null);
+}
 
 // ── Persistencia (AsyncStorage en memoria) ──
 async function persistence(): Promise<void> {

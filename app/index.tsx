@@ -9,7 +9,7 @@ import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Account, AppData, CategoryBudget, CreditInstallment,
-  DEFAULT_SETTINGS, FixedExpense, getCurrentFinancialPeriod, getDaysUntilNextPayment, IncomeSource, parseAmount,
+  DEFAULT_SETTINGS, FixedExpense, getCurrentFinancialPeriod, getDaysLeftInPeriod, IncomeSource, parseAmount,
   SavingsGoal, StorageService, Transaction, UserSettings
 } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
@@ -310,7 +310,7 @@ function AppContent() {
         const now = new Date();
         const snapshot = buildWidgetSnapshot({
           settings, transactions: txs, fixedExpenses, accounts, creditInstallments, incomeSources,
-          daysLeft: getDaysUntilNextPayment(settings, now),
+          daysLeft: getDaysLeftInPeriod(settings, now),
           periodAt: d => {
             const fp = getCurrentFinancialPeriod(settings, d);
             return { start: fp.start, end: fp.end, nextStart: fp.nextStart };

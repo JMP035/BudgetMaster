@@ -1,7 +1,7 @@
 // Lo que comparten los widgets de Android: leer la foto y la privacidad (por StorageService, nunca AsyncStorage
 // directo) y dar formato a los textos. El widget no recalcula nada: pinta lo que la app guardó.
 import { StorageService } from '../services/storage';
-import { maskForPrivacy, widgetShortDate } from '../services/WidgetSnapshot';
+import { maskForPrivacy, widgetDaysText, widgetShortDate } from '../services/WidgetSnapshot';
 import type { WidgetSnapshot } from '../services/WidgetSnapshot';
 import { formatMoney } from '../services/format';
 import { C } from '../theme';
@@ -87,11 +87,9 @@ export function nextFixedText(snap: WidgetSnapshot, hidden: boolean): string | n
   return `${widgetShortDate(f.due)} · ${amountText(hidden, f.amount, f.currency)}`;
 }
 
-/** «Hoy», «1 día», «5 días» al cobro. */
-export function daysText(days: number): string {
-  if (days <= 0) return 'Hoy cobras';
-  if (days === 1) return '1 día al cobro';
-  return `${days} días al cobro`;
+/** Texto de días de la foto: ver `widgetDaysText` (con ciclo irregular no dice «cobras»). */
+export function daysText(snap: Pick<WidgetSnapshot, 'daysToPay' | 'daysLeftInPeriod'>): string {
+  return widgetDaysText(snap);
 }
 
 /** «act. 14/11 18:05» a partir del ISO de la foto. */

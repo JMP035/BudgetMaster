@@ -92,8 +92,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'tour_4', elementId: 'tab_add', position: 'top', icon: 'add-circle-outline', padding: 12,
                 title: 'Agregar Transacción',
-                description: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano. Ahí también puedes pegar el texto de un SMS bancario para que la app complete los datos sola.',
-                noSmsDescription: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano.',
+                description: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano. Ahí también puedes pegar el texto de un SMS bancario (botón «Pegar SMS») para que la app complete los datos sola; no necesitas dar permiso de SMS.',
             },
             {
                 id: 'tour_5', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
@@ -143,7 +142,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_4', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'diamond-outline', padding: 8,
                 title: 'Patrimonio total',
-                description: 'Suma el saldo de las cuentas que llevan saldo y tus ahorros externos, y resta lo que todavía debes en visacuotas. Los dólares se convierten a quetzales con el tipo de cambio de Ajustes. Toca el ícono de información de la tarjeta para ver el detalle del cálculo.',
+                description: 'Suma solo las cuentas que llevan saldo (efectivo, bancos, ahorro e inversión); las cuentas «Sin seguimiento» y las tarjetas de crédito no suman. Los quetzales van arriba y los dólares (u otras monedas) debajo, sin convertirlos. Si ninguna cuenta lleva saldo, es un estimado: tus ahorros externos más tus ingresos menos tus gastos registrados. Lo que debes en visacuotas no se resta: aparece aparte como «Compromisos de crédito». Toca el ícono de información de la tarjeta para ver el detalle.',
             },
             {
                 id: 'ini_5', elementId: 'dash_balance_q', screen: 'dashboard', position: 'top', icon: 'cash-outline', padding: 8,
@@ -299,7 +298,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'mov_7', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
                 title: 'Clasifica bien tus movimientos',
-                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía): corregí la categoría de un depósito, activa «Recordar» y los próximos del mismo origen llegan ya clasificados. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
+                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía): corrige la categoría de un depósito, activa «Recordar» y los próximos del mismo origen llegan ya clasificados. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
                 noSmsDescription: 'Elige la categoría según el tipo de gasto: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si te equivocaste, cámbiala en el detalle del movimiento. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
             },
         ],
@@ -342,9 +341,9 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista): queda elegida y disponible en toda la app. También puedes administrarlas en Ajustes → Mis Categorías.',
             },
             {
-                id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'scan-outline', padding: 8, requiresSms: true,
+                id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'clipboard-outline', padding: 8,
                 title: 'Atajo: pegar un SMS',
-                description: 'Si tienes un SMS del banco, toca "Leer SMS", pega el texto y presiona "Analizar SMS": la app completa monto, moneda y tipo por ti. Al final revisa los datos y toca "Guardar".',
+                description: 'Si tienes un SMS del banco, toca «Pegar SMS», pega el texto y presiona «Analizar SMS»: la app completa monto, moneda y tipo por ti. Funciona en cualquier teléfono, aunque la lectura de SMS esté apagada, y no pide ningún permiso. Al final revisa los datos y toca «Guardar».',
             },
             {
                 id: 'add_8', elementId: 'add_save_btn', screen: 'add', position: 'top', icon: 'save-outline', padding: 8,
@@ -379,7 +378,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_4', position: 'center', icon: 'settings-outline',
                 title: 'Configurar en Ajustes',
-                description: 'En Ajustes → Sincronización SMS Automática puedes activarla o desactivarla. Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Si un SMS no se detecta, pégalo a mano en Agregar → "Leer SMS".',
+                description: 'En Ajustes → Sincronización SMS Automática puedes activarla o desactivarla. Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Si un SMS no se detecta, pégalo a mano en Agregar → «Pegar SMS».',
             },
             {
                 id: 'sms_5', position: 'center', icon: 'pricetag-outline',
@@ -798,7 +797,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'wid_2', position: 'center', icon: 'speedometer-outline',
                 title: '2. Qué muestra',
-                description: 'El pequeño: lo disponible del período y los días al cobro. El mediano: lo disponible por día, la barra del presupuesto, el próximo pago de tarjeta (fecha y monto, «estimado» si todavía no escribiste el estado de cuenta real), el próximo gasto fijo, el semáforo de capacidad de pago y los saldos de tus cuentas con seguimiento. Son las mismas cifras del Inicio y se actualizan cuando abres la app o registras algo.',
+                description: 'El pequeño: lo disponible del período y los días al cobro (con ingresos irregulares no hay cobro: dice cuántos días quedan del mes). El mediano: lo disponible por día, la barra del presupuesto, el próximo pago de tarjeta (fecha y monto, «estimado» si todavía no escribiste el estado de cuenta real), el próximo gasto fijo, el semáforo de capacidad de pago y los saldos de tus cuentas con seguimiento. Son las mismas cifras del Inicio y se actualizan cuando abres la app o registras algo.',
             },
             {
                 id: 'wid_3', position: 'center', icon: 'eye-off-outline',
@@ -827,8 +826,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_7', elementId: 'settings_sms', screen: 'settings', position: 'bottom', icon: 'chatbubble-outline', padding: 8,
                 title: 'Sincronización SMS',
-                description: 'Este interruptor activa o desactiva la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan. Con «Sincronizar al abrir la app» activado, la sincronización corre sola cada vez que abres la app y solo lee los mensajes nuevos (nunca pide permisos por su cuenta). Abajo puedes sincronizar 3 meses completos, deshacer la última sincronización y revisar pendientes. Disponible solo en Android.',
-                noSmsDescription: 'Activa este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta todo lo relacionado con SMS; tus movimientos ya importados se conservan.',
+                description: 'Este interruptor activa o desactiva la lectura de SMS bancarios de BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Apagado, la app oculta la lectura de SMS (sincronización, «Elegir de mis SMS» y sus avisos), pero «Pegar SMS» en Agregar sigue disponible; tus movimientos ya importados se conservan. Con «Sincronizar al abrir la app» activado, la sincronización corre sola cada vez que abres la app y solo lee los mensajes nuevos (nunca pide permisos por su cuenta). Abajo puedes sincronizar 3 meses completos, deshacer la última sincronización y revisar pendientes. Disponible solo en Android.',
+                noSmsDescription: 'Activa este interruptor para mostrar la sincronización de SMS bancarios (BAC, BANRURAL, GTC, BANTRAB y PROMERICA). Mientras esté apagado, la app oculta la lectura de SMS (sincronización y «Elegir de mis SMS»), pero «Pegar SMS» en Agregar sigue disponible; tus movimientos ya importados se conservan.',
             },
             {
                 id: 'set_2', elementId: 'settings_budget', screen: 'settings', position: 'bottom', icon: 'wallet-outline', padding: 8,
@@ -853,7 +852,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_5', elementId: 'settings_savings', screen: 'settings', position: 'top', icon: 'business-outline', padding: 8,
                 title: 'Ahorros externos',
-                description: 'Dinero que tienes fuera de la app, por ejemplo un plazo fijo. Se suma a tu patrimonio y a la proyección de ahorro.',
+                description: 'Dinero que tienes fuera de la app, por ejemplo un plazo fijo. Cuenta en tu patrimonio solo cuando ninguna de tus cuentas lleva saldo (entonces el patrimonio es un estimado: estos ahorros más tus ingresos menos tus gastos); si alguna cuenta lleva saldo, el patrimonio sale solo de esas cuentas y estos ahorros no se suman. Los quetzales también cuentan en la proyección de ahorro de Estadísticas.',
             },
             {
                 id: 'set_6', elementId: 'settings_biometric', screen: 'settings', position: 'top', icon: 'finger-print-outline', padding: 8,

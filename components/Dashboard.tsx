@@ -68,7 +68,7 @@ function buildSyncStats(r: SyncResult): { stats: GlassDialogStat[]; footnote?: s
     if (st.notices + st.info > 0) stats.push({ icon: "notifications-outline", label: "Avisos informativos del banco (sin movimiento)", value: st.notices + st.info, tone: "muted" });
     if (st.ownTransfers > 0) stats.push({ icon: "repeat-outline", label: "Transferencias entre tus cuentas", value: st.ownTransfers, tone: "muted" });
     if (st.unparsed > 0) stats.push({ icon: "help-circle-outline", label: "Mensajes sin clasificar", value: st.unparsed, tone: "warning" });
-    return { stats, footnote: st.installments > 0 ? "Revisalas en Cuentas → Visacuotas." : undefined };
+    return { stats, footnote: st.installments > 0 ? "Revísalas en Cuentas → Visacuotas." : undefined };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -540,7 +540,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                         <Ionicons name="business-outline" size={22} color={C.primaryLight} />
                     </View>
                     <Text style={ni.title}>Patrimonio Total</Text>
-                    <Text style={ni.body}>El Patrimonio Total muestra lo que tienes en tus cuentas de activos que llevan saldo. Si ninguna lo lleva, es un estimado con tus ingresos y gastos.</Text>
+                    <Text style={ni.body}>El Patrimonio Total suma lo que tienes en tus cuentas que llevan saldo. Si ninguna lo lleva, es un estimado: tus ahorros externos (Ajustes) más tus ingresos menos tus gastos registrados.</Text>
 
                     <View style={ni.row}>
                         <Ionicons name="checkmark-circle" size={15} color={C.income} />
@@ -548,7 +548,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                     </View>
                     <Text style={ni.bullet}>• Saldo en cuentas de ahorro</Text>
                     <Text style={ni.bullet}>• Efectivo disponible</Text>
-                    <Text style={ni.bullet}>• Saldo positivo en cuentas bancarias e inversiones</Text>
+                    <Text style={ni.bullet}>• Saldo de cuentas bancarias e inversiones que lo llevan</Text>
 
                     <View style={ni.row}>
                         <Ionicons name="close-circle" size={15} color={C.danger} />
@@ -557,6 +557,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                     <Text style={ni.bullet}>• Cuentas «Sin seguimiento» (no llevan saldo)</Text>
                     <Text style={ni.bullet}>• Saldo deudor de tarjetas de crédito</Text>
                     <Text style={ni.bullet}>• Pendiente de visacuotas</Text>
+                    <Text style={ni.bullet}>• Ahorros externos, mientras alguna cuenta lleve saldo</Text>
 
                     <Text style={ni.footnote}>
                         Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tienes con lo que debes.
@@ -874,7 +875,7 @@ export default function DashboardScreen({
         icon: "chatbubble-ellipses-outline",
         title: "Permiso de SMS necesario",
         message: "Sin este permiso BudgetMaster no puede detectar tus movimientos bancarios. Todo se procesa en tu teléfono y solo se leen mensajes de bancos.",
-        footnote: "También puedes pegar un SMS en Agregar → Leer SMS.",
+        footnote: "También puedes pegar un SMS en Agregar → Pegar SMS.",
         actions: [
             { label: "Reintentar", kind: "primary", onPress: () => afterDialogClosed(() => { void handleSmsSync(); }) },
             { label: "Abrir ajustes", kind: "secondary", onPress: openSystemSettings },

@@ -390,7 +390,7 @@ export default function SmsPendingSheet({
                                 <PendingRow
                                     icon="card-outline"
                                     title="Compras sin cuenta"
-                                    hint="Asignalas a una cuenta para organizarlas por cuenta"
+                                    hint="Asígnalas a una cuenta para organizarlas por cuenta"
                                     count={unassignedCount}
                                     onPress={() => goTo("unassigned")}
                                 />

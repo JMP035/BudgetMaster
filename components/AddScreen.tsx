@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import {
     KeyboardAvoidingView, Platform, ScrollView,
@@ -42,15 +42,8 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
     const [showNewCat, setShowNewCat] = useState(false);
     const kb = useKeyboardHeight();
     const tutScroll = useTutorialScroll('add');
-    const smsOn = isSmsFeatureOn(settings);
-
-    // Si se apaga el interruptor de SMS, cerrar y limpiar el panel de pegar SMS.
-    useEffect(() => {
-        if (!smsOn) {
-            setShowSmsInput(false);
-            setSmsText("");
-        }
-    }, [smsOn]);
+    // Pegar un SMS y analizarlo no usa el permiso ni la bandeja de SMS: está disponible siempre,
+    // aunque la lectura de SMS esté apagada (iPhone, web o Android con SMS apagado).
 
     const typeSelectorRef = useTutorialRef('add_type_selector');
     const currencyRef = useTutorialRef('add_currency');
@@ -82,7 +75,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 icon: "information-circle-outline",
                 title: "No se registró",
                 message: `No se registró: ${why}`,
-                footnote: "Si es un movimiento real, ingresalo manualmente.",
+                footnote: "Si es un movimiento real, ingrésalo manualmente.",
             });
             return;
         }
@@ -116,7 +109,9 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                 icon: "swap-horizontal-outline",
                 title: isLoan ? "Desembolso detectado" : "Pago de tarjeta detectado",
                 message: `${tx.description || "Movimiento"} por ${formatMoney(tx.amount, tx.currency)}.`,
-                footnote: "Es un movimiento neutro: no cuenta como gasto ni como ingreso, por eso no se carga en el formulario. La sincronización de SMS en Inicio lo registra como neutro.",
+                footnote: isSmsFeatureOn(settings)
+                    ? "Es un movimiento neutro: no cuenta como gasto ni como ingreso, por eso no se carga en el formulario. La sincronización de SMS en Inicio lo registra como neutro."
+                    : "Es un movimiento neutro: no cuenta como gasto ni como ingreso, por eso no se carga en el formulario.",
             });
             setShowSmsInput(false);
             setSmsText("");
@@ -182,27 +177,25 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                     headerRef={headerRef}
                     right={
                         <>
-                            {smsOn && (
-                                <View ref={smsBtnRef} collapsable={false}>
-                                    <TouchableOpacity
-                                        style={s.smsBtn}
-                                        onPress={() => setShowSmsInput(!showSmsInput)}
-                                        accessibilityRole="button"
-                                        accessibilityLabel="Leer SMS del banco"
-                                    >
-                                        <GlassBackground radius={20} blur={false} />
-                                        <Ionicons name="scan-outline" size={20} color={C.primaryLight} />
-                                        <Text style={s.smsBtnTxt}>Leer SMS</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
+                            <View ref={smsBtnRef} collapsable={false}>
+                                <TouchableOpacity
+                                    style={s.smsBtn}
+                                    onPress={() => setShowSmsInput(!showSmsInput)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel="Pegar el SMS del banco"
+                                >
+                                    <GlassBackground radius={20} blur={false} />
+                                    <Ionicons name="clipboard-outline" size={20} color={C.primaryLight} />
+                                    <Text style={s.smsBtnTxt}>Pegar SMS</Text>
+                                </TouchableOpacity>
+                            </View>
                             <HelpButton tutorialId="tutorial_agregar" />
                         </>
                     }
                 />
 
-                {/* LEER SMS */}
-                {smsOn && showSmsInput && (
+                {/* PEGAR SMS */}
+                {showSmsInput && (
                     <GlassCard blur={false} style={s.card} contentStyle={s.cardContent} leftAccentColor={C.accent}>
                         <Text style={[s.lbl, { color: C.accentLight }]}>PEGA AQUÍ EL TEXTO DEL BANCO</Text>
                         <Text style={s.hint}>

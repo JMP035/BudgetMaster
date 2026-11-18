@@ -9,7 +9,7 @@ import {
 import {
     Account, CategoryBudget, CreditInstallment, Currency, FixedExpense, IncomeSource, SavingsGoal,
     StorageService, Transaction, UserSettings,
-    formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
+    formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, hasPayDate, isFixedExpenseOverdue,
     parseAmount, parseDateOnly, storedDateToDateOnly
 } from "../services/storage";
 import { isSmsFeatureOn } from "../services/features";
@@ -589,7 +589,9 @@ function FixedExpensesTab({
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
-                            <Text style={[s.summaryVal, { color: daysLeft <= 5 ? C.danger : C.accent }]}>{daysLeft}d</Text>
+                            {hasPayDate(settings)
+                                ? <Text style={[s.summaryVal, { color: daysLeft <= 5 ? C.danger : C.accent }]}>{daysLeft}d</Text>
+                                : <Text style={[s.summaryVal, { color: C.textMuted }]}>—</Text>}
                             <Text style={s.summaryLbl}>PRÓX. PAGO</Text>
                         </View>
                     </GlassCard>

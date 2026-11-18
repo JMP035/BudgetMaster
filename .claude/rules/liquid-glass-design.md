@@ -59,6 +59,9 @@ este sistema** — no estilos planos ni `Alert.alert` nativo ni grises genérico
   en listas largas usar `gradient={false}`. Frases con importes: `formatMoney`, nunca `toFixed` a mano.
 - Interruptor de SMS: `isSmsFeatureOn(settings)` (`services/features.ts`). Toda UI nueva que mencione
   o use SMS debe ocultarse cuando está apagado; los pasos de tutorial de SMS llevan `requiresSms`.
+  Excepción: pegar un SMS a mano («Pegar SMS» en Agregar, el cuadro «SMS de ejemplo» de las fuentes de ingreso)
+  no usa el permiso ni la bandeja, así que no cuenta como UI de SMS apagable: está siempre visible y sus
+  pasos de tutorial no llevan `requiresSms`. Se oculta solo lo que lee la bandeja (sincronización, «Elegir de mis SMS»).
 - La app está bloqueada en vertical (`orientation: "portrait"` en `app.json`): no diseñar para horizontal.
 - Pantalla o módulo nuevo: registrar sus elementos con `useTutorialRef`, su ScrollView con
   `useTutorialScroll(key)` y agregar su tutorial en `services/Tutorial.ts`.

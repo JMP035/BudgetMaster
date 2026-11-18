@@ -11,6 +11,7 @@ import type { CapacityContext, CapacityLevel } from './Capacity';
 import { isBalanceTracked, withDerivedBalances } from './Balances';
 import { scheduledDebts } from './CardStatement';
 import { fixedCycleConfig } from './FixedCycle';
+import { hasPayDate } from './FinancialPeriod';
 import { sanitizePayRules } from './PayCalendar';
 import { periodSnapshot } from './NotificationTexts';
 import { periodBudgetFactor } from './PeriodBudget';
@@ -29,8 +30,13 @@ export interface WidgetSnapshot {
   currency: 'Q';
   /** Lo que queda disponible del período (presupuesto menos lo gastado; sin presupuesto, el ingreso declarado o registrado). */
   availablePeriod: number;
-  /** Días hasta el próximo pago (0 si no aplica). */
-  daysToPay: number;
+  /**
+   * Días hasta el próximo pago (mensual, quincenal o semanal); `null` con ciclo irregular, que no tiene fecha de cobro.
+   * Una foto vieja (anterior a `daysLeftInPeriod`) puede traer 0 en el ciclo irregular: ver sanitizeWidgetSnapshot.
+   */
+  daysToPay: number | null;
+  /** Días que le quedan al período (con ciclo irregular, hasta fin de mes). */
+  daysLeftInPeriod: number;
   /** availablePeriod repartido entre los días que faltan. */
   availablePerDay: number;
   /** Porcentaje del presupuesto ya gastado (0 sin presupuesto). */
@@ -55,7 +61,7 @@ export interface WidgetSnapshotData {
   accounts: Account[];
   creditInstallments: CreditInstallment[];
   incomeSources: IncomeSource[];
-  /** Días hasta el próximo pago (lo da el llamador: depende del ciclo y de las anclas). */
+  /** Días que le quedan al período (lo da el llamador: depende del ciclo y de las anclas; con ciclo irregular, hasta fin de mes). */
   daysLeft: number;
   /** Período de pago (real, con el inicio del sueldo) que contiene a esa fecha. */
   periodAt: (d: Date) => PeriodRange & { nextStart: Date };
@@ -86,6 +92,23 @@ export function widgetShortDate(key: string): string {
   return d ? `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}` : '';
 }
 
+/**
+ * Texto de días del widget. Con fecha de cobro (mensual, quincenal, semanal): «1 día al cobro», «5 días al cobro»
+ * («Hoy cobras» solo si el cobro es hoy). Con ciclo irregular no hay cobro que contar (`daysToPay` es null):
+ * «N días en el período» (hasta fin de mes), nunca «Hoy cobras».
+ */
+export function widgetDaysText(snap: Pick<WidgetSnapshot, 'daysToPay' | 'daysLeftInPeriod'>): string {
+  const days = snap.daysToPay;
+  if (days === null) {
+    const left = snap.daysLeftInPeriod;
+    if (left <= 0) return 'Sin fecha de cobro';
+    return left === 1 ? '1 día en el período' : `${left} días en el período`;
+  }
+  if (days <= 0) return 'Hoy cobras';
+  if (days === 1) return '1 día al cobro';
+  return `${days} días al cobro`;
+}
+
 function noon(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12, 0, 0, 0);
 }
@@ -113,7 +136,8 @@ export function buildWidgetSnapshot(data: WidgetSnapshotData, now: Date): Widget
     updatedAt: now.toISOString(),
     currency: 'Q',
     availablePeriod,
-    daysToPay: daysLeft,
+    daysToPay: hasPayDate(settings) ? daysLeft : null,
+    daysLeftInPeriod: daysLeft,
     availablePerDay,
     budgetPct: snap.hasBudget ? Math.max(0, snap.pct) : 0,
     hasBudget: snap.hasBudget,
@@ -191,10 +215,20 @@ export function maskForPrivacy(s: WidgetSnapshot): WidgetSnapshot {
   return out;
 }
 
-/** Valida una foto leída del disco; null si no es de esta versión. */
+/**
+ * Valida una foto leída del disco; null si no es de esta versión. Acepta las fotos viejas, que no traen
+ * `daysLeftInPeriod` y guardaban 0 en `daysToPay` con ciclo irregular: ese 0 no es «hoy cobras», así que se
+ * normaliza a `daysToPay: null` y se toma `daysLeftInPeriod` del mismo valor (0 si no hay dato) hasta que la app
+ * guarde la foto nueva.
+ */
 export function sanitizeWidgetSnapshot(raw: unknown): WidgetSnapshot | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<WidgetSnapshot>;
-  if (r.v !== 1 || typeof r.availablePeriod !== 'number' || typeof r.daysToPay !== 'number') return null;
-  return r as WidgetSnapshot;
+  if (r.v !== 1 || typeof r.availablePeriod !== 'number') return null;
+  const hasNew = typeof r.daysLeftInPeriod === 'number';
+  if (r.daysToPay !== null && typeof r.daysToPay !== 'number') return null;
+  if (hasNew) return r as WidgetSnapshot;
+  // Foto vieja: solo traía `daysToPay`. Un 0 es ambiguo (irregular o cobro hoy): se trata como «sin dato» para no mentir.
+  const old = typeof r.daysToPay === 'number' ? r.daysToPay : 0;
+  return { ...(r as WidgetSnapshot), daysToPay: old > 0 ? old : null, daysLeftInPeriod: old > 0 ? old : 0 };
 }

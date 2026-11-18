@@ -62,7 +62,7 @@ export function BudgetMediumWidget({ view }: { view: WidgetView }) {
             style={{ fontSize: 22, fontWeight: 'bold', color: perDayNegative ? W.danger : W.text }}
           />
           <TextWidget
-            text={`${amountText(hidden, snap.availablePeriod)} · ${daysText(snap.daysToPay)}`}
+            text={`${amountText(hidden, snap.availablePeriod)} · ${daysText(snap)}`}
             maxLines={1}
             truncate="END"
             style={{ fontSize: 11, color: W.bronze }}

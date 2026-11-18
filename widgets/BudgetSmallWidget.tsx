@@ -24,7 +24,7 @@ export function BudgetSmallWidget({ view }: { view: WidgetView }) {
             maxLines={1}
             style={{ fontSize: 22, fontWeight: 'bold', color: !hidden && snap.availablePeriod < 0 ? W.danger : W.text }}
           />
-          <TextWidget text={daysText(snap.daysToPay)} style={{ fontSize: 12, color: W.bronze }} />
+          <TextWidget text={daysText(snap)} style={{ fontSize: 12, color: W.bronze }} />
         </FlexWidget>
       ) : (
         <TextWidget text="Abre BudgetMaster para ver tu resumen" maxLines={3} style={{ fontSize: 12, color: W.sub }} />

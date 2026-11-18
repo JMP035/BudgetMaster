@@ -513,7 +513,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
                 <>
                     <Text style={s.hint}>
                         Pega el SMS que te mandó el banco cuando te pagaron
-                        {canPickSms ? " o elegilo de tus mensajes" : ""}. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, y así reconoce tu pago solo.
+                        {canPickSms ? " o elígelo de tus mensajes" : ""}. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, y así reconoce tu pago solo.
                     </Text>
                     <TextInput
                         style={[s.input, s.multiline]}

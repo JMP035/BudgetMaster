@@ -51,7 +51,7 @@ export interface PlanData {
   creditInstallments: CreditInstallment[];
   incomeSources?: IncomeSource[];
   categoryBudgets: CategoryBudget[];
-  /** Días hasta el próximo pago (lo calcula el llamador con el ciclo y las anclas reales). */
+  /** Días que le quedan al período (hasta el próximo pago; con ciclo irregular, hasta fin de mes). Lo calcula el llamador con el ciclo y las anclas reales. */
   daysLeft: number;
   /** Período de pago REAL que contiene a esa fecha (en la app: getCurrentFinancialPeriod con el resolvedor). */
   periodAt: (d: Date) => PeriodRange & { nextStart: Date };

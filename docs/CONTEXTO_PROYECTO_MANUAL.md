@@ -18,15 +18,15 @@ Personas comunes en Guatemala, **sin conocimientos técnicos ni financieros**: e
 
 ## Fuentes de verdad (en este orden)
 1. `MANUAL_USUARIO.md` (en la raíz del repositorio) — borrador técnico, 17 secciones, ya en «tú» y verificado contra el código el 18 de noviembre de 2026. Es el contenido más completo.
-2. `docs/PRUEBAS_MANUALES.md` — instructivo de **91 pruebas manuales** (P-01 y T-01 a T-90); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
+2. `docs/PRUEBAS_MANUALES.md` — instructivo de **96 pruebas manuales** (P-01 y T-01 a T-95); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
 3. Los resultados que el dueño de la app aporte tras probar (aciertos, fallos, capturas).
 
-Además existen **35 pruebas automáticas** (`npm run test:*`) con **5,048 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
+Además existen **35 pruebas automáticas** (`npm run test:*`) con **5,090 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
 
 **Regla:** no inventar funciones ni describir pantallas que no estén en esas fuentes. Si algo no está claro, preguntar. Si algo aún no se ha probado en un teléfono (por ejemplo, el widget), marcarlo como pendiente de verificación en vez de afirmarlo.
 
 ## Qué hace la app (resumen para orientarse)
-- Lleva gastos e ingresos, a mano o leyendo los SMS del banco (solo Android; también se puede **pegar** un SMS en Agregar si la lectura de SMS está activada en Ajustes).
+- Lleva gastos e ingresos, a mano o leyendo los SMS del banco (solo Android; también se puede **pegar** un SMS en Agregar → «Pegar SMS» en cualquier teléfono, aunque la lectura de SMS esté apagada: no usa ningún permiso).
 - **Configuración inicial:** 4 datos obligatorios (nombre, ingreso, ciclo de pago con su día, meta de ahorro) y pasos opcionales (cuentas y tarjetas con su corte y pago, el SMS del pago, gastos fijos, deudas, dólares, SMS, huella, Gemini). Lo que se salta queda en la guía del Inicio.
 - **Período de pago** (no mes calendario). Según el ciclo:
   - *Mensual:* de un día de pago al siguiente. Si cae en fin de semana o feriado de Guatemala, el período arranca el día hábil en que de verdad pagan (reglas editables). El usuario puede fijar el inicio a mano y la app no lo cambia sola.
@@ -61,10 +61,10 @@ Además existen **35 pruebas automáticas** (`npm run test:*`) con **5,048 compr
 - **Centro de revisión:** lista de cosas que la app no está segura de haber entendido (duplicados, transferencias, ¿es tu sueldo?, ¿a qué cuenta fue?…).
 
 ## Limitaciones que el manual debe decir con honestidad
-- Lectura de SMS, sincronización automática, widget y varias detecciones son **solo Android**. En iPhone se registra a mano o se pega un SMS.
+- Lectura de SMS, sincronización automática, widget y varias detecciones son **solo Android**. En iPhone se registra a mano o se pega un SMS (botón «Pegar SMS», siempre visible).
 - El banco (BAC) no manda por SMS el total de la tarjeta: ese monto se escribe a mano.
 - **Sin copia de seguridad en la nube:** si se borra la app, se pierden los datos.
-- **Irregular = mes calendario:** sin día de pago, sin contador de días al pago (y el widget pequeño dice «Hoy cobras»).
+- **Irregular = mes calendario:** sin día de pago y sin contador de días al pago (el widget pequeño dice «N días en el período», los que quedan del mes).
 - **Semanal sin feriados ni anclas:** la semana arranca siempre el día elegido; no hay inicio editable ni aviso de fin de período (el resumen semanal lo reemplaza).
 - **Euros y libras 1:1:** solo hay tipo de cambio Q↔USD; el EUR y la libra se toman 1:1 con el quetzal.
 - La lectura de SMS depende de permisos de Android y de políticas de Google Play (para una versión pública puede cambiar).

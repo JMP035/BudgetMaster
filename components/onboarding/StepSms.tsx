@@ -118,7 +118,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                                 actionLabel="Reintentar"
                                 onAction={() => { void request(); }}
                             />
-                            <Text style={ps.hint}>También puedes pegar un SMS en Agregar → Leer SMS.</Text>
+                            <Text style={ps.hint}>También puedes pegar un SMS en Agregar → Pegar SMS.</Text>
                             <GlassButton
                                 label="Abrir ajustes"
                                 icon="settings-outline"
