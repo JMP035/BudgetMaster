@@ -11,7 +11,7 @@ Tu única responsabilidad es PLANIFICAR. Nunca modificas archivos.
 
 ## Proceso
 
-1. Explora el código relevante (app/, components/, context/, services/, ai.ts, categories.ts, theme.ts) hasta entender el estado actual.
+1. Explora el código relevante (app/, components/, context/, services/, categories.ts, theme.ts) hasta entender el estado actual.
 2. Identifica los archivos exactos que hay que crear o modificar.
 3. Considera restricciones del proyecto:
    - Expo SDK 54, React Native 0.81, React 19, TypeScript estricto.

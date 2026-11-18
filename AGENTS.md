@@ -8,7 +8,7 @@ App de finanzas personales hecha con Expo (SDK 54) / React Native 0.81 / React 1
 - `components/` — pantallas y UI (Dashboard, Transactions, BudgetScreen, AIAdvisor, etc.).
 - `context/` — contextos de React (TutorialContext).
 - `services/` — lógica y persistencia (storage.ts sobre AsyncStorage, SmsService, Categorizer, NotificationService, ExchangeRateService).
-- `ai.ts` — asesor financiero con IA basado en datos locales.
+- `services/LocalAdvisorEngine.ts` y `services/assistant/` — asesor financiero (local primero; Gemini opcional).
 - `categories.ts`, `theme.ts` — catálogo de categorías y tema visual.
 
 ## Flujo de trabajo obligatorio
