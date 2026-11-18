@@ -10,7 +10,7 @@ import {
 } from '../services/OnboardingPlan';
 import type { DraftAccount, DraftFixed, OnboardingDraft } from '../services/OnboardingPlan';
 import {
-  buildChecklist, helpModulesFor, isChecklistComplete, pendingCount, sanitizeGettingStarted, HELP_MODULES,
+  buildChecklist, helpModulesFor, isChecklistComplete, pendingCount, sanitizeGettingStarted, CHECKLIST_IDS, HELP_MODULES,
 } from '../services/GettingStarted';
 import type { ChecklistInput } from '../services/GettingStarted';
 import { smsPermissionHelp } from '../services/SmsPermissionHelp';
@@ -193,6 +193,30 @@ function acc(id: string, bankCode: string | null, kind: DraftAccount['kind'], ex
 }
 
 // ─────────────────────────────────────────────────────────────
+// Tarjetas: día de corte y de pago en el commit
+// ─────────────────────────────────────────────────────────────
+{
+  const d = draftWith({
+    accounts: [
+      acc('c1', 'BAC', 'credit', { cutoffDay: '25', paymentDueDay: '10' }),
+      acc('c2', 'GYT', 'credit', { cutoffDay: ' 5 ' }),
+      acc('c3', 'BI', 'credit'),
+      acc('c4', 'BAM', 'credit', { cutoffDay: '40', paymentDueDay: 'x' }),
+      acc('b1', 'BANRURAL', 'bank', { cutoffDay: '25', paymentDueDay: '10' }),
+    ],
+  });
+  const [c1, c2, c3, c4, b1] = buildOnboardingCommit(d, BASE, ctxAndroid).accounts;
+  check('tarjeta con días: cutoffDay y paymentDueDay numéricos', c1.cutoffDay === 25 && c1.paymentDueDay === 10);
+  check('tarjeta con solo corte: solo ese', c2.cutoffDay === 5 && c2.paymentDueDay === undefined);
+  check('tarjeta sin días: ambos sin definir', c3.cutoffDay === undefined && c3.paymentDueDay === undefined
+    && !('cutoffDay' in c3) && !('paymentDueDay' in c3));
+  check('tarjeta con días inválidos: no se asignan', c4.cutoffDay === undefined && c4.paymentDueDay === undefined);
+  check('cuenta que no es tarjeta nunca lleva días', b1.cutoffDay === undefined && b1.paymentDueDay === undefined);
+  check('cardsOnboardingComplete sigue en true (el onboarding nuevo no pasa por CardsOnboarding)',
+    buildOnboardingCommit(d, BASE, ctxAndroid).settings.cardsOnboardingComplete === true);
+}
+
+// ─────────────────────────────────────────────────────────────
 // Idempotencia y vínculos SMS
 // ─────────────────────────────────────────────────────────────
 {
@@ -282,6 +306,21 @@ check('nombre de 41 letras inválido, de 40 válido', !validateName('a'.repeat(4
   const bad = validateAccount(acc('a', 'BAC', 'bank', { balance: 'abc' }), parse);
   check('cuenta con saldo inválido: mensaje', !bad.ok && bad.error === 'Ingresá un saldo válido');
   check('tarjeta ignora el saldo', validateAccount(acc('a', 'BAC', 'credit', { balance: 'abc' }), parse).ok);
+
+  // Día de corte y de pago de la tarjeta (opcionales, 1..31)
+  const card = (extra: Partial<DraftAccount>) => acc('c', 'BAC', 'credit', extra);
+  check('tarjeta sin días (campos ausentes) = válida', validateAccount(card({}), parse).ok);
+  check('tarjeta con días vacíos = válida', validateAccount(card({ cutoffDay: '', paymentDueDay: '' }), parse).ok);
+  check('tarjeta con corte 25 y pago 10 = válida', validateAccount(card({ cutoffDay: '25', paymentDueDay: '10' }), parse).ok);
+  check('tarjeta con solo corte = válida', validateAccount(card({ cutoffDay: '25' }), parse).ok);
+  check('tarjeta con 1 y 31 = válida', validateAccount(card({ cutoffDay: '1', paymentDueDay: '31' }), parse).ok);
+  for (const bad of ['0', '32', '99', 'a', '2.5', '-3']) {
+    const vc = validateAccount(card({ cutoffDay: bad }), parse);
+    check(`corte «${bad}» inválido con su mensaje`, !vc.ok && vc.error === 'El día de corte debe ser un número entre 1 y 31.', JSON.stringify(vc));
+    const vp = validateAccount(card({ paymentDueDay: bad }), parse);
+    check(`pago «${bad}» inválido con su mensaje`, !vp.ok && vp.error === 'El día de pago debe ser un número entre 1 y 31.', JSON.stringify(vp));
+  }
+  check('días en una cuenta que no es tarjeta se ignoran', validateAccount(acc('a', 'BAC', 'bank', { cutoffDay: '99', paymentDueDay: 'x' }), parse).ok);
 }
 {
   const d = draftWith({});
@@ -401,6 +440,17 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
   check('sms incompleto → null', sanitizeDraft({ ...full, sms: { optOut: true } }) === null);
   check('moneda inválida → null', sanitizeDraft({ ...full, incomeCurrency: 'EUR' }) === null);
   check('claves extra se descartan', !('extra' in (sanitizeDraft({ ...full, extra: 1 }) as object)));
+
+  // Días de la tarjeta: un borrador viejo (sin los campos) sigue siendo válido
+  const oldCard = { ...acc('onb_acc_9', 'BAC', 'credit') };
+  const sOld = sanitizeDraft({ ...JSON.parse(JSON.stringify(full)), accounts: [oldCard] });
+  check('borrador viejo sin cutoffDay/paymentDueDay sigue válido', sOld !== null && sOld.accounts.length === 1
+    && !('cutoffDay' in sOld.accounts[0]) && !('paymentDueDay' in sOld.accounts[0]));
+  const sNew = sanitizeDraft({ ...JSON.parse(JSON.stringify(full)), accounts: [{ ...oldCard, cutoffDay: '25', paymentDueDay: '10' }] });
+  check('borrador con días los conserva', sNew !== null && sNew.accounts[0].cutoffDay === '25' && sNew.accounts[0].paymentDueDay === '10');
+  const sBad = sanitizeDraft({ ...JSON.parse(JSON.stringify(full)), accounts: [{ ...oldCard, cutoffDay: 25, paymentDueDay: { x: 1 } }] });
+  check('día que no es texto: se descarta el campo, no la cuenta', sBad !== null && sBad.accounts.length === 1
+    && sBad.accounts[0].id === 'onb_acc_9' && !('cutoffDay' in sBad.accounts[0]) && !('paymentDueDay' in sBad.accounts[0]));
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -408,16 +458,33 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
 // ─────────────────────────────────────────────────────────────
 {
   const base: ChecklistInput = {
-    accountsCount: 0, incomePatternCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false, biometricAvailable: true,
+    accountsCount: 0, creditCardsCount: 0, cardsMissingDatesCount: 0, incomePatternCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false, biometricAvailable: true,
     biometricEnabled: false, geminiKey: '', tourDone: false, skipped: [],
   };
   const get = (i: ChecklistInput, id: string) => buildChecklist(i).find(x => x.id === id)!;
 
   const items = buildChecklist(base);
-  check('checklist: 7 ítems en orden', eq(items.map(i => i.id), ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
-  check('checklist inicial: 7 pendientes', pendingCount(items, []) === 7);
+  check('checklist: 8 ítems en orden (card_dates justo después de accounts)', eq(items.map(i => i.id), ['tour', 'accounts', 'card_dates', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
+  check('CHECKLIST_IDS coincide con el orden del checklist', eq(CHECKLIST_IDS, items.map(i => i.id)));
+  check('checklist inicial (sin tarjetas): 7 pendientes, card_dates no cuenta', pendingCount(items, []) === 7);
   check('checklist: todos con título y pista', items.every(i => i.title.length > 0 && i.hint.length > 0));
-  check('checklist: nada hecho ni oculto', items.every(i => !i.done && !i.hidden));
+  check('checklist: nada hecho; solo card_dates oculto (sin tarjetas)', items.every(i => !i.done || i.id === 'card_dates') && eq(items.filter(i => i.hidden).map(i => i.id), ['card_dates']));
+
+  // card_dates: oculto sin tarjetas, pendiente con tarjetas sin días, hecho cuando ya no falta ninguna
+  const cdNone = get(base, 'card_dates');
+  check('card_dates: título y pista', cdNone.title === 'Configurar corte y pago de tus tarjetas'
+    && cdNone.hint === 'Con el día de corte y el de pago recibes el recordatorio de pago y ves tu capacidad de pago.');
+  check('card_dates oculto sin tarjetas', cdNone.hidden);
+  const cdPending = get({ ...base, accountsCount: 1, creditCardsCount: 1, cardsMissingDatesCount: 1 }, 'card_dates');
+  check('card_dates pendiente: visible y sin hacer', !cdPending.hidden && !cdPending.done);
+  const cdDone = get({ ...base, accountsCount: 1, creditCardsCount: 2, cardsMissingDatesCount: 0 }, 'card_dates');
+  check('card_dates hecho: visible y hecho cuando ninguna tarjeta falta', !cdDone.hidden && cdDone.done);
+  check('card_dates pendiente cuenta como pendiente (8 con tarjeta sin días)',
+    pendingCount(buildChecklist({ ...base, creditCardsCount: 1, cardsMissingDatesCount: 1 }), []) === 8);
+  check('card_dates: «No me interesa» la saca de los pendientes',
+    pendingCount(buildChecklist({ ...base, creditCardsCount: 1, cardsMissingDatesCount: 1 }), ['card_dates']) === 7);
+  check('sanitizeGettingStarted acepta card_dates en skipped',
+    eq(sanitizeGettingStarted({ v: 1, dismissed: false, collapsed: false, skipped: ['card_dates'], tourDeferred: false, createdAt: NOW })?.skipped, ['card_dates']));
 
   check('tour hecho', get({ ...base, tourDone: true }, 'tour').done);
   check('cuentas hechas con 1', get({ ...base, accountsCount: 1 }, 'accounts').done);
@@ -435,7 +502,7 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
   check('skipped no cuenta como pendiente', pendingCount(items, ['gemini', 'tour']) === 5);
   check('hechos no cuentan como pendientes', pendingCount(buildChecklist({ ...base, accountsCount: 2, tourDone: true }), []) === 5);
   check('no completa con pendientes', !isChecklistComplete(items, []));
-  check('completa con todo saltado', isChecklistComplete(items, ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
+  check('completa con todo saltado', isChecklistComplete(items, ['tour', 'accounts', 'card_dates', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
   const allDone = buildChecklist({ ...base, accountsCount: 1, incomePatternCount: 1, fixedCount: 1, smsSynced: true, biometricEnabled: true, geminiKey: 'x'.repeat(25), tourDone: true });
   check('completa con todo hecho', isChecklistComplete(allDone, []));
   check('completa con mezcla de hechos, ocultos y saltados',

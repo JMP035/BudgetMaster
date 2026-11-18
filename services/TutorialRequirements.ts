@@ -4,12 +4,16 @@
 // SMS activos) lo declara en `requires`. Si falta, el overlay del tutorial lo dice y ofrece crearlo en ese
 // momento: el tutorial nunca se queda señalando una pantalla vacía.
 
-export type TutorialRequirement = 'bank_account' | 'credit_card' | 'income_source' | 'sms_on';
+import { hasValidCardDates } from './CardSetup';
+
+export type TutorialRequirement = 'bank_account' | 'credit_card' | 'card_dates' | 'income_source' | 'sms_on';
 
 /** Lo que ya existe en los datos del usuario (lo calcula app/index.tsx). */
 export interface RequirementFacts {
   hasBankAccount: boolean;
   hasCreditCard: boolean;
+  /** Hay una tarjeta activa con su día de corte y de pago (hasValidCardDates). */
+  hasCardWithDates: boolean;
   hasIncomeSource: boolean;
   smsOn: boolean;
 }
@@ -24,6 +28,7 @@ export function missingRequirement(
   switch (req) {
     case 'bank_account': return facts.hasBankAccount ? null : req;
     case 'credit_card': return facts.hasCreditCard ? null : req;
+    case 'card_dates': return facts.hasCardWithDates ? null : req;
     case 'income_source': return facts.hasIncomeSource ? null : req;
     case 'sms_on': return facts.smsOn ? null : req;
     default: return null;
@@ -35,6 +40,7 @@ export function requirementLabel(req: TutorialRequirement): string {
   switch (req) {
     case 'bank_account': return 'la cuenta';
     case 'credit_card': return 'la tarjeta';
+    case 'card_dates': return 'una tarjeta con su día de corte y de pago';
     case 'income_source': return 'una fuente de ingreso';
     case 'sms_on': return 'activar los SMS';
   }
@@ -47,7 +53,7 @@ export function requirementNoticeText(req: TutorialRequirement): string {
 
 /** Datos mínimos (estructurales) para calcular los hechos sin importar storage. */
 export interface RequirementSources {
-  accounts: Array<{ type: string; isActive: boolean }>;
+  accounts: Array<{ type: string; isActive: boolean; cutoffDay?: number; paymentDueDay?: number }>;
   /** Fuentes de ingreso creadas (Presupuesto → Ingresos); basta una activa para cumplir el requisito. */
   incomeSources: Array<{ isActive: boolean }>;
   smsOn: boolean;
@@ -58,6 +64,7 @@ export function buildRequirementFacts(src: RequirementSources): RequirementFacts
   return {
     hasBankAccount: active.some(a => a.type === 'bank' || a.type === 'savings'),
     hasCreditCard: active.some(a => a.type === 'credit'),
+    hasCardWithDates: active.some(a => a.type === 'credit' && hasValidCardDates(a)),
     hasIncomeSource: src.incomeSources.some(s => s.isActive),
     smsOn: src.smsOn,
   };

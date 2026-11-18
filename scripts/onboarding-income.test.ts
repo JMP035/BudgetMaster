@@ -203,7 +203,7 @@ console.log('Pasos');
 console.log('Guía del Inicio');
 {
   const base: ChecklistInput = {
-    accountsCount: 0, incomePatternCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false,
+    accountsCount: 0, creditCardsCount: 0, cardsMissingDatesCount: 0, incomePatternCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false,
     biometricAvailable: true, biometricEnabled: false, geminiKey: '', tourDone: false, skipped: [],
   };
   const get = (i: ChecklistInput) => buildChecklist(i).find(x => x.id === 'income')!;
@@ -213,7 +213,7 @@ console.log('Guía del Inicio');
   check('con una fuente con patrón: hecho', get({ ...base, incomePatternCount: 1 }).done);
   check('visible también en iOS y con SMS apagado (se puede pegar el texto)',
     !get({ ...base, isAndroid: false, smsOn: false }).hidden);
-  check('va justo después de cuentas', eq(buildChecklist(base).map(i => i.id).slice(0, 3), ['tour', 'accounts', 'income']));
+  check('va después de cuentas y del corte y pago de las tarjetas', eq(buildChecklist(base).map(i => i.id).slice(0, 4), ['tour', 'accounts', 'card_dates', 'income']));
   check('«No me interesa» lo saca de los pendientes',
     pendingCount(buildChecklist(base), ['income']) === pendingCount(buildChecklist(base), []) - 1);
   check('queda en la guía hasta completarse: la checklist no está completa sin el patrón',

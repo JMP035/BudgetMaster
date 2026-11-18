@@ -704,7 +704,8 @@ interface Props {
     onNavigateBudget?: () => void;
     /** Abre Presupuesto → Ingresos (desde la guía «Enseñarle a la app tu pago»); `openForm` abre la fuente nueva. */
     onNavigateIncome?: (openForm: boolean) => void;
-    onNavigateAccounts?: () => void;
+    /** Abre Cuentas; `editAccountId` abre ya la edición de esa cuenta (guía: corte y pago de la tarjeta). */
+    onNavigateAccounts?: (opts?: { editAccountId?: string }) => void;
     /** Resultado de la última sincronización automática (alimenta el aviso bajo el encabezado). */
     smsAutoResult?: SyncResult | null;
     onDismissSmsAuto?: () => void;
@@ -1227,6 +1228,7 @@ export default function DashboardScreen({
                 accounts={accounts}
                 fixedExpenses={fixedExpenses}
                 onOpenAccounts={() => onNavigateAccounts?.()}
+                onOpenCardSetup={accountId => onNavigateAccounts?.({ editAccountId: accountId })}
                 onOpenBudget={() => onNavigateBudget?.()}
                 onOpenIncome={openForm => onNavigateIncome?.(openForm)}
                 onActivateSms={() => { void handleSmsSync(); }}
@@ -1326,7 +1328,7 @@ export default function DashboardScreen({
                     accounts={accounts}
                     installments={creditInstallments}
                     settings={settings}
-                    onPress={onNavigateAccounts || (() => { })}
+                    onPress={() => onNavigateAccounts?.()}
                 />
             </View>
 

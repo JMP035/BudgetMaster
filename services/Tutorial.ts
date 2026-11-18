@@ -127,7 +127,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
                 title: 'Guía y primeros pasos',
-                description: 'Lo que te falta configurar (por ejemplo «Enseñarle a la app tu pago», el SMS con el que te llega tu sueldo) y todos los tutoriales, a un toque.',
+                description: 'Lo que te falta configurar (por ejemplo «Enseñarle a la app tu pago», el SMS con el que te llega tu sueldo, o «Configurar corte y pago de tus tarjetas», que abre la tarjeta que aún no tiene esos días) y todos los tutoriales, a un toque.',
                 emptyHint: 'Abrila desde Ajustes → Academia.',
             },
             {
@@ -159,7 +159,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Semáforo de capacidad de pago',
                 description: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás: verde si usás menos del 70 %, ámbar desde el 70 %, rojo desde el 90 % y «no alcanza» al llegar al 100 %. Tocalo para ver el detalle: de dónde sale lo que tendrás (los saldos de tus cuentas más los ingresos que esperás antes del pago, o tu ingreso declarado si ninguna cuenta lleva saldo) y cuánto te sobra o te falta.',
-                emptyHint: 'Aparece cuando tenés una tarjeta con día de corte y de pago, y algo por pagar. Creala en Cuentas.',
+                emptyHint: 'Aparece cuando tenés una tarjeta con día de corte y de pago, y algo por pagar. Configurá el corte y el pago de tu tarjeta en Cuentas.',
             },
             {
                 id: 'ini_7', elementId: 'accounts_widget', screen: 'dashboard', position: 'top', icon: 'business-outline', padding: 8,
@@ -640,7 +640,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'vis_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'card-outline', padding: 8,
                 requires: 'credit_card',
                 title: '1. La tarjeta con su día de corte',
-                description: 'Primero tiene que existir la tarjeta en Cuentas, con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta: ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente) y su día de pago. Con el corte la app sabe en qué ciclo cae cada cuota. Si tu estado trae dos saldos (quetzales y dólares), cada moneda se cuenta aparte.',
+                description: 'Primero tiene que existir la tarjeta en Cuentas, con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta: ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente) y su día de pago. Si la agregaste al configurar la app, ahí pudiste poner el corte y el pago; si no, tocá el lápiz de la tarjeta en Cuentas (o el aviso «Configurar» de la tarjeta, o el ítem «Configurar corte y pago de tus tarjetas» de la guía del Inicio). Con el corte la app sabe en qué ciclo cae cada cuota. Si tu estado trae dos saldos (quetzales y dólares), cada moneda se cuenta aparte.',
                 emptyHint: 'Todavía no tenés tarjetas. Creá la primera con el botón +.',
             },
             {
@@ -674,7 +674,7 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'cc_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'card-outline', padding: 8,
                 requires: 'credit_card',
                 title: '1. Creá la tarjeta con su corte y su pago',
-                description: 'Primero tiene que existir la tarjeta en Cuentas (botón +, tipo «Tarjeta Crédito»), con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta) y su día de pago. Sin la tarjeta no hay a dónde vincular la compra.',
+                description: 'Primero tiene que existir la tarjeta en Cuentas (botón +, tipo «Tarjeta Crédito»), con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta) y su día de pago. Si la agregaste al configurar la app, ahí pudiste poner el corte y el pago; si no, tocá el lápiz de la tarjeta en Cuentas (o el aviso «Configurar» de la tarjeta, o el ítem «Configurar corte y pago de tus tarjetas» de la guía del Inicio). Sin la tarjeta no hay a dónde vincular la compra.',
                 emptyHint: 'Todavía no tenés tarjetas. Creá la primera con el botón +.',
             },
             {
@@ -685,7 +685,7 @@ export const TUTORIALS: Tutorial[] = [
             },
             {
                 id: 'cc_3', elementId: 'accounts_card_cycle', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'sync-outline', padding: 8,
-                requires: 'credit_card',
+                requires: 'card_dates',
                 title: '3. El cargo aparece en «Ciclo abierto»',
                 description: 'La compra se suma en «Ciclo abierto» de esa tarjeta: lo gastado desde el último corte, en quetzales y dólares por separado. Al llegar el corte pasa a ser el «Estado al corte» que tenés que pagar. Esto funciona también con gastos anotados a mano, no hace falta tener SMS.',
                 emptyHint: 'Cuando una tarjeta tenga cargos verás aquí su «Ciclo abierto».',
@@ -708,7 +708,7 @@ export const TUTORIALS: Tutorial[] = [
             },
             {
                 id: 'pt_2', elementId: 'accounts_card_statement', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'document-text-outline', padding: 8,
-                requires: 'credit_card',
+                requires: 'card_dates',
                 title: '2. Lo que debés pagar',
                 description: 'En el detalle de la tarjeta, «Estado al corte» muestra lo que debés en quetzales y en dólares (se pagan por separado), la fecha límite y si está pendiente, parcial, pagado o vencido. «Estimado» es la suma de los cargos de la tarjeta en ese ciclo: el banco no manda el total por SMS (llega por correo), así que el monto exacto lo escribís vos.',
                 emptyHint: 'Cuando una tarjeta tenga estado verás aquí lo que debés pagar.',

@@ -26,6 +26,7 @@ import { buildOnboardingCommit } from "../services/OnboardingPlan";
 import type { OnboardingResult } from "../services/OnboardingPlan";
 import { TutorialService } from "../services/TutorialService";
 import type { TutorialScreen } from "../services/TutorialService";
+import { cardsMissingDates } from "../services/CardSetup";
 import { buildRequirementFacts } from "../services/TutorialRequirements";
 import type { TutorialRequirement } from "../services/TutorialRequirements";
 import { TutorialProvider, useTutorialRef } from "../context/TutorialContext";
@@ -150,6 +151,8 @@ function AppContent() {
   const tutorialOpenedAccountsRef = useRef(false);
   // «Crearlo ahora» del tutorial: Cuentas se abre con el modal de alta ya listo (cuenta bancaria o tarjeta).
   const [accountCreate, setAccountCreate] = useState<{ type: "bank" | "credit"; n: number } | null>(null);
+  // Abrir Cuentas ya con la edición de una cuenta (guía del Inicio y «Crearlo ahora» de card_dates: corte y pago).
+  const [accountEdit, setAccountEdit] = useState<{ id: string; n: number } | null>(null);
   const [autoTutorial, setAutoTutorial] = useState<string | undefined>();
   const [showTutorialMenu, setShowTutorialMenu] = useState(false);
   const contentRef = useTutorialRef('app_content');
@@ -471,6 +474,15 @@ function AppContent() {
         setShowAI(false);
         setShowAccounts(true);
         break;
+      case "card_dates": {
+        // Con una tarjeta sin días se abre su edición; sin tarjetas, el alta de una tarjeta.
+        const missing = cardsMissingDates(accounts);
+        if (missing.length > 0) setAccountEdit({ id: missing[0].id, n: Date.now() });
+        else setAccountCreate({ type: "credit", n: Date.now() });
+        setShowAI(false);
+        setShowAccounts(true);
+        break;
+      }
       case "income_source":
         // Presupuesto → Ingresos con el formulario de la fuente ya abierto (una sola ventana a la vez).
         setShowAccounts(false);
@@ -485,7 +497,7 @@ function AppContent() {
         setTab("settings");
         break;
     }
-  }, []);
+  }, [accounts]);
 
   // ── Renders condicionales ─────────────────────────────────
   if (showSplash) return <SplashScreen onDone={() => setShowSplash(false)} />;
@@ -516,7 +528,10 @@ function AppContent() {
                 setBudgetRequest({ tab: 3, ...(openForm ? { openIncome: true } : {}), n: Date.now() });
                 switchTab("budget");
               }}
-              onNavigateAccounts={() => setShowAccounts(true)}
+              onNavigateAccounts={opts => {
+                if (opts?.editAccountId) setAccountEdit({ id: opts.editAccountId, n: Date.now() });
+                setShowAccounts(true);
+              }}
               smsAutoResult={smsAuto}
               onDismissSmsAuto={() => setSmsAuto(null)}
               syncRequest={syncRequest}
@@ -623,6 +638,8 @@ function AppContent() {
             settings={settings}
             autoCreate={accountCreate}
             onAutoCreateHandled={() => setAccountCreate(null)}
+            autoEdit={accountEdit}
+            onAutoEditHandled={() => setAccountEdit(null)}
             onClose={() => { setShowAccounts(false); loadData(); }}
           />
         )}

@@ -1,9 +1,9 @@
 // Tarjeta «Guía y primeros pasos» del Inicio (módulo PURO): estado persistido, checklist de lo
 // pendiente y centro de ayuda con los tutoriales por módulo. Sin react-native ni AsyncStorage.
 
-export type ChecklistId = 'tour' | 'accounts' | 'income' | 'fixed' | 'sms' | 'biometric' | 'gemini';
+export type ChecklistId = 'tour' | 'accounts' | 'card_dates' | 'income' | 'fixed' | 'sms' | 'biometric' | 'gemini';
 
-export const CHECKLIST_IDS: ChecklistId[] = ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini'];
+export const CHECKLIST_IDS: ChecklistId[] = ['tour', 'accounts', 'card_dates', 'income', 'fixed', 'sms', 'biometric', 'gemini'];
 
 export interface GettingStartedState {
   v: 1;
@@ -19,6 +19,10 @@ export interface GettingStartedState {
 
 export interface ChecklistInput {
   accountsCount: number;
+  /** Tarjetas de crédito activas. */
+  creditCardsCount: number;
+  /** Tarjetas activas sin día de corte o de pago válidos (cardsMissingDates). */
+  cardsMissingDatesCount: number;
   /** Fuentes de ingreso activas que ya aprendieron el patrón de un SMS de ejemplo. */
   incomePatternCount: number;
   fixedCount: number;
@@ -59,6 +63,13 @@ export function buildChecklist(input: ChecklistInput): ChecklistItem[] {
       hint: 'Organiza tus gastos por cuenta. El saldo es opcional: tú eliges si la app lo lleva.',
       done: input.accountsCount > 0,
       hidden: false,
+    },
+    {
+      id: 'card_dates',
+      title: 'Configurar corte y pago de tus tarjetas',
+      hint: 'Con el día de corte y el de pago recibes el recordatorio de pago y ves tu capacidad de pago.',
+      done: input.cardsMissingDatesCount === 0,
+      hidden: input.creditCardsCount === 0,
     },
     {
       id: 'income',

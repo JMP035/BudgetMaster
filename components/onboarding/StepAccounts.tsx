@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import {
-    DraftAccount, DraftAccountKind, DraftCurrency, newDraftId, ONB_TYPE_STYLE, ONBOARDING_BANKS, validateAccount,
+    DraftAccount, DraftAccountKind, DraftCurrency, newDraftId, ONB_TYPE_STYLE, ONBOARDING_BANKS, validateAccount, validateDay,
 } from "../../services/OnboardingPlan";
 import { parseAmount } from "../../services/storage";
 import { C } from "../../theme";
@@ -36,6 +36,14 @@ function suggestedName(bankKey: string | null, otherLabel: string, kind: CardKin
     return `${base ? base + " " : ""}${KIND_SHORT[kind]}${usd}`.trim();
 }
 
+/** «Corte 25 · Pago 10», o «Sin corte ni pago» si no hay ninguno (con uno solo, el que falta se dice). */
+function cardDatesLabel(a: DraftAccount): string {
+    const cut = validateDay(a.cutoffDay ?? "").ok ? (a.cutoffDay ?? "").trim() : "";
+    const due = validateDay(a.paymentDueDay ?? "").ok ? (a.paymentDueDay ?? "").trim() : "";
+    if (!cut && !due) return "Sin corte ni pago";
+    return `${cut ? `Corte ${cut}` : "Sin corte"} · ${due ? `Pago ${due}` : "Sin pago"}`;
+}
+
 /** Cuentas y tarjetas (opcional). Formulario EN LÍNEA: sin modales anidados. */
 export default function StepAccounts({ draft, onChange, onFormOpenChange }: StepProps & {
     onFormOpenChange: (open: boolean) => void;
@@ -50,6 +58,8 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
     const [nameTouched, setNameTouched] = useState(false);
     const [nameText, setNameText] = useState("");
     const [balance, setBalance] = useState("");
+    const [cutoffDay, setCutoffDay] = useState("");
+    const [paymentDueDay, setPaymentDueDay] = useState("");
     const [error, setError] = useState<string | null>(null);
 
     const isCash = bankKey === CASH;
@@ -62,6 +72,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
     const openForm = () => {
         setBankKey(null); setOtherLabel(""); setKind("bank"); setCurrency("Q");
         setNameTouched(false); setNameText(""); setBalance(""); setError(null);
+        setCutoffDay(""); setPaymentDueDay("");
         setOpen(true);
         setTimeout(() => ctx.reveal(formRef.current), 80);
     };
@@ -80,6 +91,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
             currency,
             name: name.trim(),
             balance: finalKind === "credit" ? "" : balance.trim(),
+            ...(finalKind === "credit" ? { cutoffDay: cutoffDay.trim(), paymentDueDay: paymentDueDay.trim() } : {}),
         };
         const v = validateAccount(acc, parseAmount);
         if (!v.ok) { setError(v.error ?? "Revisá los datos de la cuenta."); return; }
@@ -122,6 +134,9 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
                         <View style={s.itemMain}>
                             <Text style={ps.itemName} numberOfLines={2}>{a.name}</Text>
                             <Text style={ps.itemSub} numberOfLines={2}>{sub}</Text>
+                            {a.kind === "credit" && (
+                                <Text style={ps.itemSub} numberOfLines={2}>{cardDatesLabel(a)}</Text>
+                            )}
                         </View>
                         {a.kind !== "credit" && (
                             <Money
@@ -211,7 +226,35 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
                         />
 
                         {isCredit ? (
-                            <Text style={ps.hint}>La fecha de corte, el pago y las visacuotas se configuran en Cuentas.</Text>
+                            <>
+                                <View style={s.daysRow}>
+                                    <View style={s.dayCol}>
+                                        <Text style={ps.label}>Día de corte</Text>
+                                        <StyledInput
+                                            value={cutoffDay}
+                                            onChangeText={t => { setCutoffDay(t.replace(/\D/g, "")); setError(null); }}
+                                            placeholder="25"
+                                            keyboardType="number-pad"
+                                            maxLength={2}
+                                            accessibilityLabel="Día de corte"
+                                        />
+                                    </View>
+                                    <View style={s.dayCol}>
+                                        <Text style={ps.label}>Día de pago</Text>
+                                        <StyledInput
+                                            value={paymentDueDay}
+                                            onChangeText={t => { setPaymentDueDay(t.replace(/\D/g, "")); setError(null); }}
+                                            placeholder="10"
+                                            keyboardType="number-pad"
+                                            maxLength={2}
+                                            accessibilityLabel="Día de pago"
+                                        />
+                                    </View>
+                                </View>
+                                <Text style={ps.hint}>
+                                    Opcional, pero recomendado: están en tu estado de cuenta (corte = fecha de «Saldo al corte»; pago = fecha límite). Con ellos te avisamos antes de pagar y calculamos si te alcanza. Las visacuotas se agregan en el paso de deudas o en Cuentas.
+                                </Text>
+                            </>
                         ) : (
                             <>
                                 <Text style={ps.label}>Saldo inicial</Text>
@@ -244,4 +287,6 @@ const s = StyleSheet.create({
     itemContent: { flexDirection: "row", alignItems: "center", paddingVertical: 12, paddingLeft: 16, paddingRight: 8, gap: 10 },
     itemMain: { flex: 1, flexShrink: 1, minWidth: 0 },
     formTitle: { color: C.textPrimary, fontSize: 16, fontWeight: "900" },
+    daysRow: { flexDirection: "row", gap: 12 },
+    dayCol: { flex: 1, minWidth: 0 },
 });

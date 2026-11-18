@@ -3,6 +3,7 @@ import * as LocalAuthentication from "expo-local-authentication";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useTutorialRef } from "../context/TutorialContext";
+import { cardsMissingDates } from "../services/CardSetup";
 import { isSmsFeatureOn } from "../services/features";
 import {
   buildChecklist, helpModulesFor, isChecklistComplete,
@@ -24,6 +25,8 @@ interface Props {
   accounts: Account[];
   fixedExpenses: FixedExpense[];
   onOpenAccounts: () => void;
+  /** Abre Cuentas con la edición de esa tarjeta (para poner su día de corte y de pago). */
+  onOpenCardSetup: (accountId: string) => void;
   onOpenBudget: () => void;
   /** Abre Presupuesto → Ingresos; `openForm` abre ya el formulario de una fuente nueva (cuando no hay ninguna). */
   onOpenIncome: (openForm: boolean) => void;
@@ -35,7 +38,7 @@ interface Props {
 
 export default function GettingStartedCard({
   settings, accounts, fixedExpenses,
-  onOpenAccounts, onOpenBudget, onOpenIncome, onActivateSms, onOpenSettings, refreshKey,
+  onOpenAccounts, onOpenCardSetup, onOpenBudget, onOpenIncome, onActivateSms, onOpenSettings, refreshKey,
 }: Props) {
   const glass = useGlassDialog();
   const guideRef = useTutorialRef("dash_guide");
@@ -100,8 +103,11 @@ export default function GettingStartedCard({
   if (!gs || gs.dismissed) return null;
 
   const smsOn = isSmsFeatureOn(settings);
+  const missingCards = cardsMissingDates(accounts);
   const items = buildChecklist({
     accountsCount: accounts.length,
+    creditCardsCount: accounts.filter(a => a.isActive && a.type === "credit").length,
+    cardsMissingDatesCount: missingCards.length,
     incomePatternCount: incomeCounts.withPattern,
     fixedCount: fixedExpenses.length,
     isAndroid: Platform.OS === "android",
@@ -147,6 +153,10 @@ export default function GettingStartedCard({
         if (!isTutorialActive()) startTutorialById("tour_inicial");
         break;
       case "accounts": onOpenAccounts(); break;
+      case "card_dates":
+        if (missingCards.length > 0) onOpenCardSetup(missingCards[0].id);
+        else onOpenAccounts();
+        break;
       case "income": onOpenIncome(incomeCounts.total === 0); break;
       case "fixed": onOpenBudget(); break;
       case "sms": onActivateSms(); break;

@@ -14,6 +14,7 @@ import type { DebtLoad } from './DebtLoad';
 import { QUOTES, randomQuote } from './FinancialQuotes';
 import { categoryLabelOf } from '../categories';
 import { sanitizePayRules } from './PayCalendar';
+import { CARD_DATES_NUDGE_LABEL, CARD_DATES_NUDGE_TITLE, cardDatesNudgeBody, cardsMissingDates } from './CardSetup';
 import { balanceModeOf } from './Balances';
 import { adjustForQuiet, sanitizeNotifPrefs } from './NotifPrefs';
 import type { NotifPrefs } from './NotifPrefs';
@@ -74,7 +75,7 @@ const AI_NUDGE_VARIANTS: { title: string; body: string }[] = [
     },
 ];
 
-const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'savings_goal' | 'gemini_key', { label: string; title: string; body: string }> = {
+const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'savings_goal' | 'gemini_key' | 'card_dates', { label: string; title: string; body: string }> = {
     budget: {
         label: 'tu ingreso y presupuesto mensual',
         title: '⚙️ Configurá tu presupuesto',
@@ -94,6 +95,12 @@ const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'sav
         label: 'una meta de ahorro',
         title: '🎯 Creá una meta de ahorro',
         body: 'Creá una meta en Presupuesto → Metas y seguí tu avance con cada abono.',
+    },
+    // El cuerpo real lo arma cardDatesNudgeBody con las tarjetas que faltan (este es solo el de respaldo).
+    card_dates: {
+        label: CARD_DATES_NUDGE_LABEL,
+        title: CARD_DATES_NUDGE_TITLE,
+        body: cardDatesNudgeBody([{ name: 'tu tarjeta' }]),
     },
     gemini_key: {
         label: 'tu clave de Gemini',
@@ -758,13 +765,16 @@ Responde SOLO el texto, sin encabezados ni formato.
         fixedExpenses: FixedExpense[],
         categoryBudgets: CategoryBudget[],
         savingsGoals: SavingsGoal[],
+        accounts: Account[] = [],
     ): Promise<void> {
         try {
+            const cardsNoDates = cardsMissingDates(accounts);
             const missing: (keyof typeof SETUP_NUDGES)[] = [];
             if (settings.monthlyIncome <= 0 || settings.budgetLimit <= 0) missing.push('budget');
             if (fixedExpenses.length === 0) missing.push('fixed_expense');
             if (categoryBudgets.length === 0) missing.push('category_budget');
             if (savingsGoals.length === 0) missing.push('savings_goal');
+            if (cardsNoDates.length > 0) missing.push('card_dates');
             if (!settings.geminiApiKey || settings.geminiApiKey.length <= 20) missing.push('gemini_key');
 
             const state = await StorageService.getNotificationState();
@@ -775,10 +785,10 @@ Responde SOLO el texto, sin encabezados ni formato.
             let body: string;
             if (pending.length === 1) {
                 title = SETUP_NUDGES[pending[0]].title;
-                body = SETUP_NUDGES[pending[0]].body;
+                body = pending[0] === 'card_dates' ? cardDatesNudgeBody(cardsNoDates) : SETUP_NUDGES[pending[0]].body;
             } else {
                 title = '⚙️ Completá tu configuración';
-                body = `Te falta configurar ${joinEs(pending.map(id => SETUP_NUDGES[id].label))}. Hacelo desde Presupuesto y Ajustes para sacarle el máximo a BudgetMaster.`;
+                body = `Te falta configurar ${joinEs(pending.map(id => SETUP_NUDGES[id].label))}. Hacelo desde Presupuesto, Cuentas y Ajustes para sacarle el máximo a BudgetMaster.`;
             }
 
             const ok = await scheduleWithId(ID_SETUP, title, body, SETUP_NUDGE_DELAY_S, { kind: 'setup_nudge', refId: pending.join(',') });
@@ -856,6 +866,7 @@ Responde SOLO el texto del briefing.
         fixedExpenses: FixedExpense[];
         categoryBudgets: CategoryBudget[];
         savingsGoals: SavingsGoal[];
+        accounts?: Account[];
     }): Promise<void> {
         if (Platform.OS === 'web') return;
         if (!data.settings.onboardingComplete || !data.settings.cardsOnboardingComplete) return;
@@ -869,7 +880,7 @@ Responde SOLO el texto del briefing.
         } catch (e) { console.warn('runStartupNotifications aiNudge:', e); }
 
         try {
-            await this.checkSetupNudges(data.settings, data.fixedExpenses, data.categoryBudgets, data.savingsGoals);
+            await this.checkSetupNudges(data.settings, data.fixedExpenses, data.categoryBudgets, data.savingsGoals, data.accounts ?? []);
         } catch (e) { console.warn('runStartupNotifications setupNudges:', e); }
     },
 

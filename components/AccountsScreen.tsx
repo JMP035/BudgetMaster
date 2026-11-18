@@ -16,6 +16,7 @@ import {
 import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
 import { detectBankName } from "../services/BankSmsParser";
 import { balanceModeOf } from "../services/Balances";
+import { hasValidCardDates } from "../services/CardSetup";
 import type { BalanceMode } from "../services/Balances";
 import {
   balanceModeHelp, balanceModeTag, canTransfer, findEquivalentTransferSms, planSmsJoin,
@@ -447,6 +448,13 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
           Día de corte = la fecha de «Saldo al corte» de tu estado de cuenta (ese día entra en el estado y el ciclo nuevo empieza al día siguiente).
         </Text>
       )}
+      {type === 'credit' && (!cutoffDay.trim() || !paymentDueDay.trim()) && (
+        <InlineNotice
+          variant="info"
+          text="Sin estos días no hay fecha de pago, recordatorios ni semáforo de capacidad."
+          style={{ marginTop: 10 }}
+        />
+      )}
       {type === 'credit' && payFromChoices.length > 0 && (
         <View>
           <Text style={md.lbl}>CUENTA CON LA QUE PAGÁS (Opcional)</Text>
@@ -824,11 +832,14 @@ interface Props {
   /** Pide abrir el alta de cuenta (bancaria o tarjeta) al montar o al cambiar; lo usa «Crearlo ahora» del tutorial. */
   autoCreate?: { type: 'bank' | 'credit'; n: number } | null;
   onAutoCreateHandled?: () => void;
+  /** Pide abrir la edición de una cuenta (p. ej. el corte y pago de una tarjeta, desde la guía del Inicio o el tutorial). */
+  autoEdit?: { id: string; n: number } | null;
+  onAutoEditHandled?: () => void;
 }
 
 export default function AccountsScreen({
   accounts, setAccounts, creditInstallments, setCreditInstallments,
-  transactions, setTransactions, settings, onClose, autoCreate, onAutoCreateHandled,
+  transactions, setTransactions, settings, onClose, autoCreate, onAutoCreateHandled, autoEdit, onAutoEditHandled,
 }: Props) {
   const insets = useSafeAreaInsets();
   const { height: winH, width: winW } = useWindowDimensions();
@@ -866,6 +877,20 @@ export default function AccountsScreen({
     onAutoCreateHandled?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoCreate?.n]);
+
+  // Editar una cuenta concreta (guía del Inicio / «Crearlo ahora» del tutorial para el corte y pago de la tarjeta).
+  useEffect(() => {
+    if (!autoEdit) return;
+    const target = accounts.find(a => a.id === autoEdit.id);
+    if (target) {
+      setActiveTab('accounts');
+      setCreateType(undefined);
+      setEditingAcc(target);
+      setShowAccModal(true);
+    }
+    onAutoEditHandled?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit?.n]);
 
   // ── Tutorial ──────────────────────────────────────────────
   const rootRef = useTutorialRef('accounts_root');
@@ -1250,6 +1275,23 @@ export default function AccountsScreen({
                         {isCredit && cutoffPaymentLabel && (
                           <Text style={s.accExtra}>{cutoffPaymentLabel}</Text>
                         )}
+                        {isCredit && !hasValidCardDates(acc) && (
+                          <TouchableOpacity
+                            style={s.datesBadge}
+                            onPress={() => { setEditingAcc(acc); setShowAccModal(true); }}
+                            activeOpacity={0.7}
+                            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Configurar el corte y el pago de ${acc.name}`}
+                          >
+                            <Ionicons name="calendar-outline" size={10} color={C.warning} />
+                            <Text style={s.datesBadgeTxt} numberOfLines={2}>
+                              {acc.cutoffDay || acc.paymentDueDay
+                                ? `${acc.cutoffDay ? 'Sin día de pago' : 'Sin día de corte'} · Configurar`
+                                : 'Sin corte ni pago · Configurar'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                         {isCredit && monthlyTotal > 0 && (
                           <Text style={[s.accExtra, { color: C.warning }]}>
                             Cuota mensual: {formatMoney(monthlyTotal, acc.currency)}
@@ -1580,6 +1622,8 @@ const s = StyleSheet.create({
   editBtn: { padding: 8, borderRadius: 8, backgroundColor: C.glassActive, borderWidth: 1, borderColor: C.glassActiveBorder },
   deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: C.danger + '11' },
   linkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.accent + '55', backgroundColor: C.accent + '22' },
+  datesBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.warning + '55', backgroundColor: C.warning + '22' },
+  datesBadgeTxt: { color: C.warning, fontSize: 9, fontWeight: '800', flexShrink: 1 },
   linkBadgeTxt: { color: C.accent, fontSize: 9, fontWeight: '800', flexShrink: 1 },
 
   instContent: { padding: 14, paddingLeft: 17 },

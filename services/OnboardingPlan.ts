@@ -42,6 +42,10 @@ export interface DraftAccount {
   currency: DraftCurrency;
   name: string;
   balance: string;
+  /** Tarjeta: día de corte (texto, vacío = sin configurar). Opcional: los borradores viejos no lo traen. */
+  cutoffDay?: string;
+  /** Tarjeta: día de pago (texto, vacío = sin configurar). Opcional: los borradores viejos no lo traen. */
+  paymentDueDay?: string;
 }
 
 export interface DraftFixed {
@@ -195,12 +199,16 @@ const isCur = (x: unknown): x is DraftCurrency => x === 'Q' || x === 'USD';
 
 function sanitizeAccount(x: unknown): DraftAccount | null {
   if (!isObj(x)) return null;
-  const { id, bankCode, bankLabel, kind, currency, name, balance } = x;
+  const { id, bankCode, bankLabel, kind, currency, name, balance, cutoffDay, paymentDueDay } = x;
   if (!isStr(id) || !id) return null;
   if (!(bankCode === null || isStr(bankCode))) return null;
   if (!isStr(bankLabel) || !isStr(name) || !isStr(balance)) return null;
   if (!ACCOUNT_KINDS.includes(kind as DraftAccountKind) || !isCur(currency)) return null;
-  return { id, bankCode, bankLabel, kind: kind as DraftAccountKind, currency, name, balance };
+  const out: DraftAccount = { id, bankCode, bankLabel, kind: kind as DraftAccountKind, currency, name, balance };
+  // Los días son opcionales: si vienen mal formados se descarta el campo, no la cuenta.
+  if (isStr(cutoffDay)) out.cutoffDay = cutoffDay;
+  if (isStr(paymentDueDay)) out.paymentDueDay = paymentDueDay;
+  return out;
 }
 
 function sanitizeFixed(x: unknown): DraftFixed | null {
@@ -375,7 +383,21 @@ export function validateAccount(a: DraftAccount, parse: (s: string) => number): 
     const n = parse(a.balance);
     if (!Number.isFinite(n)) return { ok: false, error: 'Ingresá un saldo válido' };
   }
+  if (a.kind === 'credit') {
+    if (a.cutoffDay?.trim() && !validateDay(a.cutoffDay).ok) {
+      return { ok: false, error: 'El día de corte debe ser un número entre 1 y 31.' };
+    }
+    if (a.paymentDueDay?.trim() && !validateDay(a.paymentDueDay).ok) {
+      return { ok: false, error: 'El día de pago debe ser un número entre 1 y 31.' };
+    }
+  }
   return { ok: true };
+}
+
+/** Día de corte/pago del borrador como número, o undefined si está vacío o no es válido. */
+function cardDay(s: string | undefined): number | undefined {
+  if (s === undefined || !validateDay(s).ok) return undefined;
+  return Number(s.trim());
 }
 
 /** Nombre sin mayúsculas, tildes ni espacios repetidos, para comparar. */
@@ -608,6 +630,12 @@ export function buildOnboardingCommit(
     };
     const bankName = a.kind === 'cash' ? '' : a.bankLabel.trim();
     if (bankName) acc.bankName = bankName;
+    if (a.kind === 'credit') {
+      const cut = cardDay(a.cutoffDay);
+      const due = cardDay(a.paymentDueDay);
+      if (cut !== undefined) acc.cutoffDay = cut;
+      if (due !== undefined) acc.paymentDueDay = due;
+    }
     const l = links[a.id];
     if (l && l.length > 0) {
       acc.smsLinks = [...l];
