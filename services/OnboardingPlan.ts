@@ -5,8 +5,10 @@
 // Los ids de lo que crea el onboarding son determinísticos a partir del borrador (`onb_acc_*`,
 // `onb_fx_*`, `onb_<debt.id>`), de modo que repetir el commit hace upsert y nunca duplica.
 import type {
-  Account, AccountType, CreditInstallment, Currency, FixedExpense, PaymentCycle, UserSettings,
+  Account, AccountType, CreditInstallment, Currency, FixedExpense, IncomePattern, IncomeSource, PaymentCycle, UserSettings,
 } from './storage';
+import { learnPatternFromSms } from './IncomeSources';
+import { applyPatternCorrection } from './IncomeSourceView';
 import { dueDateInPeriod, periodFor, periodForWith } from './FixedCycle';
 import type { FixedCycleConfig, PeriodStartResolver } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
@@ -19,7 +21,17 @@ export type OnboardingPhase = 'required' | 'intro' | 'optional' | 'finish';
 export type DraftCurrency = 'Q' | 'USD';
 export type DraftAccountKind = 'bank' | 'savings' | 'credit' | 'cash';
 export type DebtKind = 'credit' | 'loan' | 'installment' | 'other';
-export type OptionalStepId = 'accounts' | 'fixed' | 'debts' | 'usd' | 'sms' | 'security' | 'gemini';
+export type OptionalStepId = 'accounts' | 'income' | 'fixed' | 'debts' | 'usd' | 'sms' | 'security' | 'gemini';
+
+/**
+ * SMS de ejemplo con el que le llega el pago a la persona. `confirmed` = tocó «Sí, es así» sobre lo que la
+ * app entendió; `edit` guarda su corrección (quién envía y monto) para repetirla al armar el commit.
+ */
+export interface DraftIncomeSample {
+  body: string;
+  confirmed: boolean;
+  edit?: { originText: string; amount: number };
+}
 
 export interface DraftAccount {
   id: string;
@@ -72,6 +84,8 @@ export interface OnboardingDraft {
   sms: { optOut: boolean; autoSync: boolean; importAfter: boolean; granted: boolean };
   biometricEnabled: boolean;
   geminiApiKey: string;
+  /** Opcional: los borradores viejos no lo traen. */
+  incomeSample?: DraftIncomeSample;
 }
 
 /** Lo que entrega OnboardingScreen a app/index.tsx. */
@@ -86,6 +100,8 @@ export interface OnboardingCommit {
   accounts: Account[];
   fixedExpenses: FixedExpense[];
   installments: CreditInstallment[];
+  /** La fuente de ingreso principal (`onb_income_main`), con el patrón del SMS si se confirmó uno. */
+  incomeSources: IncomeSource[];
 }
 
 export interface Validation { ok: boolean; error?: string; warning?: string; }
@@ -195,6 +211,18 @@ function sanitizeFixed(x: unknown): DraftFixed | null {
   return { id, name, amount, currency, dayOfMonth, category };
 }
 
+/** Muestra del SMS del pago; una muestra mal formada se descarta (no invalida el borrador entero). */
+function sanitizeIncomeSample(x: unknown): DraftIncomeSample | null {
+  if (!isObj(x) || !isStr(x.body) || !isBool(x.confirmed)) return null;
+  const out: DraftIncomeSample = { body: x.body, confirmed: x.confirmed };
+  const e = x.edit;
+  if (e !== undefined) {
+    if (!isObj(e) || !isStr(e.originText) || typeof e.amount !== 'number' || !Number.isFinite(e.amount)) return null;
+    out.edit = { originText: e.originText, amount: e.amount };
+  }
+  return out;
+}
+
 function sanitizeDebt(x: unknown): DraftDebt | null {
   if (!isObj(x)) return null;
   const { id, name, type, monthlyPayment, totalAmount, accountId, currency } = x;
@@ -229,6 +257,7 @@ export function sanitizeDraft(raw: unknown): OnboardingDraft | null {
   const s = r.sms;
   if (!isObj(s) || !isBool(s.optOut) || !isBool(s.autoSync) || !isBool(s.importAfter) || !isBool(s.granted)) return null;
   if (!isBool(r.biometricEnabled) || !isStr(r.geminiApiKey)) return null;
+  const incomeSample = r.incomeSample === undefined ? null : sanitizeIncomeSample(r.incomeSample);
 
   return {
     v: 1,
@@ -250,6 +279,7 @@ export function sanitizeDraft(raw: unknown): OnboardingDraft | null {
     sms: { optOut: s.optOut, autoSync: s.autoSync, importAfter: s.importAfter, granted: s.granted },
     biometricEnabled: r.biometricEnabled,
     geminiApiKey: r.geminiApiKey,
+    ...(incomeSample ? { incomeSample } : {}),
   };
 }
 
@@ -373,7 +403,8 @@ export function validateFixed(f: DraftFixed, existing: DraftFixed[], parse: (s: 
 export interface OptionalStepsCtx { isAndroid: boolean; biometricAvailable: boolean; needsUsd: boolean; }
 
 export function optionalSteps(ctx: OptionalStepsCtx): OptionalStepId[] {
-  const out: OptionalStepId[] = ['accounts', 'fixed', 'debts'];
+  // 'income' (el SMS del pago) va para todos: pegar el texto funciona en cualquier plataforma.
+  const out: OptionalStepId[] = ['accounts', 'income', 'fixed', 'debts'];
   if (ctx.needsUsd) out.push('usd');
   if (ctx.isAndroid) out.push('sms');
   if (ctx.biometricAvailable) out.push('security');
@@ -464,6 +495,59 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
 const DEBT_LABEL: Record<DebtKind, string> = {
   credit: 'Tarjeta de crédito', loan: 'Préstamo', installment: 'Visacuota', other: 'Otra deuda',
 };
+
+export const ONB_INCOME_SOURCE_ID = 'onb_income_main';
+
+/** Nombre de la fuente según cómo cobra la persona (nada de profesiones: lo puede renombrar después). */
+const INCOME_NAME: Record<PaymentCycle, string> = {
+  monthly: 'Sueldo', biweekly: 'Quincena', weekly: 'Pago semanal', irregular: 'Mis ingresos',
+};
+
+/**
+ * Fuente de ingreso principal desde lo que la persona dijo en el onboarding: el ingreso mensual, cómo cobra y
+ * los días. Con la muestra confirmada aprende el patrón (mismo motor que el formulario de Presupuesto) y, para
+ * pago semanal, el día de la semana. `monthlyAmount` está en la moneda del ingreso; la fuente guarda lo de
+ * CADA pago (quincenal = mitad, semanal = ×12/52), que es lo que baseMonthlyIncome vuelve a multiplicar.
+ */
+function buildIncomeSource(
+  draft: OnboardingDraft,
+  monthlyAmount: number,
+  days: { paymentDay: number; paymentDays: number[] },
+  nowIso: string,
+): IncomeSource {
+  const cycle = draft.paymentCycle;
+  let pattern: IncomePattern | undefined;
+  let weekday: number | undefined;
+  const sample = draft.incomeSample;
+  if (sample && sample.confirmed && sample.body.trim()) {
+    const r = learnPatternFromSms(sample.body, undefined, nowIso);
+    if (r.ok) {
+      pattern = sample.edit ? applyPatternCorrection(r.pattern, sample.edit) : r.pattern;
+      weekday = r.preview.weekday;
+    }
+  }
+  let srcDays: number[] = [];
+  if (cycle === 'monthly') srcDays = [days.paymentDay];
+  else if (cycle === 'biweekly') srcDays = [...days.paymentDays];
+  else if (cycle === 'weekly') srcDays = weekday !== undefined ? [weekday] : [];
+  const perPayment = cycle === 'biweekly' ? round2(monthlyAmount / 2)
+    : cycle === 'weekly' ? round2(monthlyAmount * 12 / 52)
+      : monthlyAmount;
+  return {
+    id: ONB_INCOME_SOURCE_ID,
+    name: INCOME_NAME[cycle],
+    category: 'salary',
+    amount: perPayment,
+    currency: draft.incomeCurrency as Currency,
+    frequency: cycle,
+    days: srcDays,
+    role: 'base',
+    anchorsPeriod: cycle === 'monthly' || cycle === 'biweekly',
+    ...(pattern ? { pattern } : {}),
+    isActive: true,
+    createdAt: nowIso,
+  };
+}
 
 /**
  * Convierte el borrador en lo que se guarda. `base` son los ajustes actuales (se conservan los campos
@@ -611,5 +695,7 @@ export function buildOnboardingCommit(
     settings.exchangeRateUpdatedAt = ctx.nowIso;
   }
 
-  return { settings, accounts, fixedExpenses, installments };
+  const incomeSources = [buildIncomeSource(draft, incomeRaw, { paymentDay, paymentDays }, ctx.nowIso)];
+
+  return { settings, accounts, fixedExpenses, installments, incomeSources };
 }

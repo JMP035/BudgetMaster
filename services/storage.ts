@@ -2171,9 +2171,9 @@ export const StorageService = {
   },
 
   /**
-   * Guarda lo que creó el onboarding. Orden: cuentas, gastos fijos y visacuotas (upsert por id: repetir
+   * Guarda lo que creó el onboarding. Orden: cuentas, gastos fijos, visacuotas y fuentes de ingreso (upsert por id: repetir
    * no duplica) y AL FINAL los ajustes con onboardingComplete, para que un corte a mitad deje el
-   * onboarding pendiente y se pueda repetir. Luego borra el borrador. Propaga los errores de
+   * onboarding pendiente y se pueda repetir. Incluye la fuente de ingreso principal (`onb_income_main`). Luego borra el borrador. Propaga los errores de
    * escritura en vez de tragarlos (así la pantalla puede avisar y reintentar).
    */
   async commitOnboarding(c: OnboardingCommit): Promise<void> {
@@ -2183,6 +2183,8 @@ export const StorageService = {
     await AsyncStorage.setItem(K.FIXED_EXPENSES, JSON.stringify(fixed));
     const inst = upsertById(await readListStrict<CreditInstallment>(K.CREDIT_INSTALLMENTS), c.installments);
     await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(inst));
+    const incomes = upsertById(await readListStrict<IncomeSource>(K.INCOME_SOURCES), c.incomeSources);
+    await AsyncStorage.setItem(K.INCOME_SOURCES, JSON.stringify(incomes));
     await AsyncStorage.setItem(K.SETTINGS, JSON.stringify({ ...c.settings, onboardingComplete: true }));
     refreshPeriodResolver({ ...c.settings, onboardingComplete: true });
     await this.clearOnboardingDraft();

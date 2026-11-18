@@ -45,6 +45,10 @@ Al terminar, se lanza el **Tour Inicial** de 7 pasos que te muestra las funcione
 
 > 💡 Todo lo que respondas se puede cambiar después en **Ajustes**.
 
+**El SMS de tu pago.** Entre los pasos opcionales de «Configura tu dinero» (justo después de tus cuentas) la app te pide **un ejemplo del SMS con el que te llega tu pago**: sueldo, quincena, venta semanal… cada persona cobra distinto. Pegás el texto del SMS (o, en Android con el permiso de SMS ya dado, tocás **Elegir de mis SMS**) y la app te muestra lo que entendió: banco, cuenta, quién envía el dinero y el monto aproximado. Tocás **Sí, es así** o **Corregir**. No se guarda ningún número de cuenta. Con eso, al terminar la configuración queda creada tu primera **fuente de ingreso** con tu ingreso, tu ciclo y tus días de pago, y la app reconoce tu pago sola cuando llega.
+
+Es un paso que se puede saltar con **Lo hago después**: la fuente se crea igual, sin el patrón, y en el Inicio, en **Guía y primeros pasos**, queda el pendiente **«Enseñarle a la app tu pago»** hasta que lo completes (te lleva a Presupuesto → Ingresos). El tutorial **«Tu sueldo»** cuenta el proceso en el mismo orden.
+
 ---
 
 ## 2. Pantalla de Inicio (Dashboard)
@@ -177,6 +181,7 @@ De dónde y cuándo te pagan: sueldo, quincena, ventas semanales, aguinaldo, bon
 
 - **Resumen**: arriba ves el **Ingreso base del período** (lo que de verdad te pagan tus fuentes base en un mes; los extras no cuentan). Si ese ingreso real difiere en más de 5 % del que declaraste, aparece un aviso «Tu ingreso real es Q X, ¿actualizar el declarado?» con el botón **Actualizar**.
 - **Lista**: cada fuente muestra su ciclo y su estado: **Esperado** (aún no llega), **Recibido** (ya llegó y la app lo reconoció) o **Atrasado** (pasó la tolerancia de días sin que llegara). Tocá una fuente para editarla o eliminarla.
+- **Tu primera fuente**: al terminar la configuración inicial la app ya crea una con tu ingreso, tu ciclo y tus días de pago (y el patrón del SMS si lo enseñaste). Tocala para revisarla o completarle el SMS de ejemplo.
 - **Crear una fuente**: botón ➕ flotante.
   - **Nombre**, **categoría de ingreso** (con **+ Nueva categoría**), **monto**, **moneda** (Q/USD).
   - **Cada cuánto**: Mensual (1 día), Quincenal (2 días), Semanal (día de la semana) o Irregular (sin día).

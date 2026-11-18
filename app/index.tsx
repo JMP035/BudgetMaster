@@ -454,6 +454,11 @@ function AppContent() {
               onRefresh={hRefresh}
               refreshing={refreshing}
               onNavigateBudget={() => switchTab("budget")}
+              onNavigateIncome={openForm => {
+                // Presupuesto → Ingresos (con el formulario abierto si todavía no hay ninguna fuente)
+                setBudgetRequest({ tab: 3, ...(openForm ? { openIncome: true } : {}), n: Date.now() });
+                switchTab("budget");
+              }}
               onNavigateAccounts={() => setShowAccounts(true)}
               smsAutoResult={smsAuto}
               onDismissSmsAuto={() => setSmsAuto(null)}

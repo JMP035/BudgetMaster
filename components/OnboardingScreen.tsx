@@ -26,6 +26,7 @@ import StepDebts from "./onboarding/StepDebts";
 import StepFixed from "./onboarding/StepFixed";
 import StepGemini from "./onboarding/StepGemini";
 import StepIncome from "./onboarding/StepIncome";
+import StepIncomeSms from "./onboarding/StepIncomeSms";
 import StepName from "./onboarding/StepName";
 import StepSavings from "./onboarding/StepSavings";
 import StepSecurity from "./onboarding/StepSecurity";
@@ -320,6 +321,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         cardKey = `optional:${optId}`;
         switch (optId) {
             case "accounts": body = <StepAccounts {...stepProps} onFormOpenChange={onFormOpenChange} />; break;
+            case "income": body = <StepIncomeSms {...stepProps} onSkip={skipStep} />; break;
             case "fixed": body = <StepFixed {...stepProps} onFormOpenChange={onFormOpenChange} />; break;
             case "debts": body = <StepDebts {...stepProps} rate={rate} onFormOpenChange={onFormOpenChange} />; break;
             case "usd": body = <StepUsd {...stepProps} rate={rate} />; break;

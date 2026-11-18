@@ -1,9 +1,9 @@
 // Tarjeta «Guía y primeros pasos» del Inicio (módulo PURO): estado persistido, checklist de lo
 // pendiente y centro de ayuda con los tutoriales por módulo. Sin react-native ni AsyncStorage.
 
-export type ChecklistId = 'tour' | 'accounts' | 'fixed' | 'sms' | 'biometric' | 'gemini';
+export type ChecklistId = 'tour' | 'accounts' | 'income' | 'fixed' | 'sms' | 'biometric' | 'gemini';
 
-export const CHECKLIST_IDS: ChecklistId[] = ['tour', 'accounts', 'fixed', 'sms', 'biometric', 'gemini'];
+export const CHECKLIST_IDS: ChecklistId[] = ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini'];
 
 export interface GettingStartedState {
   v: 1;
@@ -19,6 +19,8 @@ export interface GettingStartedState {
 
 export interface ChecklistInput {
   accountsCount: number;
+  /** Fuentes de ingreso activas que ya aprendieron el patrón de un SMS de ejemplo. */
+  incomePatternCount: number;
   fixedCount: number;
   isAndroid: boolean;
   smsOn: boolean;
@@ -56,6 +58,13 @@ export function buildChecklist(input: ChecklistInput): ChecklistItem[] {
       title: 'Agregar tus cuentas y tarjetas',
       hint: 'Así el patrimonio y los saldos salen de tus cuentas.',
       done: input.accountsCount > 0,
+      hidden: false,
+    },
+    {
+      id: 'income',
+      title: 'Enseñarle a la app tu pago',
+      hint: 'Pegá el SMS con el que te llega tu pago (sueldo, quincena, ventas…) y la app lo reconoce sola.',
+      done: input.incomePatternCount > 0,
       hidden: false,
     },
     {

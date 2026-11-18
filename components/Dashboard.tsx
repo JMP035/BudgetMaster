@@ -507,6 +507,8 @@ interface Props {
     onRefresh: () => void;
     refreshing: boolean;
     onNavigateBudget?: () => void;
+    /** Abre Presupuesto → Ingresos (desde la guía «Enseñarle a la app tu pago»); `openForm` abre la fuente nueva. */
+    onNavigateIncome?: (openForm: boolean) => void;
     onNavigateAccounts?: () => void;
     /** Resultado de la última sincronización automática (alimenta el aviso bajo el encabezado). */
     smsAutoResult?: SyncResult | null;
@@ -543,7 +545,7 @@ function buildAutoNotice(r: SyncResult): { text: string; variant: "success" | "w
 export default function DashboardScreen({
     transactions, settings, fixedExpenses, categoryBudgets,
     savingsGoals, accounts, creditInstallments,
-    onRefresh, refreshing, onNavigateBudget, onNavigateAccounts,
+    onRefresh, refreshing, onNavigateBudget, onNavigateIncome, onNavigateAccounts,
     smsAutoResult, onDismissSmsAuto, syncRequest, onNavigateSettings,
 }: Props) {
     const glass = useGlassDialog();
@@ -998,6 +1000,7 @@ export default function DashboardScreen({
                 fixedExpenses={fixedExpenses}
                 onOpenAccounts={() => onNavigateAccounts?.()}
                 onOpenBudget={() => onNavigateBudget?.()}
+                onOpenIncome={openForm => onNavigateIncome?.(openForm)}
                 onActivateSms={() => { void handleSmsSync(); }}
                 onOpenSettings={section => onNavigateSettings?.(section)}
                 refreshKey={syncing}

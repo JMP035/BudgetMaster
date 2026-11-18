@@ -8,6 +8,7 @@ import { ps, StepHeader } from "./OnbPrimitives";
 
 export const OPTIONAL_STEP_INFO: Record<OptionalStepId, { label: string; icon: keyof typeof Ionicons.glyphMap }> = {
     accounts: { label: "Cuentas y tarjetas", icon: "wallet-outline" },
+    income: { label: "SMS de tu pago", icon: "cash-outline" },
     fixed: { label: "Gastos fijos", icon: "repeat-outline" },
     debts: { label: "Deudas", icon: "alert-circle-outline" },
     usd: { label: "Dólares", icon: "logo-usd" },

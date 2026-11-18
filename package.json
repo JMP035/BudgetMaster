@@ -25,7 +25,8 @@
     "test:period-anchors": "sucrase-node scripts/period-anchors.test.ts",
     "test:income-sources": "sucrase-node scripts/income-sources.test.ts",
     "test:income-source-view": "sucrase-node scripts/income-source-view.test.ts",
-    "test:tutorial-requirements": "sucrase-node scripts/tutorial-requirements.test.ts"
+    "test:tutorial-requirements": "sucrase-node scripts/tutorial-requirements.test.ts",
+    "test:onboarding-income": "sucrase-node scripts/onboarding-income.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

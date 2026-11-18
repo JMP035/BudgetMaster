@@ -111,7 +111,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
                 title: 'Guía y primeros pasos',
-                description: 'Lo que te falta configurar y todos los tutoriales, a un toque.',
+                description: 'Lo que te falta configurar (por ejemplo «Enseñarle a la app tu pago», el SMS con el que te llega tu sueldo) y todos los tutoriales, a un toque.',
                 emptyHint: 'Abrila desde Ajustes → Academia.',
             },
             {
@@ -198,7 +198,7 @@ export const TUTORIALS: Tutorial[] = [
     // ── Tu sueldo (tutorial de proceso) ───────────────────────
     {
         id: 'tutorial_sueldo', title: 'Tu sueldo',
-        description: 'Enseñale a la app tu pago: la cuenta, la fuente y un SMS de ejemplo.',
+        description: 'Enseñale a la app tu pago: la cuenta, la fuente y el SMS con el que te llega.',
         icon: 'cash-outline', color: C.primary,
         steps: [
             {
@@ -210,14 +210,14 @@ export const TUTORIALS: Tutorial[] = [
             },
             {
                 id: 'sue_2', elementId: 'budget_income_fab', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'top', icon: 'add-circle-outline', padding: 8,
-                title: '2. Creá la fuente de ingreso',
-                description: 'En Presupuesto → Ingresos tocá el botón +. Poné un nombre (Sueldo, Quincena, Ventas…), la categoría, cuánto te pagan, cada cuánto y qué día, y elegí la cuenta donde te pagan. Si es un pago extra como el aguinaldo o el bono 14, marcalo como Extra y elegí su mes. Con «Mueve mi período cuando llega» tu período empieza el día que de verdad te pagan.',
+                title: '2. Tu fuente de ingreso',
+                description: 'En Presupuesto → Ingresos está tu fuente de ingreso: al terminar la configuración inicial la app ya creó una con tu ingreso, tu ciclo y tus días de pago. Tocala para revisarla (nombre, categoría, cuánto te pagan, cada cuánto y qué día, y la cuenta donde te pagan) o usá el botón + para agregar otra (por ejemplo un pago extra como el aguinaldo o el bono 14, que marcás como Extra con su mes). Con «Mueve mi período cuando llega» tu período empieza el día que de verdad te pagan.',
             },
             {
                 id: 'sue_3', screen: 'budget', position: 'center', icon: 'chatbubble-ellipses-outline',
-                title: '3. Un SMS de ejemplo',
-                description: 'Dentro del formulario, en «SMS de ejemplo», tocá «Elegir de mis SMS» y escogé el depósito de tu último pago; también podés pegar el texto del SMS en el cuadro. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
-                noSmsDescription: 'Dentro del formulario, en «SMS de ejemplo», pegá el texto del SMS que te mandó el banco cuando te pagaron y tocá «Analizar SMS». La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
+                title: '3. El SMS de tu pago',
+                description: 'La configuración inicial te pide el SMS con el que te llega tu pago (sueldo, quincena, ventas…). Si lo saltaste con «Lo hago después», quedó pendiente en la guía del Inicio como «Enseñarle a la app tu pago» y se hace aquí: abrí tu fuente y, en «SMS de ejemplo», tocá «Elegir de mis SMS» y escogé el depósito de tu último pago; también podés pegar el texto del SMS en el cuadro. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
+                noSmsDescription: 'La configuración inicial te pide el SMS con el que te llega tu pago (sueldo, quincena, ventas…). Si lo saltaste con «Lo hago después», quedó pendiente en la guía del Inicio como «Enseñarle a la app tu pago» y se hace aquí: abrí tu fuente y, en «SMS de ejemplo», pegá el texto del SMS que te mandó el banco cuando te pagaron y tocá «Analizar SMS». La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, sin guardar ningún número de cuenta. Sin SMS de ejemplo la fuente se guarda igual, pero no detecta tu pago sola.',
             },
             {
                 id: 'sue_4', screen: 'budget', position: 'center', icon: 'checkmark-circle-outline',

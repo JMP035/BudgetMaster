@@ -25,6 +25,8 @@ interface Props {
   fixedExpenses: FixedExpense[];
   onOpenAccounts: () => void;
   onOpenBudget: () => void;
+  /** Abre Presupuesto → Ingresos; `openForm` abre ya el formulario de una fuente nueva (cuando no hay ninguna). */
+  onOpenIncome: (openForm: boolean) => void;
   onActivateSms: () => void;
   onOpenSettings: (section: GuideSettingsSection) => void;
   /** Cambia cuando algo externo pudo alterar el checklist (p. ej. terminó una sincronización de SMS). */
@@ -33,7 +35,7 @@ interface Props {
 
 export default function GettingStartedCard({
   settings, accounts, fixedExpenses,
-  onOpenAccounts, onOpenBudget, onActivateSms, onOpenSettings, refreshKey,
+  onOpenAccounts, onOpenBudget, onOpenIncome, onActivateSms, onOpenSettings, refreshKey,
 }: Props) {
   const glass = useGlassDialog();
   const guideRef = useTutorialRef("dash_guide");
@@ -41,19 +43,23 @@ export default function GettingStartedCard({
   const [gs, setGs] = useState<GettingStartedState | null>(null);
   const [completed, setCompleted] = useState<string[]>([]);
   const [smsSynced, setSmsSynced] = useState(false);
+  const [incomeCounts, setIncomeCounts] = useState({ total: 0, withPattern: 0 });
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const tutorialWasActive = useRef(false);
 
   const reload = useCallback(async () => {
     try {
-      const [state, done, sync] = await Promise.all([
+      const [state, done, sync, sources] = await Promise.all([
         StorageService.getGettingStarted(),
         TutorialService.getCompleted(),
         StorageService.getSmsSyncState(),
+        StorageService.getIncomeSources(),
       ]);
       setGs(state);
       setCompleted(done);
       setSmsSynced(!!sync.lastSyncAt);
+      const active = sources.filter(x => x.isActive);
+      setIncomeCounts({ total: active.length, withPattern: active.filter(x => !!x.pattern).length });
     } catch (e) {
       console.warn("[GettingStarted] carga:", e);
     }
@@ -96,6 +102,7 @@ export default function GettingStartedCard({
   const smsOn = isSmsFeatureOn(settings);
   const items = buildChecklist({
     accountsCount: accounts.length,
+    incomePatternCount: incomeCounts.withPattern,
     fixedCount: fixedExpenses.length,
     isAndroid: Platform.OS === "android",
     smsOn,
@@ -140,6 +147,7 @@ export default function GettingStartedCard({
         if (!isTutorialActive()) startTutorialById("tour_inicial");
         break;
       case "accounts": onOpenAccounts(); break;
+      case "income": onOpenIncome(incomeCounts.total === 0); break;
       case "fixed": onOpenBudget(); break;
       case "sms": onActivateSms(); break;
       case "biometric": onOpenSettings("biometric"); break;

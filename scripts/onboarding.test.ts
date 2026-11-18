@@ -346,13 +346,13 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
 // ─────────────────────────────────────────────────────────────
 {
   const full = optionalSteps({ isAndroid: true, biometricAvailable: true, needsUsd: true });
-  check('Android con todo: 7 pasos en orden', eq(full, ['accounts', 'fixed', 'debts', 'usd', 'sms', 'security', 'gemini']), JSON.stringify(full));
+  check('Android con todo: 8 pasos en orden (income va tras accounts)', eq(full, ['accounts', 'income', 'fixed', 'debts', 'usd', 'sms', 'security', 'gemini']), JSON.stringify(full));
   const ios = optionalSteps({ isAndroid: false, biometricAvailable: true, needsUsd: false });
   check('iOS: sin paso sms', !ios.includes('sms'));
   check('sin dólares: sin paso usd', !ios.includes('usd'));
   const noSensor = optionalSteps({ isAndroid: true, biometricAvailable: false, needsUsd: false });
   check('sin sensor: sin paso security', !noSensor.includes('security'));
-  check('mínimo: cuentas, fijos, deudas y asesor', eq(optionalSteps({ isAndroid: false, biometricAvailable: false, needsUsd: false }), ['accounts', 'fixed', 'debts', 'gemini']));
+  check('mínimo: cuentas, SMS del pago, fijos, deudas y asesor', eq(optionalSteps({ isAndroid: false, biometricAvailable: false, needsUsd: false }), ['accounts', 'income', 'fixed', 'debts', 'gemini']));
 
   check('needsUsd: borrador vacío no', !needsUsd(emptyDraft()));
   check('needsUsd: usesUsd', needsUsd(draftWith({ usesUsd: true })));
@@ -408,14 +408,14 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
 // ─────────────────────────────────────────────────────────────
 {
   const base: ChecklistInput = {
-    accountsCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false, biometricAvailable: true,
+    accountsCount: 0, incomePatternCount: 0, fixedCount: 0, isAndroid: true, smsOn: true, smsSynced: false, biometricAvailable: true,
     biometricEnabled: false, geminiKey: '', tourDone: false, skipped: [],
   };
   const get = (i: ChecklistInput, id: string) => buildChecklist(i).find(x => x.id === id)!;
 
   const items = buildChecklist(base);
-  check('checklist: 6 ítems en orden', eq(items.map(i => i.id), ['tour', 'accounts', 'fixed', 'sms', 'biometric', 'gemini']));
-  check('checklist inicial: 6 pendientes', pendingCount(items, []) === 6);
+  check('checklist: 7 ítems en orden', eq(items.map(i => i.id), ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
+  check('checklist inicial: 7 pendientes', pendingCount(items, []) === 7);
   check('checklist: todos con título y pista', items.every(i => i.title.length > 0 && i.hint.length > 0));
   check('checklist: nada hecho ni oculto', items.every(i => !i.done && !i.hidden));
 
@@ -431,15 +431,15 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
   check('gemini hecho con clave de 21', get({ ...base, geminiKey: 'x'.repeat(21) }, 'gemini').done);
 
   const hid = buildChecklist({ ...base, isAndroid: false, biometricAvailable: false });
-  check('ocultos no cuentan como pendientes', pendingCount(hid, []) === 4);
-  check('skipped no cuenta como pendiente', pendingCount(items, ['gemini', 'tour']) === 4);
-  check('hechos no cuentan como pendientes', pendingCount(buildChecklist({ ...base, accountsCount: 2, tourDone: true }), []) === 4);
+  check('ocultos no cuentan como pendientes', pendingCount(hid, []) === 5);
+  check('skipped no cuenta como pendiente', pendingCount(items, ['gemini', 'tour']) === 5);
+  check('hechos no cuentan como pendientes', pendingCount(buildChecklist({ ...base, accountsCount: 2, tourDone: true }), []) === 5);
   check('no completa con pendientes', !isChecklistComplete(items, []));
-  check('completa con todo saltado', isChecklistComplete(items, ['tour', 'accounts', 'fixed', 'sms', 'biometric', 'gemini']));
-  const allDone = buildChecklist({ ...base, accountsCount: 1, fixedCount: 1, smsSynced: true, biometricEnabled: true, geminiKey: 'x'.repeat(25), tourDone: true });
+  check('completa con todo saltado', isChecklistComplete(items, ['tour', 'accounts', 'income', 'fixed', 'sms', 'biometric', 'gemini']));
+  const allDone = buildChecklist({ ...base, accountsCount: 1, incomePatternCount: 1, fixedCount: 1, smsSynced: true, biometricEnabled: true, geminiKey: 'x'.repeat(25), tourDone: true });
   check('completa con todo hecho', isChecklistComplete(allDone, []));
   check('completa con mezcla de hechos, ocultos y saltados',
-    isChecklistComplete(buildChecklist({ ...base, isAndroid: false, biometricAvailable: false, accountsCount: 1, tourDone: true }), ['fixed', 'gemini']));
+    isChecklistComplete(buildChecklist({ ...base, isAndroid: false, biometricAvailable: false, accountsCount: 1, tourDone: true }), ['income', 'fixed', 'gemini']));
 
   const ids = new Set(HELP_MODULES.map(m => m.tutorialId));
   check('HELP_MODULES: 12 ids únicos', HELP_MODULES.length === 12 && ids.size === 12);
