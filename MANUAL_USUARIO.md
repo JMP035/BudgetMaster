@@ -113,6 +113,8 @@ Al final te muestra un resumen: SMS leídos, bancarios detectados, nuevos import
 
 Las transacciones importadas llevan la etiqueta **SMS** y guardan el mensaje original: podés verlo tocando la transacción en Movimientos → "Ver SMS original".
 
+**La app aprende de tus correcciones.** En los gastos recuerda el comercio. En los **ingresos por SMS recuerda el origen del depósito** (banco, cuenta y quién lo envía, por ejemplo «SECCIÓN DE OPERACIONES DE DEPÓSITOS»): si cambiás la categoría de un depósito y dejás activo **«Recordar para los depósitos de…»**, los próximos depósitos del mismo origen llegan ya clasificados. Si el SMS no dice de dónde viene el dinero, no se puede recordar.
+
 ---
 
 ## 5. Movimientos
@@ -124,7 +126,7 @@ Historial completo de transacciones, con:
 - Cada tarjeta muestra descripción, fecha, banco, insignias (SMS, moneda) y monto (verde = ingreso, rojo = gasto).
 
 **Tocá una transacción** para abrir el detalle, donde podés:
-- Editar la **descripción**, la **moneda** y la **categoría**.
+- Editar la **descripción**, la **moneda** y la **categoría**. En SMS de gastos podés activar **«Recordar»** para ese comercio; en SMS de ingresos, **«Recordar para los depósitos de…»** guarda el origen del depósito (banco, cuenta y quién lo envía). Con **«Aplicar a anteriores»** se corrigen también los movimientos parecidos que no editaste a mano.
 - Ver el **SMS original** (si vino de un SMS).
 - **Eliminarla** (pide confirmación; no se puede deshacer).
 

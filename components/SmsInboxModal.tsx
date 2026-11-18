@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Share, StyleSheet, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
+import { Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View, useWindowDimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { getAllExpenseCategories, getAllIncomeCategories } from "../categories";
 import { StorageService, parseAmount } from "../services/storage";
 import type { SmsInboxItem, Transaction, UserSettings } from "../services/storage";
 import { buildSmsTransactionId, maskSmsForDiagnostics } from "../services/BankSmsParser";
+import { incomeKeyOfSms } from "../services/IncomeRules";
+import { extractIncomeOrigin } from "../services/IncomeOrigin";
 import { GlassSheet } from "./GlassSheet";
 import { GlassCard } from "./GlassCard";
 import { GlassButton, GlassButtonGroup } from "./GlassButton";
@@ -61,6 +63,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
     const [category, setCategory] = useState("other");
     const [error, setError] = useState("");
     const [saving, setSaving] = useState(false);
+    const [rememberIncome, setRememberIncome] = useState(true);
 
     // Una sola ventana a la vez: el formulario y «Nueva categoría» se alternan con una pausa ('none' = entre ambos).
     const [phase, setPhase] = useState<'form' | 'newCat' | 'none'>('form');
@@ -146,6 +149,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         setCategory("other");
         setError("");
         setSaving(false);
+        setRememberIncome(true);
         resetPhase();
         setRegistering(item);
     };
@@ -190,6 +194,10 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                 merchant: registering.merchant ?? undefined,
             };
             await StorageService.registerSmsInboxItem(fp, tx);
+            // Depósito con origen: aprende banco + cuenta + origen para los próximos SMS.
+            if (type === "income" && rememberIncome && incomeKeyOfSms(registering.bank, registering.body) !== null) {
+                await StorageService.saveIncomeWithLearning(tx, { remember: true, applyToPast: false });
+            }
             setRegistering(null);
             await reload();
             onChanged();
@@ -206,6 +214,9 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         const cats = type === "expense"
             ? getAllExpenseCategories(settings.customCategories)
             : getAllIncomeCategories(settings.customCategories);
+        const incomeOrigin = incomeKeyOfSms(registering.bank, registering.body) !== null
+            ? extractIncomeOrigin(registering.body)
+            : null;
         if (phase === 'none') return null;
         if (phase === 'newCat') {
             return (
@@ -300,6 +311,22 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
                             <Text style={[s.catLabel, { color: C.primaryLight }]} numberOfLines={1}>+ Nueva categoría</Text>
                         </TouchableOpacity>
                     </View>
+                    {type === "income" && incomeOrigin !== null && (
+                        <View style={s.learnBox}>
+                            <View style={s.switchRow}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={s.switchLabel}>Recordar para los depósitos de «{incomeOrigin}»</Text>
+                                    <Text style={s.hint}>Los próximos ingresos de este banco, cuenta y origen se clasifican solos.</Text>
+                                </View>
+                                <Switch
+                                    value={rememberIncome}
+                                    onValueChange={setRememberIncome}
+                                    trackColor={{ false: C.bgDeep, true: C.accent }}
+                                    thumbColor={C.text}
+                                />
+                            </View>
+                        </View>
+                    )}
                 </View>
 
                 <View style={s.section}>
@@ -447,6 +474,10 @@ const s = StyleSheet.create({
     catItemNew: { borderStyle: "dashed", borderColor: C.glassActiveBorder },
     catItemActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catLabel: { color: C.textSub, fontSize: 10, marginTop: 4, fontWeight: "600", textAlign: "center" },
+    hint: { color: C.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
+    learnBox: { marginTop: 12, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    switchRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+    switchLabel: { color: C.text, fontSize: 13, fontWeight: "700" },
     readonlyBox: {
         flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 12,
         borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput,

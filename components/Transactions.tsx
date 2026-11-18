@@ -6,6 +6,8 @@ import {
 import { Account, CreditInstallment, Currency, FixedExpense, StorageService, Transaction, UserSettings } from "../services/storage";
 import { classifyBankSms, maskSmsForDiagnostics } from "../services/BankSmsParser";
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds } from "../services/MerchantRules";
+import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds } from "../services/IncomeRules";
+import { InlineNotice } from "./InlineNotice";
 import { linkKeyLabel } from "../services/AccountLinking";
 import { NotificationService } from "../services/NotificationService";
 import { getAllExpenseCategories, getAllIncomeCategories, getCat } from "../categories";
@@ -98,6 +100,15 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
         [learnable, transactions, tx, category],
     );
 
+    // Aprendizaje de depósitos: banco + cuenta + quién envía el dinero (ingresos SMS).
+    const learnableIncome = tx.source === 'sms' && tx.type === 'income' && incomeKeyOfTx(tx) !== null;
+    const incomeOrigin = learnableIncome ? incomeOriginLabelOfTx(tx) : null;
+    const incomeWithoutOrigin = tx.source === 'sms' && tx.type === 'income' && !learnableIncome;
+    const pastIncomeCount = useMemo(
+        () => (learnableIncome ? sameOriginTxIds(transactions, tx).length : 0),
+        [learnableIncome, transactions, tx],
+    );
+
     const cats = tx.type === 'expense'
         ? getAllExpenseCategories(settings.customCategories)
         : getAllIncomeCategories(settings.customCategories);
@@ -122,6 +133,12 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                 const r = await StorageService.saveTransactionWithLearning(updated, {
                     remember,
                     applyToPast: applyPast && pastCount > 0,
+                });
+                latest = r.transactions;
+            } else if (catChanged && learnableIncome && (remember || applyPast)) {
+                const r = await StorageService.saveIncomeWithLearning(updated, {
+                    remember,
+                    applyToPast: applyPast && pastIncomeCount > 0,
                 });
                 latest = r.transactions;
             } else {
@@ -407,6 +424,44 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                             </View>
                         )}
                     </View>
+                )}
+
+                {/* APRENDIZAJE DE DEPÓSITOS (origen del ingreso) */}
+                {learnableIncome && catChanged && (
+                    <View style={m.learnBox}>
+                        <View style={m.switchRow}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={m.switchLabel}>Recordar para los depósitos de «{incomeOrigin}»</Text>
+                                <Text style={m.hint}>Los próximos ingresos de este banco, cuenta y origen se clasifican solos.</Text>
+                            </View>
+                            <Switch
+                                value={remember}
+                                onValueChange={setRemember}
+                                trackColor={{ false: C.bgDeep, true: C.accent }}
+                                thumbColor={C.text}
+                            />
+                        </View>
+                        {pastIncomeCount > 0 && (
+                            <View style={[m.switchRow, { marginTop: 10 }]}>
+                                <Text style={[m.switchLabel, { flex: 1 }]}>
+                                    Aplicar también a {pastIncomeCount} {pastIncomeCount === 1 ? "depósito anterior" : "depósitos anteriores"} de este origen
+                                </Text>
+                                <Switch
+                                    value={applyPast}
+                                    onValueChange={setApplyPast}
+                                    trackColor={{ false: C.bgDeep, true: C.accent }}
+                                    thumbColor={C.text}
+                                />
+                            </View>
+                        )}
+                    </View>
+                )}
+                {incomeWithoutOrigin && catChanged && (
+                    <InlineNotice
+                        variant="info"
+                        style={{ marginTop: 10 }}
+                        text="Este SMS no dice de dónde viene el dinero; no se puede recordar."
+                    />
                 )}
             </View>
 

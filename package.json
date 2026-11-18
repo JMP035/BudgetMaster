@@ -20,7 +20,8 @@
     "test:assistant-lexicon": "sucrase-node scripts/assistant-lexicon.test.ts",
     "test:assistant-executor": "sucrase-node scripts/assistant-executor.test.ts",
     "test:assistant-flow": "sucrase-node scripts/assistant-flow.test.ts",
-    "test:assistant-gemini": "sucrase-node scripts/assistant-gemini.test.ts"
+    "test:assistant-gemini": "sucrase-node scripts/assistant-gemini.test.ts",
+    "test:income-rules": "sucrase-node scripts/income-rules.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

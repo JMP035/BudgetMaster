@@ -36,7 +36,7 @@
 // Contraejemplos de pago único: "... Q 15.00 en PARQUEO PERI ..." y
 //   "... USD 1.99 en GOOGLE *Google One ..." son purchase (no cuotas).
 
-import type { Account, CreditInstallment, Currency, MerchantRule, SmsInboxItem, Transaction } from './storage';
+import type { Account, CreditInstallment, Currency, IncomeRule, MerchantRule, SmsInboxItem, Transaction } from './storage';
 import {
   categorizeExpense,
   categorizeIncome,
@@ -44,6 +44,7 @@ import {
   normalizeText,
 } from './Categorizer';
 import { findMerchantRule } from './MerchantRules';
+import { applyIncomeRule } from './IncomeRules';
 
 // ─────────────────────────────────────────────────────────────
 // 1a. NORMALIZACIÓN
@@ -949,6 +950,8 @@ export interface SmsImportPlan {
 /** Opciones de planSmsImport: aprendizaje por comercio y movimientos ya guardados. */
 export interface PlanOptions {
   merchantRules?: MerchantRule[];
+  /** Depósitos aprendidos por origen (banco, cuenta y quién envía). */
+  incomeRules?: IncomeRule[];
   existingTxs?: Transaction[];
 }
 
@@ -1008,7 +1011,7 @@ export function planSmsImport(
   };
 
   for (const msg of messages) {
-    const c = applyLearnedRule(classifyBankSms(msg), opts.merchantRules);
+    const c = applyIncomeRule(applyLearnedRule(classifyBankSms(msg), opts.merchantRules), msg.body, opts.incomeRules);
     const untrustedBank = c.kind === 'not_bank' && c.reason.startsWith('untrusted');
     if (c.kind === 'not_bank' && !untrustedBank) continue;
     stats.bankCandidates++;
@@ -1114,7 +1117,7 @@ export function reasonLabelFor(kind: SmsKind): string {
 export function reviewImportedSms(
   txs: Transaction[],
   keptIds: Set<string>,
-  opts: { merchantRules?: MerchantRule[] } = {},
+  opts: { merchantRules?: MerchantRule[]; incomeRules?: IncomeRule[] } = {},
 ): SmsReviewItem[] {
   const items: SmsReviewItem[] = [];
 
@@ -1123,9 +1126,13 @@ export function reviewImportedSms(
   for (const t of txs) {
     if (t.source !== 'sms' || !t.originalSMS || keptIds.has(t.id)) continue;
     const ts = Date.parse(t.date);
-    classified.set(t.id, applyLearnedRule(
-      classifyBankSms({ body: t.originalSMS, receivedAt: isNaN(ts) ? undefined : ts }),
-      opts.merchantRules,
+    classified.set(t.id, applyIncomeRule(
+      applyLearnedRule(
+        classifyBankSms({ body: t.originalSMS, receivedAt: isNaN(ts) ? undefined : ts }),
+        opts.merchantRules,
+      ),
+      t.originalSMS,
+      opts.incomeRules,
     ));
   }
 

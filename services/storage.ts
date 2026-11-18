@@ -5,6 +5,7 @@ import { assignAccountsToTransactions } from './AccountLinking';
 import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
 import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPairKey } from './TransferPairs';
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
+import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule } from './IncomeRules';
 import { planSmsUndo } from './SmsUndoPlan';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
@@ -135,6 +136,12 @@ export interface CustomCategory {
 // APRENDIZAJE POR COMERCIO Y BUZÓN DE SMS SIN CLASIFICAR
 // ─────────────────────────────────────────────────────────────
 export interface MerchantRule { key: string; label: string; category: string; createdAt: string; updatedAt: string; hits: number; }
+
+/** Regla de depósitos: banco|cuenta|origen del SMS -> categoría (ver services/IncomeRules.ts). */
+export interface IncomeRule {
+  key: string; label: string; category: string; sourceId?: string;
+  createdAt: string; updatedAt: string; hits: number;
+}
 
 export interface SmsInboxItem {
   fingerprint: string; body: string; address?: string; receivedAt?: number;
@@ -295,6 +302,7 @@ const K = {
   SMS_DISMISSED: '@bm_sms_dismissed',
   SMS_REVIEW_KEPT: '@bm_sms_review_kept',
   MERCHANT_RULES: '@bm_merchant_rules',
+  INCOME_RULES: '@bm_income_rules',
   SMS_INBOX: '@bm_sms_inbox',
   SMS_INBOX_IGNORED: '@bm_sms_inbox_ignored',
   SMS_SYNC_STATE: '@bm_sms_sync_state',
@@ -917,6 +925,60 @@ export const StorageService = {
         const rules = await this.getMerchantRules();
         const updated = upsertMerchantRule(rules, merchant, tx.category, new Date().toISOString());
         await this.saveMerchantRules(updated);
+      }
+    }
+    return { transactions: next, affected };
+  },
+
+  // ── Aprendizaje de depósitos (origen del ingreso) ─────────
+  async getIncomeRules(): Promise<IncomeRule[]> {
+    try {
+      const data = await AsyncStorage.getItem(K.INCOME_RULES);
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  },
+
+  async saveIncomeRules(rules: IncomeRule[]): Promise<void> {
+    try { await AsyncStorage.setItem(K.INCOME_RULES, JSON.stringify(rules)); } catch { }
+  },
+
+  async deleteIncomeRule(key: string): Promise<IncomeRule[]> {
+    const all = await this.getIncomeRules();
+    const updated = all.filter(r => r.key !== key);
+    await this.saveIncomeRules(updated);
+    return updated;
+  },
+
+  /**
+   * Como saveTransactionWithLearning pero para ingresos SMS: guarda el movimiento editado
+   * (tx ya trae categoryEditedAt). Con `applyToPast` copia la categoría a los otros ingresos
+   * SMS del mismo origen (sin categoryEditedAt, sin marcarlos como editados a mano); con
+   * `remember` aprende la regla banco|cuenta|origen. `affected` = otros movimientos cambiados.
+   */
+  async saveIncomeWithLearning(
+    tx: Transaction,
+    opts: { remember: boolean; applyToPast: boolean },
+  ): Promise<{ transactions: Transaction[]; affected: number }> {
+    const all = await this.getTransactions();
+    const pastIds = opts.applyToPast ? new Set(sameOriginTxIds(all, tx)) : new Set<string>();
+    let affected = 0;
+    const next = all.map(t => {
+      if (t.id === tx.id) return tx;
+      if (pastIds.has(t.id) && t.category !== tx.category) {
+        affected++;
+        return { ...t, category: tx.category };
+      }
+      return t;
+    });
+    await this.saveTransactions(next);
+
+    if (opts.remember) {
+      const key = incomeKeyOfTx(tx);
+      const label = incomeOriginLabelOfTx(tx);
+      if (key && label) {
+        const rules = await this.getIncomeRules();
+        await this.saveIncomeRules(upsertIncomeRule(rules, key, label, tx.category, new Date().toISOString()));
       }
     }
     return { transactions: next, affected };

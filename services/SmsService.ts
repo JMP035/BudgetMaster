@@ -226,13 +226,14 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       .filter(m => typeof m?.body === 'string' && Number(m.date) >= minDate)
       .map(m => ({ body: m.body as string, address: m.address, receivedAt: Number(m.date) }));
 
-    const [txs, insts, dismissed, kept, accounts, rules, fixedBefore, dupIgnoredList, linkSeenPrev, settings] = await Promise.all([
+    const [txs, insts, dismissed, kept, accounts, rules, incomeRules, fixedBefore, dupIgnoredList, linkSeenPrev, settings] = await Promise.all([
       StorageService.getTransactions(),
       StorageService.getCreditInstallments(),
       StorageService.getDismissedSms(),
       StorageService.getSmsReviewKept(),
       StorageService.getAccounts(),
       StorageService.getMerchantRules(),
+      StorageService.getIncomeRules(),
       StorageService.getFixedExpenses(),
       StorageService.getDupIgnored(),
       StorageService.getSmsLinkSeen(),
@@ -241,7 +242,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
     const cycle = fixedCycleConfig(settings);
 
     const index = buildExistingSmsIndex(txs, insts, dismissed);
-    const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, existingTxs: txs });
+    const plan = planSmsImport(messages, index, accounts, { merchantRules: rules, incomeRules, existingTxs: txs });
 
     // (a) Cuenta de cada movimiento nuevo (por vínculos SMS) y tarjeta de las visacuotas ambiguas.
     const newTxs = assignAccountsToTransactions(plan.transactions, accounts).txs;
@@ -390,7 +391,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       ? allTxs.filter(isPendingUnassigned).length
       : 0;
 
-    const reviewItems = reviewImportedSms(allTxs, new Set(kept), { merchantRules: rules });
+    const reviewItems = reviewImportedSms(allTxs, new Set(kept), { merchantRules: rules, incomeRules });
 
     // (g) Solo si todo terminó bien.
     await StorageService.saveSmsSyncState({ lastSyncAt: startedAt, ...(full ? { lastFullSyncAt: startedAt } : {}) });

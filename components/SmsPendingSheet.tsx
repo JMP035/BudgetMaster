@@ -219,7 +219,8 @@ export default function SmsPendingSheet({
         (async () => {
             try {
                 const rules = await StorageService.getMerchantRules();
-                const items = reviewImportedSms(transactions, new Set(keptIds), { merchantRules: rules });
+                const incomeRules = await StorageService.getIncomeRules();
+                const items = reviewImportedSms(transactions, new Set(keptIds), { merchantRules: rules, incomeRules });
                 if (!cancelled) setLiveReview(items);
             } catch (e) {
                 console.warn("[SmsPendingSheet] dudosos:", e);
