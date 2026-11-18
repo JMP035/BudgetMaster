@@ -137,6 +137,8 @@ export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tutorial_presupuesto', label: 'Presupuesto' },
   { tutorialId: 'tutorial_cuentas', label: 'Cuentas' },
   { tutorialId: 'tutorial_visacuotas', label: 'Visacuotas' },
+  { tutorialId: 'tutorial_compra_tarjeta', label: 'Compra con tarjeta' },
+  { tutorialId: 'tutorial_pago_tarjeta', label: 'Pagar la tarjeta' },
   { tutorialId: 'tutorial_stats', label: 'Estadísticas' },
   { tutorialId: 'tutorial_ia', label: 'Asesor' },
   { tutorialId: 'tutorial_ajustes', label: 'Ajustes' },

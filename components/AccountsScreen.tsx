@@ -16,6 +16,9 @@ import {
 import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
 import { detectBankName } from "../services/BankSmsParser";
 import { nextInstallmentCut } from "../services/InstallmentSchedule";
+import { statementFor } from "../services/CardStatement";
+import type { StatementStatus } from "../services/CardStatement";
+import { formatShortDay } from "../services/BudgetBreakdown";
 import { isSmsFeatureOn } from "../services/features";
 import { formatMoney } from "../services/format";
 import { C } from "../theme";
@@ -28,6 +31,7 @@ import { HelpButton } from "./HelpButton";
 import InstallmentModal from "./InstallmentModal";
 import { InlineNotice, InlineNoticeVariant } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
+import { CardPaymentSheet, StatementAmountSheet } from "./CardStatementSheets";
 import Money from "./Money";
 import { isTutorialActive } from "./TutorialOverlay";
 
@@ -68,6 +72,14 @@ const LINK_KIND_HINT: Record<LinkKind, string> = {
   acct: 'Últimos 4 dígitos de la cuenta (terminación).',
 };
 
+function statusLabel(st: StatementStatus): string {
+  return st === 'paid' ? 'Pagado' : st === 'partial' ? 'Pago parcial' : st === 'overdue' ? 'Vencido' : 'Pendiente';
+}
+
+function statusColor(st: StatementStatus): string {
+  return st === 'paid' ? C.income : st === 'overdue' ? C.danger : C.warning;
+}
+
 // ─────────────────────────────────────────────────────────────
 // BARRA ANIMADA
 // ─────────────────────────────────────────────────────────────
@@ -104,6 +116,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
   const [notes, setNotes] = useState(existing?.notes || '');
   const [cutoffDay, setCutoffDay] = useState(existing?.cutoffDay?.toString() || '');
   const [paymentDueDay, setPaymentDueDay] = useState(existing?.paymentDueDay?.toString() || '');
+  const [payFromId, setPayFromId] = useState<string | null>(existing?.payFromAccountId ?? null);
   const [error, setError] = useState('');
 
   // ── Mensajes (SMS) que actualizan esta cuenta ─────────────
@@ -129,6 +142,8 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
 
   const typeInfo = ACCOUNT_TYPES.find(t => t.type === type)!;
   const showSmsSection = smsOn && (type === 'bank' || type === 'credit' || type === 'savings');
+  // Cuentas de las que puede salir el pago de la tarjeta (no tarjetas)
+  const payFromChoices = (allAccounts ?? []).filter(a => a.isActive && a.type !== 'credit' && a.id !== existing?.id);
 
   // Cada cambio en un campo limpia el aviso de error
   const ch = (set: (v: string) => void) => (v: string) => { set(v); setError(''); };
@@ -208,6 +223,8 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
         creditLimit: existing?.creditLimit,
         cutoffDay: parsedCutoff,
         paymentDueDay: parsedPaymentDue,
+        payFromAccountId: payFromId && payFromChoices.some(a => a.id === payFromId) ? payFromId : undefined,
+        statementOverrides: existing?.statementOverrides,
         isActive: true,
         createdAt: existing?.createdAt || new Date().toISOString(),
         notes: notes.trim() || undefined,
@@ -319,6 +336,36 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
         <Text style={md.hint}>
           Día de corte = la fecha de «Saldo al corte» de tu estado de cuenta (ese día entra en el estado y el ciclo nuevo empieza al día siguiente).
         </Text>
+      )}
+      {type === 'credit' && payFromChoices.length > 0 && (
+        <View>
+          <Text style={md.lbl}>CUENTA CON LA QUE PAGÁS (Opcional)</Text>
+          <View style={md.linkWrap}>
+            <TouchableOpacity
+              style={[md.bankChip, payFromId === null && md.bankChipActive]}
+              onPress={() => { setPayFromId(null); setError(''); }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: payFromId === null }}
+            >
+              <Text style={[md.bankChipTxt, payFromId === null && { color: C.primaryLight }]}>Ninguna</Text>
+            </TouchableOpacity>
+            {payFromChoices.map(a => (
+              <TouchableOpacity
+                key={a.id}
+                style={[md.bankChip, payFromId === a.id && md.bankChipActive]}
+                onPress={() => { setPayFromId(a.id); setError(''); }}
+                accessibilityRole="button"
+                accessibilityLabel={a.name}
+                accessibilityState={{ selected: payFromId === a.id }}
+              >
+                <Text style={[md.bankChipTxt, payFromId === a.id && { color: C.primaryLight }]} numberOfLines={1}>{a.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={md.hint}>
+            De ahí sale el dinero cuando pagás esta tarjeta.{smsOn ? ' Si el banco te manda el SMS del pago, la app lo empareja sola con esa salida: no cuenta como un gasto nuevo.' : ''}
+          </Text>
+        </View>
       )}
 
       {/* Mensajes (SMS) que actualizan esta cuenta */}
@@ -577,6 +624,7 @@ export default function AccountsScreen({
   const [editingAcc, setEditingAcc] = useState<Account | undefined>();
   const [editingInst, setEditingInst] = useState<CreditInstallment | undefined>();
   const [createType, setCreateType] = useState<AccountType | undefined>();
+  const [cardSheet, setCardSheet] = useState<{ kind: 'amount' | 'pay'; cardId: string } | null>(null);
 
   // «Crearlo ahora» del tutorial: abre el alta de la cuenta o tarjeta que falta.
   useEffect(() => {
@@ -598,6 +646,9 @@ export default function AccountsScreen({
   const transferBtnRef = useTutorialRef('accounts_transfer_btn');
   const tabsRef = useTutorialRef('accounts_tabs');
   const instListRef = useTutorialRef('accounts_inst_list');
+  const stmtRef = useTutorialRef('accounts_card_statement');
+  const cycleRef = useTutorialRef('accounts_card_cycle');
+  const stmtActionsRef = useTutorialRef('accounts_card_actions');
   const tutScroll = useTutorialScroll('accounts');
   useTutorialAction('accounts:setTab', arg => setActiveTab(arg === 'installments' ? 'installments' : 'accounts'));
 
@@ -627,6 +678,10 @@ export default function AccountsScreen({
 
   const activeAccounts = accounts.filter(a => a.isActive);
   const activeInstallments = creditInstallments.filter(i => i.isActive);
+  // El tutorial señala el estado de la primera tarjeta (los refs son únicos)
+  const firstCreditId = activeAccounts.find(a => a.type === 'credit')?.id;
+  const sheetCard = cardSheet ? accounts.find(a => a.id === cardSheet.cardId) : undefined;
+  const sheetStatement = sheetCard ? statementFor(sheetCard, transactions, creditInstallments, new Date()) : null;
 
   // ── Handlers Cuentas ─────────────────────────────────────
   const handleSaveAccount = async (account: Account) => {
@@ -696,6 +751,28 @@ export default function AccountsScreen({
     const updated = await StorageService.deleteCreditInstallment(id);
     setCreditInstallments(updated);
     setTransactions(await StorageService.getTransactions());
+  };
+
+  // ── Handlers Estado de cuenta y pago de tarjeta ───────────
+  const handleSaveStatementAmount = async (cardId: string, cutKey: string, amounts: { Q?: number; USD?: number }) => {
+    try {
+      setAccounts(await StorageService.setStatementOverride(cardId, cutKey, amounts));
+    } catch (e) {
+      console.warn('[AccountsScreen] No se pudo guardar el monto del estado:', e);
+      void dialog.alert({ variant: 'error', title: 'No se pudo guardar', message: 'No se pudo guardar el monto del estado. Intenta de nuevo.' });
+    }
+  };
+
+  const handleRegisterPayment = async (
+    cardId: string, cutKey: string,
+    p: { amounts: { Q?: number; USD?: number }; fromAccountId?: string; date: Date },
+  ) => {
+    try {
+      setTransactions(await StorageService.registerCardPayment({ cardId, cutKey, ...p }));
+    } catch (e) {
+      console.warn('[AccountsScreen] No se pudo registrar el pago:', e);
+      void dialog.alert({ variant: 'error', title: 'No se pudo registrar', message: 'No se pudo registrar el pago. Intenta de nuevo.' });
+    }
   };
 
   // ── Handler Transferencia ─────────────────────────────────
@@ -872,7 +949,10 @@ export default function AccountsScreen({
                 const linksLabel = links.length > 0
                   ? `SMS: ${linkKeyLabel(links[0])}${links.length > 1 ? ` +${links.length - 1}` : ''}`
                   : null;
-                const cycle = smsOn && isCredit ? cycleSpentForCard(transactions, acc, new Date()) : null;
+                const nowCard = new Date();
+                const cycle = isCredit ? cycleSpentForCard(transactions, acc, nowCard) : null;
+                const stmt = isCredit ? statementFor(acc, transactions, creditInstallments, nowCard) : null;
+                const isFirstCard = acc.id === firstCreditId;
 
                 return (
                   <TouchableOpacity
@@ -881,7 +961,8 @@ export default function AccountsScreen({
                     onLongPress={() => { setEditingAcc(acc); setShowAccModal(true); }}
                     activeOpacity={0.85}
                   >
-                    <GlassCard radius={16} blur={false} leftAccentColor={acc.color} contentStyle={s.accRow}>
+                    <GlassCard radius={16} blur={false} leftAccentColor={acc.color} contentStyle={s.accCol}>
+                      <View style={s.accRowInner}>
                       <View style={[s.accIcon, { backgroundColor: acc.color + '22' }]}>
                         <Ionicons name={typeInfo.icon as any} size={22} color={acc.color} />
                       </View>
@@ -901,12 +982,6 @@ export default function AccountsScreen({
                         {isCredit && monthlyTotal > 0 && (
                           <Text style={[s.accExtra, { color: C.warning }]}>
                             Cuota mensual: {formatMoney(monthlyTotal, acc.currency)}
-                          </Text>
-                        )}
-                        {cycle && (
-                          <Text style={[s.accExtra, { color: C.primaryLight }]}>
-                            Ciclo abierto: {(cycle.byCurrency.length > 0 ? cycle.byCurrency : [{ currency: cycle.currency, amount: 0 }])
-                              .map(c => formatMoney(Math.max(0, c.amount), c.currency)).join(' · ')}
                           </Text>
                         )}
                         {linksLabel && (
@@ -947,6 +1022,56 @@ export default function AccountsScreen({
                           </TouchableOpacity>
                         </View>
                       </View>
+                      </View>
+                      {isCredit && stmt && cycle && (
+                        <View style={s.stmtBox}>
+                          <View ref={isFirstCard ? stmtRef : undefined} collapsable={false}>
+                            <View style={s.stmtHead}>
+                              <Text style={s.stmtTitle}>Estado al {formatShortDay(stmt.cut)}</Text>
+                              <View style={[s.stmtChip, { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive }]}>
+                                <Text style={[s.stmtChipTxt, { color: C.primaryLight }]}>{stmt.isEstimated ? 'Estimado' : 'Del estado de cuenta'}</Text>
+                              </View>
+                              <View style={[s.stmtChip, { borderColor: statusColor(stmt.status) + '55', backgroundColor: statusColor(stmt.status) + '22' }]}>
+                                <Text style={[s.stmtChipTxt, { color: statusColor(stmt.status) }]}>{statusLabel(stmt.status)}</Text>
+                              </View>
+                            </View>
+                            <Text style={s.stmtAmounts}>
+                              {stmt.toPay.Q > 0 || stmt.toPay.USD > 0
+                                ? [stmt.toPay.Q > 0 ? formatMoney(stmt.toPay.Q, 'Q') : null, stmt.toPay.USD > 0 ? formatMoney(stmt.toPay.USD, 'USD') : null].filter(Boolean).join(' · ')
+                                : 'Sin saldo en este estado'}
+                            </Text>
+                            {stmt.status !== 'paid' && stmt.due && (
+                              <Text style={[s.accExtra, stmt.status === 'overdue' && { color: C.danger }]}>
+                                {stmt.status === 'overdue' ? 'Venció el ' : 'Pagá antes del '}{formatShortDay(stmt.due)}
+                              </Text>
+                            )}
+                            {(stmt.paid.Q > 0 || stmt.paid.USD > 0) && (
+                              <Text style={s.accExtra}>
+                                Pagado: {[stmt.paid.Q > 0 ? formatMoney(stmt.paid.Q, 'Q') : null, stmt.paid.USD > 0 ? formatMoney(stmt.paid.USD, 'USD') : null].filter(Boolean).join(' · ')}
+                                {stmt.status !== 'paid' ? ' · Falta: ' + [stmt.remaining.Q > 0 ? formatMoney(stmt.remaining.Q, 'Q') : null, stmt.remaining.USD > 0 ? formatMoney(stmt.remaining.USD, 'USD') : null].filter(Boolean).join(' · ') : ''}
+                              </Text>
+                            )}
+                          </View>
+                          <View ref={isFirstCard ? cycleRef : undefined} collapsable={false}>
+                            <Text style={[s.accExtra, { color: C.primaryLight }]}>
+                              Ciclo abierto: {(cycle.byCurrency.length > 0 ? cycle.byCurrency : [{ currency: cycle.currency, amount: 0 }])
+                                .map(c => formatMoney(Math.max(0, c.amount), c.currency)).join(' · ')}
+                            </Text>
+                          </View>
+                          <View ref={isFirstCard ? stmtActionsRef : undefined} collapsable={false} style={s.stmtActions}>
+                            <GlassButton
+                              kind="secondary" icon="create-outline" label="Ingresar monto real"
+                              onPress={() => setCardSheet({ kind: 'amount', cardId: acc.id })}
+                              style={s.stmtBtn}
+                            />
+                            <GlassButton
+                              kind="secondary" icon="card-outline" label="Registrar pago"
+                              onPress={() => setCardSheet({ kind: 'pay', cardId: acc.id })}
+                              style={s.stmtBtn}
+                            />
+                          </View>
+                        </View>
+                      )}
                     </GlassCard>
                   </TouchableOpacity>
                 );
@@ -1065,6 +1190,23 @@ export default function AccountsScreen({
           onClose={() => { setShowAccModal(false); setEditingAcc(undefined); setCreateType(undefined); }}
         />
       )}
+      {cardSheet?.kind === 'amount' && sheetCard && sheetStatement && (
+        <StatementAmountSheet
+          card={sheetCard}
+          statement={sheetStatement}
+          onSave={amounts => { void handleSaveStatementAmount(sheetCard.id, sheetStatement.cutKey, amounts); }}
+          onClose={() => setCardSheet(null)}
+        />
+      )}
+      {cardSheet?.kind === 'pay' && sheetCard && sheetStatement && (
+        <CardPaymentSheet
+          card={sheetCard}
+          statement={sheetStatement}
+          fromChoices={accounts.filter(a => a.isActive && a.type !== 'credit')}
+          onSave={p => { void handleRegisterPayment(sheetCard.id, sheetStatement.cutKey, p); }}
+          onClose={() => setCardSheet(null)}
+        />
+      )}
       {showInstModal && (
         <InstallmentModal accounts={accounts} existing={editingInst} customCategories={settings.customCategories} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
       )}
@@ -1099,7 +1241,16 @@ const s = StyleSheet.create({
   tabs: { marginHorizontal: 16, marginBottom: 16 },
 
   cardWrap: { marginHorizontal: 16, marginBottom: 10 },
-  accRow: { flexDirection: 'row', alignItems: 'center', padding: 14, paddingLeft: 17 },
+  accCol: { padding: 14, paddingLeft: 17 },
+  accRowInner: { flexDirection: 'row', alignItems: 'center' },
+  stmtBox: { marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: C.glassBorder, gap: 2 },
+  stmtHead: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+  stmtTitle: { color: C.textPrimary, fontSize: 12, fontWeight: '800' },
+  stmtChip: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
+  stmtChipTxt: { fontSize: 10, fontWeight: '900', letterSpacing: 0.4 },
+  stmtAmounts: { color: C.textPrimary, fontSize: 16, fontWeight: '900', marginTop: 4 },
+  stmtActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  stmtBtn: { flexGrow: 1, flexBasis: 140 },
   accIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   nameRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   accName: { color: C.textPrimary, fontSize: 15, fontWeight: '800', flexShrink: 1 },

@@ -3,7 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { StorageService } from "../services/storage";
-import type { Account, FixedExpense, IncomeSource, Transaction, UserSettings } from "../services/storage";
+import type { Account, CreditInstallment, FixedExpense, IncomeSource, Transaction, UserSettings } from "../services/storage";
 import { reviewImportedSms } from "../services/BankSmsParser";
 import type { SmsReviewItem } from "../services/BankSmsParser";
 import type { SyncResult } from "../services/SmsService";
@@ -18,6 +18,8 @@ import { groupUnassigned } from "../services/AccountLinking";
 import { incomeProposalsTitle, liveIncomeProposals } from "../services/IncomeSourceView";
 import type { IncomeProposal } from "../services/IncomeSources";
 import { sanitizePayRules } from "../services/PayCalendar";
+import { liveCardPaymentProposals } from "../services/CardStatement";
+import type { CardPaymentProposal } from "../services/CardStatement";
 import { GlassSheet } from "./GlassSheet";
 import { GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
@@ -28,9 +30,10 @@ import FixedExpenseMatchModal from "./FixedExpenseMatchModal";
 import TransferPairsModal from "./TransferPairsModal";
 import IncomeProposalsModal from "./IncomeProposalsModal";
 import UnassignedAccountsModal from "./UnassignedAccountsModal";
+import CardPaymentProposalsModal from "./CardPaymentProposalsModal";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
-type Kind = "review" | "dups" | "fixed" | "transfers" | "income" | "unassigned" | "inbox";
+type Kind = "review" | "dups" | "fixed" | "transfers" | "income" | "cardpay" | "unassigned" | "inbox";
 // 'sheet' = la hoja visible; 'none' = pausa entre dos ventanas (Android no maneja dos Modal a la vez)
 type ViewState = "sheet" | "none" | Kind;
 
@@ -43,6 +46,7 @@ export function countPending(r: SyncResult): number {
         + r.fixedProposals.length
         + r.transferPairs.length
         + (r.incomeProposals?.length ?? 0)
+        + (r.cardPaymentProposals?.length ?? 0)
         + r.unassignedCount
         + r.inbox.length;
 }
@@ -100,6 +104,7 @@ export default function SmsPendingSheet({
     const [keptIds, setKeptIds] = useState<string[]>([]);
     const [inboxCount, setInboxCount] = useState(0);
     const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+    const [insts, setInsts] = useState<CreditInstallment[]>([]);
     const [tick, setTick] = useState(0);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -120,17 +125,19 @@ export default function SmsPendingSheet({
         let cancelled = false;
         (async () => {
             try {
-                const [ign, kept, inbox, sources] = await Promise.all([
+                const [ign, kept, inbox, sources, instList] = await Promise.all([
                     StorageService.getDupIgnored(),
                     StorageService.getSmsReviewKept(),
                     StorageService.getSmsInbox(),
                     StorageService.getIncomeSources(),
+                    StorageService.getCreditInstallments(),
                 ]);
                 if (cancelled) return;
                 setDupIgnored(ign);
                 setKeptIds(kept);
                 setInboxCount(inbox.length);
                 setIncomeSources(sources);
+                setInsts(instList);
             } catch (e) {
                 console.warn("[SmsPendingSheet] carga:", e);
             }
@@ -220,6 +227,22 @@ export default function SmsPendingSheet({
         }
     }, [visible, result, transactions, incomeSources, dupIgnored, settings.payRules]);
 
+    // «¿Es el pago de tu tarjeta?»: salidas de la cuenta pagadora que se parecen a lo que falta de un estado.
+    // Con resultado se revisan solo las de esa sincronización; sin resultado, todas las de SMS. Siempre se recalcula.
+    const cardPayProposals: CardPaymentProposal[] = useMemo(() => {
+        if (!visible) return [];
+        try {
+            const cards = accounts.filter(a => a.type === "credit" && a.isActive);
+            return liveCardPaymentProposals(
+                transactions, cards, insts, new Set(dupIgnored),
+                result ? new Set((result.cardPaymentProposals ?? []).map(p => p.outId)) : null, new Date(),
+            );
+        } catch (e) {
+            console.warn("[SmsPendingSheet] pago de tarjeta:", e);
+            return [];
+        }
+    }, [visible, result, transactions, accounts, insts, dupIgnored]);
+
     const unassignedGroups = useMemo(() => {
         if (!visible) return [];
         // Sin cuentas con banco no hay a dónde vincular (misma regla que la sincronización).
@@ -254,7 +277,7 @@ export default function SmsPendingSheet({
     }, [visible, result, transactions, keptIds, txIds]);
 
     const total = liveReview.length + dupPairs.length + fixedMatches.length
-        + transferPairs.length + incomeProposals.length + unassignedCount + inboxCount;
+        + transferPairs.length + incomeProposals.length + cardPayProposals.length + unassignedCount + inboxCount;
 
     // Una sola ventana a la vez: cerrar la actual y abrir la siguiente con una pausa.
     const goTo = useCallback((next: ViewState) => {
@@ -330,6 +353,15 @@ export default function SmsPendingSheet({
                                     onPress={() => goTo("income")}
                                 />
                             )}
+                            {cardPayProposals.length > 0 && (
+                                <PendingRow
+                                    icon="card-outline"
+                                    title="¿Es el pago de tu tarjeta?"
+                                    hint="Salidas de tu cuenta que parecen el pago de una tarjeta"
+                                    count={cardPayProposals.length}
+                                    onPress={() => goTo("cardpay")}
+                                />
+                            )}
                             {unassignedCount > 0 && (
                                 <PendingRow
                                     icon="card-outline"
@@ -388,6 +420,14 @@ export default function SmsPendingSheet({
                 visible={view === "income"}
                 proposals={incomeProposals}
                 transactions={transactions}
+                onClose={backToSheet}
+                onChanged={childChanged}
+            />
+            <CardPaymentProposalsModal
+                visible={view === "cardpay"}
+                proposals={cardPayProposals}
+                transactions={transactions}
+                accounts={accounts}
                 onClose={backToSheet}
                 onChanged={childChanged}
             />

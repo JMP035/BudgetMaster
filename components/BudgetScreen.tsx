@@ -7,7 +7,7 @@ import {
     TouchableOpacity, View
 } from "react-native";
 import {
-    Account, CategoryBudget, Currency, FixedExpense, IncomeSource, SavingsGoal,
+    Account, CategoryBudget, CreditInstallment, Currency, FixedExpense, IncomeSource, SavingsGoal,
     StorageService, Transaction, UserSettings,
     formatDateOnly, getCurrentFinancialPeriod, getDaysUntilNextPayment, isFixedExpenseOverdue,
     parseAmount, parseDateOnly, storedDateToDateOnly
@@ -41,6 +41,7 @@ import { baseMonthlyIncome, incomeDeltaSuggestion } from "../services/IncomeSour
 import { buildIncomeList, suggestionText } from "../services/IncomeSourceView";
 import type { StatusTone } from "../services/IncomeSourceView";
 import { sanitizePayRules } from "../services/PayCalendar";
+import { debtsNotInFixed, scheduledDebts, sumDebts } from "../services/CardStatement";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -408,6 +409,25 @@ function FixedExpensesTab({
     const summaryRef = useTutorialRef('budget_fixed_summary');
     const listRef = useTutorialRef('budget_fixed_list');
     const fabRef = useTutorialRef('budget_fixed_fab');
+    const debtRef = useTutorialRef('budget_debt_list');
+
+    // Deuda programada: tarjetas (estado con saldo) y préstamos que vencen en este período.
+    const [debtAccounts, setDebtAccounts] = useState<Account[]>([]);
+    const [debtInsts, setDebtInsts] = useState<CreditInstallment[]>([]);
+    useEffect(() => {
+        let alive = true;
+        Promise.all([StorageService.getAccounts(), StorageService.getCreditInstallments()])
+            .then(([a, i]) => { if (alive) { setDebtAccounts(a); setDebtInsts(i); } })
+            .catch(() => { });
+        return () => { alive = false; };
+    }, [transactions, fixedExpenses]);
+    const debts = useMemo(() => {
+        const now = new Date();
+        const p = periodFor(fixedCycleConfig(settings), now);
+        // Lo que ya figura como gasto fijo (mismo nombre) no se cuenta dos veces.
+        return debtsNotInFixed(scheduledDebts(debtAccounts, debtInsts, transactions, now, p.end), fixedExpenses);
+    }, [debtAccounts, debtInsts, transactions, fixedExpenses, settings]);
+    const debtTotals = useMemo(() => sumDebts(debts), [debts]);
 
     const active = fixedExpenses.filter(e => e.isActive);
     const paid = active.filter(e => e.isPaid).length;
@@ -650,6 +670,50 @@ function FixedExpensesTab({
                                     </GlassCard>
                                 );
                             })
+                    )}
+                </View>
+
+                {/* DEUDA PROGRAMADA: tarjetas y préstamos que vencen en el período */}
+                <View ref={debtRef} collapsable={false} style={{ marginTop: 20 }}>
+                    <Text style={s.sectionTitle}>DEUDA PROGRAMADA</Text>
+                    {debts.length === 0 ? (
+                        <Text style={s.sectionHint}>No tenés tarjetas ni préstamos por pagar en este período.</Text>
+                    ) : (
+                        <>
+                            <Text style={s.sectionHint}>
+                                Comprometido este período: {formatMoney(totalQ - paidQ + debtTotals.Q, "Q")}
+                                {debtTotals.USD > 0 ? " · " + formatMoney(debtTotals.USD, "USD") : ""}
+                                {" "}(gastos fijos pendientes + deuda). Pagar una tarjeta no es un gasto nuevo.
+                            </Text>
+                            {debts.map(d => {
+                                const overdue = d.status === "overdue";
+                                return (
+                                    <GlassCard key={d.id} radius={16} blur={false} leftAccentColor={overdue ? C.danger : undefined} style={s.fixedCard}>
+                                        <View style={s.fixedRow}>
+                                            <View style={[s.fixedIcon, { backgroundColor: C.primary + "22", borderColor: C.primary + "44" }]}>
+                                                <Ionicons name={d.kind === "card" ? "card-outline" : "cash-outline"} size={20} color={C.primaryLight} />
+                                            </View>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={s.fixedName} numberOfLines={2}>{d.name}</Text>
+                                                <View style={s.fixedMeta}>
+                                                    <Text style={s.fixedDay}>
+                                                        {overdue ? "Venció" : "Vence"} {formatShortDay(d.due)}
+                                                    </Text>
+                                                    {d.kind === "card" && d.isEstimated && <View style={s.autoBadge}><Text style={s.autoTxt}>ESTIMADO</Text></View>}
+                                                    {d.status === "partial" && <View style={s.autoBadge}><Text style={s.autoTxt}>PARCIAL</Text></View>}
+                                                    {overdue && <View style={s.overdueBadge}><Text style={s.overdueTxt}>VENCIDO</Text></View>}
+                                                </View>
+                                            </View>
+                                            <View style={s.debtAmounts}>
+                                                {d.amounts.map(a => (
+                                                    <Money key={a.currency} amount={a.amount} currency={a.currency} size="sm" tone="expense" align="right" />
+                                                ))}
+                                            </View>
+                                        </View>
+                                    </GlassCard>
+                                );
+                            })}
+                        </>
                     )}
                 </View>
                 <View style={{ height: 100 }} />
@@ -1529,6 +1593,7 @@ const s = StyleSheet.create({
     autoBadge: { backgroundColor: C.accent + "22", paddingHorizontal: 6, borderRadius: 4 },
     autoTxt: { color: C.accent, fontSize: 9, fontWeight: "900" },
     deleteBtn: { padding: 6, borderRadius: 8, backgroundColor: C.danger + "11" },
+    debtAmounts: { alignItems: "flex-end", flexShrink: 0, maxWidth: "45%", gap: 2 },
 
     // Categorías
     catBudgetCard: { marginBottom: 12 },

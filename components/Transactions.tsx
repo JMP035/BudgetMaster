@@ -97,8 +97,8 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
         phaseTimer.current = setTimeout(() => { setPhase(next); phaseTimer.current = null; }, SWITCH_DELAY_MS);
     };
 
-    // Cuenta: solo se ofrece con SMS activo o si el movimiento ya tiene cuenta
-    const showAccount = smsOn || !!tx.accountId;
+    // Cuenta: se ofrece con SMS activo, si el movimiento ya tiene cuenta o si hay una tarjeta (para vincularle el gasto)
+    const showAccount = smsOn || !!tx.accountId || accounts.some(a => a.isActive && a.type === 'credit');
     const accountChoices = accounts.filter(a => a.isActive || a.id === tx.accountId);
     const accountChanged = accountId !== (tx.accountId ?? null);
     const hintLabel = smsOn && tx.smsAccountHint ? linkKeyLabel(tx.smsAccountHint) : null;

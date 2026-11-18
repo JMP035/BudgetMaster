@@ -395,6 +395,12 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Con este botón registrás renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago y categoría. La app te recuerda antes de cada vencimiento y las casillas se reinician al empezar un nuevo mes.',
             },
             {
+                id: 'budget_4b', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'card-outline', padding: 8,
+                title: 'Deuda programada',
+                description: 'Debajo de tus gastos fijos, «Deuda programada» lista lo que vence en este período: cada tarjeta con lo que falta pagar de su estado de cuenta (quetzales y dólares por separado) y cada préstamo sin tarjeta, con su fecha de vencimiento. «Estimado» quiere decir que el monto sale de los cargos de la tarjeta; si escribís el monto real del estado en Cuentas, deja de ser estimado. Se suma a lo «Comprometido» del período junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo. Pagar la tarjeta no es un gasto nuevo.',
+                emptyHint: 'Aquí aparecen tus tarjetas y préstamos con su vencimiento. Todavía no hay nada por pagar en este período.',
+            },
+            {
                 id: 'budget_5', elementId: 'budget_cat_summary', screen: 'budget', action: { id: 'budget:setTab', arg: 1 }, scrollKey: 'budget_categories', position: 'bottom', icon: 'bar-chart-outline', padding: 8,
                 title: 'Planificado contra gastado',
                 description: 'La suma de los límites que asignaste, cuánto llevás gastado en esas categorías este período y cuánto te queda disponible o cuánto te excediste.',
@@ -563,13 +569,13 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_3', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y el «Ciclo abierto»: lo que llevás gastado desde el último corte, separado en quetzales y dólares (cada moneda se paga en su moneda).',
+                description: 'Cada cuenta muestra su tipo, banco y saldo. Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y, en su detalle, el «Estado al corte» (lo que debés pagar, en quetzales y dólares por separado, con la fecha límite de pago y si está pendiente, parcial, pagado o vencido) y el «Ciclo abierto»: lo que llevás gastado desde el último corte. El ciclo abierto se ve también sin SMS: la tarjeta funciona con gastos anotados a mano. Cada moneda se paga en su moneda.',
                 emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
             },
             {
                 id: 'acc_4', elementId: 'accounts_fab', screen: 'accounts', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar una cuenta',
-                description: 'Elegí el tipo, el nombre, el banco, la moneda y el saldo actual. En las tarjetas de crédito indicá el día de corte, que es la fecha de «Saldo al corte» de tu estado de cuenta (ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente), y el día de pago.',
+                description: 'Elegí el tipo, el nombre, el banco, la moneda y el saldo actual. En las tarjetas de crédito indicá el día de corte, que es la fecha de «Saldo al corte» de tu estado de cuenta (ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente), y el día de pago. También podés elegir la «Cuenta con la que pagás» de la tarjeta: de ahí sale el dinero cuando la pagás.',
             },
             {
                 id: 'acc_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
@@ -625,6 +631,80 @@ export const TUTORIALS: Tutorial[] = [
                 title: '4. La última cuota',
                 description: 'La visacuota muestra cuántas cuotas se cargaron y la «Próxima cuota». Al cargarse la última, la visacuota termina sola y deja de mostrarse en esta lista; las cuotas ya cargadas se quedan en Movimientos como historial. Si la eliminás antes, también se conservan.',
                 emptyHint: 'Todavía no tenés visacuotas. Agregá una con el botón +.',
+            },
+        ],
+    },
+
+    // ── Registrar una compra con tarjeta (tutorial de proceso) ─
+    {
+        id: 'tutorial_compra_tarjeta', title: 'Registrar una compra con tarjeta',
+        description: 'La tarjeta con su corte, el gasto y dónde aparece su cargo.',
+        icon: 'card-outline', color: C.primary,
+        steps: [
+            {
+                id: 'cc_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'card-outline', padding: 8,
+                requires: 'credit_card',
+                title: '1. Creá la tarjeta con su corte y su pago',
+                description: 'Primero tiene que existir la tarjeta en Cuentas (botón +, tipo «Tarjeta Crédito»), con su día de corte (la fecha de «Saldo al corte» de tu estado de cuenta) y su día de pago. Sin la tarjeta no hay a dónde vincular la compra.',
+                emptyHint: 'Todavía no tenés tarjetas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'cc_2', elementId: 'add_header', screen: 'add', position: 'bottom', icon: 'add-circle-outline', padding: 8,
+                title: '2. Registrá el gasto o dejá que el SMS lo detecte',
+                description: 'Anotá la compra aquí como cualquier gasto. Para que cuente en la tarjeta, abrí el movimiento en Movimientos y en «Cuenta» elegí esa tarjeta. Si tenés los SMS activos y la tarjeta tiene su vínculo, el SMS de compra del banco se registra solo y se vincula a la tarjeta sin que hagas nada.',
+                noSmsDescription: 'Anotá la compra aquí como cualquier gasto. Para que cuente en la tarjeta, abrí el movimiento en Movimientos y en «Cuenta» elegí esa tarjeta.',
+            },
+            {
+                id: 'cc_3', elementId: 'accounts_card_cycle', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'sync-outline', padding: 8,
+                requires: 'credit_card',
+                title: '3. El cargo aparece en «Ciclo abierto»',
+                description: 'La compra se suma en «Ciclo abierto» de esa tarjeta: lo gastado desde el último corte, en quetzales y dólares por separado. Al llegar el corte pasa a ser el «Estado al corte» que tenés que pagar. Esto funciona también con gastos anotados a mano, no hace falta tener SMS.',
+                emptyHint: 'Cuando una tarjeta tenga cargos verás aquí su «Ciclo abierto».',
+            },
+        ],
+    },
+
+    // ── Pagar la tarjeta (tutorial de proceso) ────────────────
+    {
+        id: 'tutorial_pago_tarjeta', title: 'Pagar la tarjeta',
+        description: 'La cuenta pagadora, el monto del estado y el registro del pago.',
+        icon: 'cash-outline', color: C.primary,
+        steps: [
+            {
+                id: 'pt_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
+                requires: 'credit_card',
+                title: '1. La cuenta con la que pagás',
+                description: 'Editá la tarjeta (lápiz) y elegí «Cuenta con la que pagás»: de ahí sale el dinero. Por ejemplo: te pagan en un banco, transferís a tu cuenta pagadora y pagás la tarjeta desde ahí. Con eso la app sabe de dónde sale cada pago.',
+                emptyHint: 'Todavía no tenés tarjetas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'pt_2', elementId: 'accounts_card_statement', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'document-text-outline', padding: 8,
+                requires: 'credit_card',
+                title: '2. Lo que debés pagar',
+                description: 'En el detalle de la tarjeta, «Estado al corte» muestra lo que debés en quetzales y en dólares (se pagan por separado), la fecha límite y si está pendiente, parcial, pagado o vencido. «Estimado» es la suma de los cargos de la tarjeta en ese ciclo: el banco no manda el total por SMS (llega por correo), así que el monto exacto lo escribís vos.',
+                emptyHint: 'Cuando una tarjeta tenga estado verás aquí lo que debés pagar.',
+            },
+            {
+                id: 'pt_3', elementId: 'accounts_card_actions', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'create-outline', padding: 8,
+                requires: 'credit_card',
+                title: '3. Monto real (opcional)',
+                description: 'Con «Ingresar monto real» escribís lo que dice tu estado de cuenta, uno por cada moneda. Si lo dejás vacío se usa el estimado. Cuando lo escribís, la etiqueta cambia a «Del estado de cuenta».',
+                emptyHint: 'Cuando una tarjeta tenga estado verás aquí sus botones.',
+            },
+            {
+                id: 'pt_4', elementId: 'accounts_card_actions', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'card-outline', padding: 8,
+                requires: 'credit_card',
+                title: '4. Registrá el pago o dejá que el SMS lo detecte',
+                description: '«Registrar pago» precarga lo que falta por moneda; podés pagar solo una parte, cambiar la fecha y elegir la cuenta de origen. Si el banco manda el SMS del pago, la app lo empareja sola con la salida de tu cuenta pagadora (mismo monto, hasta 36 horas) o te pregunta «¿Es el pago de tu tarjeta?» en el Centro de revisión.',
+                noSmsDescription: '«Registrar pago» precarga lo que falta por moneda; podés pagar solo una parte, cambiar la fecha y elegir la cuenta de origen. Lo que falta sigue pendiente hasta que lo pagues.',
+                emptyHint: 'Cuando una tarjeta tenga estado verás aquí sus botones.',
+            },
+            {
+                id: 'pt_5', elementId: 'accounts_card_statement', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'shield-checkmark-outline', padding: 8,
+                requires: 'credit_card',
+                title: '5. No es un gasto nuevo',
+                description: 'Pagar la tarjeta es una transferencia de tu cuenta a la tarjeta: no suma a tus gastos del período ni se cuenta dos veces, porque cada compra ya contó cuando la hiciste con la tarjeta. Al pagar todo, el estado queda «Pagado»; si pasa la fecha límite sin pagar, «Vencido».',
+                emptyHint: 'Cuando una tarjeta tenga estado verás aquí si está pagado o vencido.',
             },
         ],
     },

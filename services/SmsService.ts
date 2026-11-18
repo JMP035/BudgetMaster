@@ -22,6 +22,8 @@ import { matchIncome } from './IncomeSources';
 import type { IncomeProposal } from './IncomeSources';
 import { sanitizePayRules } from './PayCalendar';
 import { extractIncomeOrigin } from './IncomeOrigin';
+import { applyCardPaymentMatch, liveCardPaymentProposals, matchCardPaymentSms, matchOutflowToCardPayment } from './CardStatement';
+import type { CardPaymentMatch, CardPaymentProposal } from './CardStatement';
 
 // El motor de parseo vive en BankSmsParser (puro, probado con `npm run test:sms`).
 // Aquí solo queda lo que toca APIs de Android: permisos y lectura de la bandeja.
@@ -76,6 +78,8 @@ export interface SyncResult {
   transferPairs: TransferPair[];
   /** Ingresos nuevos que podrían ser de una fuente de ingreso pero no alcanzan para vincularse solos. */
   incomeProposals: IncomeProposal[];
+  /** Salidas de la cuenta pagadora que podrían ser el pago de una tarjeta y que la persona debe confirmar. */
+  cardPaymentProposals: CardPaymentProposal[];
 }
 
 export type SmsSyncMode = 'auto' | 'manual' | 'full';
@@ -95,7 +99,7 @@ function emptySyncResult(mode: SmsSyncMode = 'manual'): SyncResult {
     transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
     stats: emptySmsStats(), reviewItems: [], diagnostics: [], inbox: [],
     batchId: null, mode, fixedAutoMarked: [], fixedProposals: [], duplicates: [], unassignedCount: 0, transferPairs: [],
-    incomeProposals: [],
+    incomeProposals: [], cardPaymentProposals: [],
   };
 }
 
@@ -448,11 +452,47 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       console.warn('SMS sync (fuentes de ingreso) error:', e instanceof Error ? e.message : 'desconocido');
     }
 
+    // (d4) Pago de tarjeta: el SMS «pago recibido» va al estado cerrado más reciente sin pagar y, si hay una salida
+    // de la cuenta pagadora con el mismo monto (±0.01, 36 h), es el mismo pago: ambos quedan como un par neutro (sin
+    // gasto nuevo). Las salidas que solo se parecen a lo que falta de un estado se proponen. Todo va al lote para Deshacer.
+    const cardPayments: NonNullable<SmsBatchRecord['cardPayments']> = [];
+    let cardPaymentProposals: CardPaymentProposal[] = [];
+    try {
+      const cards = accounts.filter(a => a.type === 'credit' && a.isActive);
+      if (cards.length > 0) {
+        let txsNow = mutated ? await StorageService.getTransactions() : allTxs;
+        const allInsts = [...insts, ...newInsts];
+        const byDate = (a: Transaction, b: Transaction) => Date.parse(a.date) - Date.parse(b.date);
+        const matches: CardPaymentMatch[] = [];
+        const take = (m: CardPaymentMatch | null): void => {
+          if (!m) return;
+          const r = applyCardPaymentMatch(txsNow, m);
+          txsNow = r.txs;
+          matches.push(m);
+          cardPayments.push({
+            txId: m.txId, cardId: m.cardId, cutKey: m.cutKey,
+            ...(m.outId && r.paired ? { outId: m.outId } : {}), ...(m.outOnly ? { outOnly: true } : {}),
+          });
+        };
+        const fresh = txsNow.filter(t => newIds.has(t.id)).sort(byDate);
+        for (const t of fresh) take(matchCardPaymentSms(t, cards, txsNow, allInsts, now));
+        // La salida de la cuenta pagadora puede llegar después del SMS de la tarjeta.
+        for (const t of fresh) take(matchOutflowToCardPayment(txsNow.find(x => x.id === t.id) ?? t, cards, txsNow));
+        if (matches.length > 0) {
+          await StorageService.applyCardPaymentMatches(matches);
+          mutated = true;
+        }
+        cardPaymentProposals = liveCardPaymentProposals(txsNow, cards, allInsts, new Set(dupIgnoredList), newIds, now);
+      }
+    } catch (e) {
+      console.warn('SMS sync (pago de tarjeta) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
     if (mutated) allTxs = await StorageService.getTransactions();
 
     // (f) Lote para "Deshacer".
     let batchId: string | null = null;
-    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0) {
+    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0 || cardPayments.length > 0) {
       batchId = `smsb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       await StorageService.recordSmsBatch({
         id: batchId,
@@ -463,6 +503,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
         fixedMarks,
         ...(fixedMerges.length > 0 ? { fixedMerges } : {}),
         ...(incomeLinks.length > 0 ? { incomeLinks } : {}),
+        ...(cardPayments.length > 0 ? { cardPayments } : {}),
       });
     }
 
@@ -496,7 +537,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       `rechazados=${s.declined}, info=${s.info}, avisos=${s.notices}, propias=${s.ownTransfers}, no_confiables=${s.untrusted}, ` +
       `no_reconocidos=${s.unparsed}, buzon=${inbox.length}, revision=${reviewItems.length}, ` +
       `fijos_auto=${fixedAutoMarked.length}, fijos_prop=${fixedProposals.length}, dup=${duplicates.length}, ` +
-      `transf=${transferPairs.length}, ingresos_auto=${incomeLinks.length}, ingresos_prop=${incomeProposals.length}, sin_cuenta=${unassignedCount}`
+      `transf=${transferPairs.length}, ingresos_auto=${incomeLinks.length}, ingresos_prop=${incomeProposals.length}, pago_tarjeta=${cardPayments.length}/${cardPaymentProposals.length}, sin_cuenta=${unassignedCount}`
     );
 
     return {
@@ -518,6 +559,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       unassignedCount,
       transferPairs,
       incomeProposals,
+      cardPaymentProposals,
     };
   } catch (e) {
     console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
@@ -534,6 +576,7 @@ export function hasSomethingToShow(r: SyncResult): boolean {
     || r.duplicates.length > 0
     || r.transferPairs.length > 0
     || (r.incomeProposals?.length ?? 0) > 0
+    || (r.cardPaymentProposals?.length ?? 0) > 0
     || r.unassignedCount > 0
     || r.inbox.length > 0
     || r.reviewItems.length > 0;

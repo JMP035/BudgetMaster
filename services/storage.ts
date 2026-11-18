@@ -7,6 +7,8 @@ import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPa
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule } from './IncomeRules';
 import { planIncomeLinksUndo, planSmsUndo } from './SmsUndoPlan';
+import { applyCardPaymentMatch, applyCardPaymentProposal, buildCardPaymentTxs, cardPaymentProposalKey, planCardPaymentsUndo } from './CardStatement';
+import type { CardPaymentMatch } from './CardStatement';
 import { planIncomeLink, sanitizeIncomeSources } from './IncomeSources';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
@@ -95,6 +97,8 @@ export interface Transaction {
   installmentId?: string;
   /** Número de la cuota (1..N) que representa este movimiento. */
   installmentNo?: number;
+  /** Pago de una tarjeta: tarjeta y estado (cutKey 'AAAA-MM-DD' del corte) que cubre. Es una transferencia neutra. */
+  cardPayment?: { cardId: string; cutKey: string };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -120,7 +124,14 @@ export interface Account {
   smsLinkedAt?: string;      // ISO: última vez que cambiaron los vínculos
   smsAutoBalance?: boolean;  // Saldo automático con SMS (ronda R-C, hoy sin uso)
   balanceAnchorAt?: string;  // ISO: solo cuentan los movimientos posteriores (R-C)
+  /** Tarjeta: cuenta con la que se paga (de ahí sale el dinero). */
+  payFromAccountId?: string;
+  /** Tarjeta: montos reales de los últimos estados de cuenta (los últimos 6). */
+  statementOverrides?: StatementOverride[];
 }
+
+/** Monto real de un estado de cuenta escrito a mano (por moneda). `cutKey` = fecha del corte 'AAAA-MM-DD'. */
+export interface StatementOverride { cutKey: string; Q?: number; USD?: number; at: string; }
 
 // ─────────────────────────────────────────────────────────────
 // VISACUOTA / CUOTA DE TARJETA
@@ -320,6 +331,8 @@ export interface SmsBatchRecord {
   fixedMerges?: Array<{ smsId: string; expenseId: string; manual: Transaction }>;
   /** Ingresos que el lote vinculó solo a una fuente (para deshacer: categoría previa y ancla del período). */
   incomeLinks?: Array<{ txId: string; prevCategory: string; anchorKey?: string }>;
+  /** Pagos de tarjeta que el lote emparejó solo (para deshacer: la salida vuelve a su tipo y el pago pierde su estado). */
+  cardPayments?: Array<{ txId: string; cardId: string; cutKey: string; outId?: string; outOnly?: boolean }>;
 }
 
 export interface SmsLinkSeen { key: string; count: number; lastAt: string; }
@@ -1192,8 +1205,12 @@ export const StorageService = {
     const incomeUndo = (batch.incomeLinks && batch.incomeLinks.length > 0)
       ? planIncomeLinksUndo(batch.incomeLinks, remaining, await this.getPeriodAnchors())
       : null;
-    if (plan.removeTxs.length > 0 || dropped.changed || incomeUndo?.txsChanged) {
-      await this.saveTransactions(incomeUndo ? incomeUndo.txs : remaining);
+    // Pagos de tarjeta que el lote emparejó solo: la salida de la cuenta pagadora vuelve a lo que era.
+    const cardUndo = (batch.cardPayments && batch.cardPayments.length > 0)
+      ? planCardPaymentsUndo(batch.cardPayments, incomeUndo ? incomeUndo.txs : remaining)
+      : null;
+    if (plan.removeTxs.length > 0 || dropped.changed || incomeUndo?.txsChanged || cardUndo?.changed) {
+      await this.saveTransactions(cardUndo ? cardUndo.txs : (incomeUndo ? incomeUndo.txs : remaining));
     }
     if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
     if (plan.removeInsts.length > 0) {
@@ -1574,6 +1591,76 @@ export const StorageService = {
   /** "No es un par": el par (outId, inId) no vuelve a proponerse (misma lista de ignorados que los duplicados). */
   async dismissTransferPair(outId: string, inId: string): Promise<void> {
     await this.addDupIgnored([transferPairKey(outId, inId)]);
+  },
+
+  // ── Estado de cuenta y pago de tarjeta (el pago es una transferencia neutra; nunca un gasto) ──
+  /**
+   * Guarda el monto REAL del estado de cuenta (por moneda) de una tarjeta. Sin Q ni USD quita el que había.
+   * Solo se conservan los últimos 6 estados.
+   */
+  async setStatementOverride(cardId: string, cutKey: string, amounts: { Q?: number; USD?: number }): Promise<Account[]> {
+    const all = await this.getAccounts();
+    if (!all.some(a => a.id === cardId)) return all;
+    const clean = (n: number | undefined): number | undefined =>
+      typeof n === 'number' && isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : undefined;
+    const q = clean(amounts.Q);
+    const usd = clean(amounts.USD);
+    const updated = all.map(a => {
+      if (a.id !== cardId) return a;
+      const rest = (a.statementOverrides ?? []).filter(o => o.cutKey !== cutKey);
+      const list = q === undefined && usd === undefined
+        ? rest
+        : [...rest, {
+            cutKey, at: new Date().toISOString(),
+            ...(q !== undefined ? { Q: q } : {}), ...(usd !== undefined ? { USD: usd } : {}),
+          }];
+      const trimmed = list.sort((x, y) => (x.cutKey < y.cutKey ? -1 : x.cutKey > y.cutKey ? 1 : 0)).slice(-6);
+      return { ...a, statementOverrides: trimmed.length > 0 ? trimmed : undefined };
+    });
+    await this.saveAccounts(updated);
+    return updated;
+  },
+
+  /**
+   * Registra el pago de una tarjeta: un movimiento por moneda (type 'transfer', category 'transfer',
+   * toAccountId = la tarjeta, con `cardPayment`). Es una transferencia neutra: no suma al gasto del período
+   * ni cambia saldos. Devuelve la lista completa de movimientos.
+   */
+  async registerCardPayment(p: {
+    cardId: string; cutKey: string; amounts: { Q?: number; USD?: number }; fromAccountId?: string; date: Date;
+  }): Promise<Transaction[]> {
+    const [accounts, txs] = await Promise.all([this.getAccounts(), this.getTransactions()]);
+    const card = accounts.find(a => a.id === p.cardId);
+    if (!card) return txs;
+    const news = buildCardPaymentTxs({
+      card, cutKey: p.cutKey, amounts: p.amounts, fromAccountId: p.fromAccountId, date: p.date, idSeed: String(Date.now()),
+    });
+    if (news.length === 0) return txs;
+    const next = [...news, ...txs];
+    await this.saveTransactions(next);
+    return next;
+  },
+
+  /** Aplica los emparejamientos de pago de tarjeta de una sincronización (una lectura y una escritura). */
+  async applyCardPaymentMatches(matches: CardPaymentMatch[]): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    let next = txs;
+    for (const m of matches) next = applyCardPaymentMatch(next, m).txs;
+    if (next !== txs) await this.saveTransactions(next);
+    return next;
+  },
+
+  /** «Sí, es el pago de mi tarjeta»: la salida pasa a ser el pago (neutro) del estado indicado. */
+  async confirmCardPaymentProposal(outId: string, cardId: string, cutKey: string): Promise<Transaction[]> {
+    const txs = await this.getTransactions();
+    const next = applyCardPaymentProposal(txs, { outId, cardId, cutKey });
+    if (next !== txs) await this.saveTransactions(next);
+    return next;
+  },
+
+  /** «No»: esa salida no vuelve a proponerse como pago de esa tarjeta. */
+  async dismissCardPaymentProposal(outId: string, cardId: string): Promise<void> {
+    await this.addDupIgnored([cardPaymentProposalKey(outId, cardId)]);
   },
 
   // ── Vínculo SMS <-> cuentas (solo para mostrar; no mueve saldos) ──

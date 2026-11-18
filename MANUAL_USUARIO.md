@@ -212,8 +212,24 @@ Registrá dónde está tu dinero real:
 - **Crear**: botón ➕ → tipo, nombre, banco (opcional), moneda (Q/USD), saldo actual, color y notas. Las tarjetas de crédito piden además el **día de corte** y el **día de pago**.
 - **Día de corte de la tarjeta** = la fecha de **«Saldo al corte»** de tu estado de cuenta. Ese día todavía entra en el estado y el **ciclo nuevo empieza al día siguiente** (corte el 9 → el ciclo nuevo arranca el 10 a las 00:00). El pago cae en la primera aparición del día de pago después del corte (corte el 9 y pago el 2 → se paga el 2 del mes siguiente).
 - En cada tarjeta ves el **«Ciclo abierto»**: lo que llevás gastado desde el último corte, **separado por moneda** («Q 9,276.01 · $39.67»): las compras en dólares se pagan en dólares, no se mezclan. Las transferencias nunca suman.
+- El «Ciclo abierto» se ve **también sin SMS**: la tarjeta funciona con gastos anotados a mano (en el detalle del movimiento elegís la tarjeta en «Cuenta»). Lo que depende de los SMS se oculta si apagás la lectura de SMS.
+- **Cuenta con la que pagás**: al crear o editar la tarjeta podés elegir de qué cuenta sale el dinero cuando la pagás (por ejemplo: te pagan en un banco, transferís a tu cuenta de BAC y pagás la tarjeta desde ahí).
 - **Editar**: mantené presionada la tarjeta. **Eliminar**: ícono 🗑.
 - El resumen superior muestra **Activos, Deudas y Neto** (las tarjetas de crédito restan del patrimonio).
+
+### Estado de cuenta y pago de la tarjeta
+
+En el detalle de cada tarjeta ves el bloque **«Estado al {corte}»**:
+
+- **Cuánto debés**, en quetzales y en dólares **por separado** (cada saldo se paga por su cuenta), con la etiqueta **«Estimado»** (la suma de los cargos de la tarjeta en ese ciclo, cuotas de visacuotas incluidas) o **«Del estado de cuenta»** (el monto real que escribiste).
+- **«Pagá antes del {fecha}»** (el día de pago después del corte) y el estado: **Pendiente**, **Pago parcial**, **Pagado** o **Vencido**.
+- **Ciclo abierto**: lo que llevás gastado desde el último corte.
+- **Ingresar monto real**: el banco no manda el total de la tarjeta por SMS (el estado llega por correo), así que ahí escribís lo que dice tu estado de cuenta, un campo por moneda. Si lo dejás vacío se usa el estimado.
+- **Registrar pago**: precarga lo que falta por moneda; podés pagar solo una parte, elegir la fecha y la cuenta de origen. Lo que falta sigue pendiente.
+- **Pagar la tarjeta es una transferencia entre tus cuentas, no un gasto nuevo**: no suma a tus gastos del período ni se cuenta dos veces (cada compra ya contó cuando la hiciste con la tarjeta).
+- **Con SMS (Android)**: si el banco manda el SMS del pago, la app lo asigna al estado cerrado más reciente que aún deba esa moneda y, si hay una salida de tu cuenta pagadora con el mismo monto (±0.01) dentro de 36 horas, las junta en una sola transferencia neutra. Si solo hay una salida que se parece a lo que falta (±1 %) entre el corte y el vencimiento + 5 días, el Centro de revisión te pregunta **«¿Es el pago de tu tarjeta?»**. **Deshacer** una sincronización revierte esos emparejamientos.
+- En **Presupuesto → Gastos Fijos**, la sección **«Deuda programada»** lista las tarjetas (lo que falta de su estado) y los préstamos que vencen en el período, y se suma a lo «Comprometido» junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo.
+- Dos tutoriales lo cuentan en orden (también en la guía del Inicio): **«Registrar una compra con tarjeta»** y **«Pagar la tarjeta»**.
 
 ### Transferencias entre cuentas
 
@@ -372,6 +388,8 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real:
 8. **Cómo se mide tu período** (también en la guía del Inicio como «Tu período») — tu día de pago, fin de semana y feriados, el sueldo que llega antes y la edición a mano.
 9. **Tu sueldo** (también en la guía del Inicio) — cómo enseñarle a la app tu pago: la cuenta donde te pagan, la fuente de ingreso, un SMS de ejemplo y qué pasa cuando llega el pago.
 10. **Cómo funcionan las visacuotas** (también en la guía del Inicio como «Visacuotas») — la tarjeta con su día de corte, la compra en cuotas, la cuota que se carga en cada corte y la última cuota.
+11. **Registrar una compra con tarjeta** (también en la guía del Inicio como «Compra con tarjeta») — crear la tarjeta con su corte y su pago, registrar el gasto (o dejar que el SMS lo detecte) y verlo en el «Ciclo abierto».
+12. **Pagar la tarjeta** (también en la guía del Inicio) — la cuenta con la que pagás, el monto real del estado, registrar el pago o dejar que el SMS lo detecte, y por qué no es un gasto nuevo.
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 
