@@ -186,7 +186,7 @@ function AppContent() {
     setCreditInstallments(data.creditInstallments);
     setIncomeSources(await StorageService.getIncomeSources());
 
-    void NotificationService.syncFixedExpenseReminders(data.fixedExpenses).catch(e => console.warn("[loadData] recordatorios:", e));
+    void NotificationService.syncPlanned().catch(e => console.warn("[loadData] plan de avisos:", e));
 
     // Sincronizar el tipo de cambio (salvo que el usuario lo haya fijado a mano).
     // Sin red, getRate devuelve offline:true y no se pisa nada.

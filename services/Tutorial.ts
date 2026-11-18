@@ -392,7 +392,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_4', elementId: 'budget_fixed_fab', screen: 'budget', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar un gasto fijo',
-                description: 'Con este botón registrás renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago y categoría. La app te recuerda antes de cada vencimiento y las casillas se reinician al empezar un nuevo mes.',
+                description: 'Con este botón registrás renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago y categoría. La app te recuerda 3 días antes de cada vencimiento (a las 8:00, sin avisarte de noche) y las casillas se reinician al empezar un nuevo período.',
             },
             {
                 id: 'budget_4b', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'card-outline', padding: 8,
@@ -414,7 +414,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_6', elementId: 'budget_cat_grid', screen: 'budget', scrollKey: 'budget_categories', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Asignar un límite',
-                description: 'Tocá una categoría, escribí el monto máximo para el período y confirmá con el check. La app te avisa al llegar al 80% y te alerta si lo superás. Para quitar un límite usá la papelera de su tarjeta.',
+                description: 'Tocá una categoría, escribí el monto máximo para el período y confirmá con el check. La app te avisa una vez cuando llegás al 80% en ese período y otra si lo superás; no te manda un aviso por cada gasto. Para quitar un límite usá la papelera de su tarjeta.',
             },
             {
                 id: 'budget_7', elementId: 'budget_goals_list', screen: 'budget', action: { id: 'budget:setTab', arg: 2 }, scrollKey: 'budget_goals', position: 'bottom', icon: 'trophy-outline', padding: 8,

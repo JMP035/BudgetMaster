@@ -19,6 +19,7 @@ import { merchantKey, merchantOfTransaction } from './MerchantRules';
 import { findManualSmsDuplicates } from './DuplicateDetector';
 import { findTransferPairs } from './TransferPairs';
 import { matchIncome } from './IncomeSources';
+import { emitIncomeAutoLinked, emitPlanInputsChanged } from './NotifEvents';
 import type { IncomeProposal } from './IncomeSources';
 import { sanitizePayRules } from './PayCalendar';
 import { extractIncomeOrigin } from './IncomeOrigin';
@@ -421,6 +422,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
     // para Deshacer; el resto se propone. Va tras las transferencias para no tocar los pares entre cuentas propias.
     const incomeLinks: NonNullable<SmsBatchRecord['incomeLinks']> = [];
     const incomeProposals: IncomeProposal[] = [];
+    const salaryLinked: Array<{ txId: string; sourceId: string; occKey: string }> = [];
     try {
       const sources = (await StorageService.getIncomeSources()).filter(s => s.isActive);
       if (sources.length > 0) {
@@ -441,6 +443,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
             if (r) {
               taken.add(cycle);
               incomeLinks.push({ txId: t.id, prevCategory: r.prevCategory, ...(r.anchorKey ? { anchorKey: r.anchorKey } : {}) });
+              salaryLinked.push({ txId: t.id, sourceId: m.sourceId, occKey: m.occKey });
               mutated = true;
               continue;
             }
@@ -539,6 +542,11 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (g) Solo si todo terminó bien.
     await StorageService.saveSmsSyncState({ lastSyncAt: startedAt, ...(full ? { lastFullSyncAt: startedAt } : {}) });
+
+    // (j) Avisos: el sync terminó. El plan de notificaciones se reprograma con lo nuevo y cada ingreso base vinculado
+    // solo dispara «Llegó tu sueldo» (NotificationService escucha estos eventos; aquí no se importa expo-notifications).
+    emitPlanInputsChanged();
+    for (const info of salaryLinked) emitIncomeAutoLinked(info);
 
     const s = plan.stats;
     console.log(

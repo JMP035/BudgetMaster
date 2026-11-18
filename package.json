@@ -30,7 +30,9 @@
     "test:card-cycle": "sucrase-node scripts/card-cycle.test.ts",
     "test:card-statement": "sucrase-node scripts/card-statement.test.ts",
     "test:balances": "sucrase-node scripts/balances.test.ts",
-    "test:transfer-form": "sucrase-node scripts/transfer-form.test.ts"
+    "test:transfer-form": "sucrase-node scripts/transfer-form.test.ts",
+    "test:capacity": "sucrase-node scripts/capacity.test.ts",
+    "test:notification-plan": "sucrase-node scripts/notification-plan.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

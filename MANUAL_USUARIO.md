@@ -93,7 +93,7 @@ Tocá el **botón ➕** de la barra inferior.
 5. **Categoría** — 20 categorías de gasto (Comida, Supermercado, Combustible, Streaming…) o 9 de ingreso (Salario, Freelance…), más las personalizadas. Si ninguna te sirve, toca **+ Nueva categoría** (la última casilla de la lista) y la creas ahí mismo: queda elegida para ese movimiento. Las propias se editan tocándolas en Ajustes → Mis Categorías.
 6. Tocá **Guardar**.
 
-Al guardar un gasto en Q, la app evalúa tu presupuesto y te envía una notificación con tu situación actualizada (ver [sección 12](#12-notificaciones-y-alertas)).
+Al guardar un gasto, la app NO te manda un aviso por cada uno: lo suma a tu **resumen del día** y solo te avisa si cruzás un umbral de tu presupuesto o de una categoría, o si es un cargo de tarjeta que complica tu pago (ver [sección 12](#12-notificaciones-y-alertas)).
 
 ### Pegar un SMS bancario (funciona en cualquier teléfono)
 
@@ -164,7 +164,7 @@ Asigná un límite mensual en Q a cada categoría (ej. Comida Q1,500):
 
 - Tocá una categoría de la lista "Agregar presupuesto", escribí el límite y confirmá ✓.
 - Cada categoría con presupuesto muestra su barra de avance: color normal → **amarillo al 80 %** → **rojo si te excedés** (con el monto de exceso exacto).
-- Al registrar un gasto que lleva una categoría al 80 % o 100 %, recibís una notificación inmediata.
+- Al registrar un gasto que lleva una categoría al 80 % o 100 % de su límite en el período, recibís una notificación (una vez por umbral y período).
 - El resumen superior compara lo planificado vs. lo gastado del mes.
 
 ### 6.3 Metas de Ahorro
@@ -380,18 +380,39 @@ Con **Ajustes → Seguridad Biométrica** activada, la app pide tu **huella digi
 
 ## 12. Notificaciones y alertas
 
-La app envía notificaciones locales (acepta el permiso la primera vez):
+La app envía notificaciones locales (acepta el permiso la primera vez). Están pensadas para ayudarte sin molestar: **ya no hay un aviso por cada gasto**, y todo se mide en tu **período de pago** (desde el día que cae tu sueldo), según lo que tenés registrado.
 
-| Alerta | Cuándo |
-|--------|--------|
-| 💰 Gasto registrado | Cada gasto en Q: cuánto llevás y cuánto te queda. |
-| 📊 Mitad del presupuesto | Al llegar al 50 %. |
-| ⚠️ Zona de alerta | Al llegar al 80 % (general o por categoría), con el gasto diario que te queda disponible. |
-| 🚨 Presupuesto agotado | Al superar el 100 %, con el exceso exacto. |
+**Reglas generales**
+
+- **Horas silenciosas:** de 22:00 a 07:00 no suena nada; lo que caiga en ese rato se mueve a las 07:00.
+- **Tope por día:** máximo 4 avisos por día (si hay más, quedan los más importantes: primero los pagos).
+- **Recordatorios de pagos:** a las 08:00.
+- **Interruptor por tipo:** cada tipo de aviso se puede encender o apagar (las preferencias ya están guardadas en tus ajustes; la pantalla para cambiarlas llega pronto).
+
+**Avisos programados** (la app los prepara para los próximos ~2 meses y los reajusta cada vez que cambian tus datos)
+
+| Aviso | Cuándo |
+|-------|--------|
+| Gasto fijo próximo | 3 días antes de su vencimiento, a las 08:00. |
+| Pago de tarjeta | 5 días antes, 1 día antes y el mismo día del vencimiento, con lo que falta pagar del estado de cuenta (estimado si no escribiste el real). |
+| Corte de tarjeta | El día antes del corte: lo que compres después entra al siguiente estado. |
+| Última visacuota | El día antes de que se cargue la última cuota. |
+| Deuda por vencer | Préstamos con día de pago: 2 días antes y el mismo día. |
+| Fin de período | El día antes de que cierre tu período, con cuánto llevás gastado. |
+| Resumen del día | Cada día a las 20:00: lo que registraste hoy y cuánto te queda del período. Se puede apagar. |
+| Resumen semanal | Los domingos a las 20:00 (ese día reemplaza al resumen del día). |
+
+**Avisos inmediatos**
+
+| Aviso | Cuándo |
+|-------|--------|
+| Llegó tu sueldo | Cuando la app reconoce solo el depósito de tu sueldo: «comprometido X, libre Y» hasta tu próximo pago. |
+| Capacidad de pago | Si el pago de una tarjeta ya compromete el 70 % (aviso), el 90 % (alerta) o el 100 % (no alcanza) de lo que tendrás: tus saldos más los ingresos que esperás **antes de la fecha de pago**. Se avisa al registrar un cargo de la tarjeta, al llegar el sueldo y 5 días antes del pago, una sola vez por nivel. Si ninguna cuenta lleva saldo, usa tu ingreso declarado y el aviso lo dice. |
+| ⚠️ Umbrales de presupuesto | Al llegar al 50 %, 80 % y 100 % del presupuesto del período, y al 80 % y 100 % de una categoría: una vez por umbral y período, con el gasto diario que te queda. |
 | 🎯 / 🏆 Metas | Al pasar el 50 % y al completar una meta. |
-| 📊 Resumen semanal | Recordatorio cada 7 días. |
 
-Las alertas incluyen una frase de disciplina financiera (Hill, Kiyosaki, Ramsey, Buffett…). Con Gemini activo, el texto lo redacta la IA usando tus números reales.
+Las alertas de umbral incluyen una frase de disciplina financiera (Hill, Kiyosaki, Ramsey, Buffett…). Con Gemini activo, el texto lo redacta la IA usando tus números reales del período.
+
 
 ---
 

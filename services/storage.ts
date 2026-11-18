@@ -38,6 +38,9 @@ import type { OnboardingCommit, OnboardingDraft } from './OnboardingPlan';
 import { sanitizeGettingStarted } from './GettingStarted';
 import { migrateMilitaryToSalary } from './CategoryMigration';
 import { emitSettingsChanged } from './SettingsEvents';
+import { emitPlanInputsChanged } from './NotifEvents';
+import { DEFAULT_NOTIF_PREFS, sanitizeNotifPrefs } from './NotifPrefs';
+import type { NotifPrefs } from './NotifPrefs';
 import type { GettingStartedState } from './GettingStarted';
 // Chat del asistente: validación/recorte puros en ChatStore (solo tipos de ./assistant/types).
 import type { StoredAssistantChat } from './assistant/types';
@@ -46,6 +49,7 @@ import { parseStoredChatJson, trimStoredChat } from './assistant/ChatStore';
 // ─────────────────────────────────────────────────────────────
 // TIPOS BASE
 // ─────────────────────────────────────────────────────────────
+export type { NotifKind, NotifPrefs } from './NotifPrefs';
 export type Currency = 'Q' | 'USD' | 'EUR' | '£';
 export type PaymentCycle = 'monthly' | 'biweekly' | 'weekly' | 'irregular';
 export type AccountType = 'cash' | 'bank' | 'credit' | 'investment' | 'savings';
@@ -326,6 +330,8 @@ export interface UserSettings {
   smsAutoSync?: boolean;
   /** Reglas del día de pago: fin de semana, feriados, tolerancia y ancla automática (ver services/PayCalendar.ts). */
   payRules?: PayRules;
+  /** Preferencias de notificaciones (ver services/NotifPrefs.ts); withSettingsDefaults siempre las completa. */
+  notif?: NotifPrefs;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -381,6 +387,12 @@ export interface NotificationState {
   setupNudgesShown: string[];
   /** Ya se avisó que el período ahora arranca el día que cae el sueldo (ver B3b). */
   periodRulesNoticeShown?: boolean;
+  /** Ids (bm_p_*) del plan de avisos programado la última vez (cuenta los avisos de cada día). */
+  planned?: string[];
+  /** Claves de avisos inmediatos ya enviados (umbral por período, capacidad por estado y nivel, sueldo por movimiento). */
+  fired?: string[];
+  /** Avisos inmediatos enviados hoy ('AAAA-MM-DD'): cuentan para el tope diario. */
+  dayCount?: { day: string; count: number };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -466,12 +478,13 @@ export const DEFAULT_SETTINGS: UserSettings = {
   activeDebtsList: [],
   smsAutoSync: true,
   payRules: DEFAULT_PAY_RULES,
+  notif: DEFAULT_NOTIF_PREFS,
 };
 
 /** Ajustes guardados + defaults; `payRules` siempre completo y válido (ajustes viejos no lo traen). */
 function withSettingsDefaults(parsed: unknown): UserSettings {
   const base = (parsed && typeof parsed === 'object' ? parsed : {}) as Partial<UserSettings>;
-  return { ...DEFAULT_SETTINGS, ...base, payRules: sanitizePayRules(base.payRules) };
+  return { ...DEFAULT_SETTINGS, ...base, payRules: sanitizePayRules(base.payRules), notif: sanitizeNotifPrefs(base.notif) };
 }
 
 /**
@@ -706,6 +719,7 @@ export const StorageService = {
 
   async saveTransactions(txs: Transaction[]): Promise<void> {
     try { await AsyncStorage.setItem(K.TRANSACTIONS, JSON.stringify(txs)); } catch { }
+    emitPlanInputsChanged();
   },
 
   async addTransaction(tx: Transaction): Promise<Transaction[]> {
@@ -987,6 +1001,7 @@ export const StorageService = {
 
   async saveIncomeSources(list: IncomeSource[]): Promise<void> {
     try { await AsyncStorage.setItem(K.INCOME_SOURCES, JSON.stringify(list)); } catch { }
+    emitPlanInputsChanged();
   },
 
   async addIncomeSource(source: IncomeSource): Promise<IncomeSource[]> {
@@ -1859,6 +1874,7 @@ export const StorageService = {
     anchorsCache = sanitizeAnchors(list);
     try { await AsyncStorage.setItem(K.PERIOD_ANCHORS, JSON.stringify(anchorsCache)); } catch { }
     refreshPeriodResolver(await this.getSettings());
+    emitPlanInputsChanged();
   },
 
   /** El usuario fija a mano el inicio real del período `key` (inicio nominal): la automatización no lo revierte. */
@@ -1956,6 +1972,7 @@ export const StorageService = {
 
   async saveFixedExpenses(expenses: FixedExpense[]): Promise<void> {
     try { await AsyncStorage.setItem(K.FIXED_EXPENSES, JSON.stringify(expenses)); } catch { }
+    emitPlanInputsChanged();
   },
 
   async addFixedExpense(e: FixedExpense): Promise<FixedExpense[]> {
@@ -2067,6 +2084,7 @@ export const StorageService = {
 
   async saveAccounts(accounts: Account[]): Promise<void> {
     try { await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(accounts)); } catch { }
+    emitPlanInputsChanged();
   },
 
   async addAccount(account: Account): Promise<Account[]> {
@@ -2074,6 +2092,7 @@ export const StorageService = {
     const updated = [...all, account];
     // a diferencia de saveAccounts, propaga el error
     await AsyncStorage.setItem(K.ACCOUNTS, JSON.stringify(updated));
+    emitPlanInputsChanged();
     return updated;
   },
 
@@ -2223,6 +2242,7 @@ export const StorageService = {
 
   async saveCreditInstallments(items: CreditInstallment[]): Promise<void> {
     try { await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(items)); } catch { }
+    emitPlanInputsChanged();
   },
 
   async addCreditInstallment(item: CreditInstallment): Promise<CreditInstallment[]> {

@@ -3,13 +3,29 @@ import { Platform } from 'react-native';
 import {
     CategoryBudget, FixedExpense, SavingsGoal,
     Transaction, UserSettings,
-    getCurrentFinancialPeriod, getDaysUntilNextPayment,
+    getCurrentFinancialPeriod, getDaysUntilNextPayment, refreshPeriodResolver,
     parseDateOnly, storedDateToDateOnly,
     StorageService,
 } from './storage';
-import { FixedCycleConfig, nextFixedReminder } from './FixedCycle';
+import type { Account, CreditInstallment, IncomeSource, NotificationState } from './storage';
+import { fixedCycleConfig } from './FixedCycle';
 import { QUOTES, randomQuote } from './FinancialQuotes';
 import { categoryLabelOf } from '../categories';
+import { sanitizePayRules } from './PayCalendar';
+import { balanceModeOf } from './Balances';
+import { adjustForQuiet, sanitizeNotifPrefs } from './NotifPrefs';
+import type { NotifPrefs } from './NotifPrefs';
+import { PLAN_ID_PREFIX, buildPlan, diffPlan, plannedCountOn, sigOf } from './NotificationPlan';
+import type { PlanData } from './NotificationPlan';
+import {
+    buildBriefingFallbackText, buildFinancialContextText, periodSnapshot, spentQOf, txsInPeriod,
+} from './NotificationTexts';
+import type { PeriodSnapshot } from './NotificationTexts';
+import { LEVEL_RANK, capacityFor, capacityMessage, salaryFigures, salaryMessage } from './Capacity';
+import type { CapacityContext } from './Capacity';
+import { onIncomeAutoLinked, onPlanInputsChanged } from './NotifEvents';
+import type { IncomeAutoLinkedInfo } from './NotifEvents';
+import { onSettingsChanged } from './SettingsEvents';
 
 // ─────────────────────────────────────────────────────────────
 // CONFIGURACIÓN — tipos correctos para SDK 54
@@ -25,15 +41,21 @@ Notifications.setNotificationHandler({
 });
 
 // ─────────────────────────────────────────────────────────────
-// IDENTIFICADORES FIJOS Y CONSTANTES DE NOTIFICACIONES NUEVAS
+// IDENTIFICADORES FIJOS Y CONSTANTES
 // ─────────────────────────────────────────────────────────────
+// Legado (B9a lo reemplaza por el plan `bm_p_*`): se cancela al sincronizar.
 const ID_FIXED_PREFIX = 'bm_fixed_';
 const ID_WEEKLY = 'bm_weekly_summary';
+const LEGACY_FIXED_TITLE = '📅 Gasto fijo próximo';
 const ID_AI_NUDGE = 'bm_ai_nudge';
 const ID_SETUP = 'bm_setup_nudge';
+const ID_IMMEDIATE_PREFIX = 'bm_i_';
 const DAY_S = 86400;
 const AI_NUDGE_INTERVAL_S = 12 * DAY_S;
 const SETUP_NUDGE_DELAY_S = 30 * 60;
+const SYNC_DEBOUNCE_MS = 1500;
+const FIRED_KEEP = 120;
+const CAPACITY_NEAR_DAYS = 5;
 
 const AI_NUDGE_VARIANTS: { title: string; body: string }[] = [
     {
@@ -79,56 +101,168 @@ const SETUP_NUDGES: Record<'budget' | 'fixed_expense' | 'category_budget' | 'sav
 };
 
 // ─────────────────────────────────────────────────────────────
-// CONTEXTO FINANCIERO PARA GEMINI
+// DATOS DE ENTRADA Y CONTEXTOS (período de pago REAL, no mes calendario)
 // ─────────────────────────────────────────────────────────────
-function buildFinancialContext(
-    settings: UserSettings,
-    transactions: Transaction[],
-    categoryBudgets: CategoryBudget[],
-    fixedExpenses: FixedExpense[],
-): string {
-    const now = new Date();
-    const m = now.getMonth();
-    const y = now.getFullYear();
-
-    const monthTx = transactions.filter(t => {
-        const d = new Date(t.date);
-        return d.getMonth() === m && d.getFullYear() === y;
-    });
-
-    const incomeQ = monthTx.filter(t => t.type === 'income' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-    const expenseQ = monthTx.filter(t => t.type === 'expense' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-    const daysLeft = getDaysUntilNextPayment(settings);
-    const daysInMonth = new Date(y, m + 1, 0).getDate();
-    const daysPassed = now.getDate();
-    const dailyRate = expenseQ / Math.max(daysPassed, 1);
-    const projected = dailyRate * daysInMonth;
-
-    const catSummary = categoryBudgets.map(cb => {
-        const spent = monthTx
-            .filter(t => t.type === 'expense' && t.category === cb.categoryId && t.currency === 'Q')
-            .reduce((s, t) => s + t.amount, 0);
-        return `${categoryLabelOf(cb.categoryId, settings.customCategories, 'expense')}: gastado Q${spent.toFixed(0)} de Q${cb.limit} (${Math.round((spent / cb.limit) * 100)}%)`;
-    }).join(', ');
-
-    const unpaidFixed = fixedExpenses.filter(f => f.isActive && !f.isPaid);
-
-    return `
-Usuario: ${settings.userName}
-Ingreso declarado: Q${settings.monthlyIncome}
-Presupuesto mensual: Q${settings.budgetLimit}
-Gastado este mes en Q: ${expenseQ.toFixed(2)}
-Ingresos registrados este mes: Q${incomeQ.toFixed(2)}
-Días transcurridos: ${daysPassed} de ${daysInMonth}
-Días hasta próximo pago: ${daysLeft}
-Tasa diaria de gasto: Q${dailyRate.toFixed(2)}/día
-Proyección fin de mes: Q${projected.toFixed(2)}
-Gastos por categoría: ${catSummary || 'Sin presupuesto por categoría definido'}
-Gastos fijos pendientes: ${unpaidFixed.length} (total Q${unpaidFixed.reduce((s, f) => s + f.amount, 0).toFixed(2)})
-Deudas activas: Q${settings.activeDebts}
-Meta de ahorro mensual: Q${settings.monthlySavingsGoal}
-    `.trim();
+interface Inputs {
+    settings: UserSettings;
+    transactions: Transaction[];
+    fixedExpenses: FixedExpense[];
+    categoryBudgets: CategoryBudget[];
+    accounts: Account[];
+    creditInstallments: CreditInstallment[];
+    incomeSources: IncomeSource[];
 }
+
+/** Lee lo que falte desde el almacenamiento (lo recibido en `over` manda) y deja listo el resolvedor del período. */
+async function loadInputs(over?: Partial<Inputs>): Promise<Inputs> {
+    const [settings, transactions, fixedExpenses, categoryBudgets, accounts, creditInstallments, incomeSources] = await Promise.all([
+        over?.settings ?? StorageService.getSettings(),
+        over?.transactions ?? StorageService.getTransactions(),
+        over?.fixedExpenses ?? StorageService.getFixedExpenses(),
+        over?.categoryBudgets ?? StorageService.getCategoryBudgets(),
+        over?.accounts ?? StorageService.getAccounts(),
+        over?.creditInstallments ?? StorageService.getCreditInstallments(),
+        over?.incomeSources ?? StorageService.getIncomeSources(),
+    ]);
+    await StorageService.getPeriodAnchors();
+    refreshPeriodResolver(settings);
+    return { settings, transactions, fixedExpenses, categoryBudgets, accounts, creditInstallments, incomeSources };
+}
+
+function prefsOf(settings: UserSettings): NotifPrefs {
+    return sanitizeNotifPrefs(settings.notif);
+}
+
+function periodAtFor(settings: UserSettings) {
+    return (d: Date) => {
+        const fp = getCurrentFinancialPeriod(settings, d);
+        return { start: fp.start, end: fp.end, nextStart: fp.nextStart };
+    };
+}
+
+function toPlanData(i: Inputs, now: Date): PlanData {
+    return {
+        settings: i.settings,
+        transactions: i.transactions,
+        fixedExpenses: i.fixedExpenses,
+        accounts: i.accounts,
+        creditInstallments: i.creditInstallments,
+        incomeSources: i.incomeSources,
+        categoryBudgets: i.categoryBudgets,
+        daysLeft: getDaysUntilNextPayment(i.settings, now),
+        periodAt: periodAtFor(i.settings),
+        labelOfCategory: id => categoryLabelOf(id, i.settings.customCategories, 'expense'),
+    };
+}
+
+function toCapacityCtx(i: Inputs, now: Date): CapacityContext {
+    return {
+        now,
+        accounts: i.accounts,
+        txs: i.transactions,
+        insts: i.creditInstallments,
+        fixed: i.fixedExpenses,
+        sources: i.incomeSources,
+        exchangeRate: i.settings.exchangeRate,
+        monthlyIncome: i.settings.monthlyIncome,
+        payRules: sanitizePayRules(i.settings.payRules),
+        cycle: fixedCycleConfig(i.settings),
+        periodAt: periodAtFor(i.settings),
+    };
+}
+
+/** Cifras del período de pago ACTUAL (según lo registrado). */
+function snapshotOf(
+    i: Pick<Inputs, 'settings' | 'transactions' | 'categoryBudgets' | 'fixedExpenses'>, now: Date,
+): PeriodSnapshot {
+    const fp = getCurrentFinancialPeriod(i.settings, now);
+    return periodSnapshot({
+        settings: i.settings, txs: i.transactions, categoryBudgets: i.categoryBudgets, fixed: i.fixedExpenses, now,
+        period: { start: fp.start, end: fp.end, nextStart: fp.nextStart },
+        daysLeft: getDaysUntilNextPayment(i.settings, now),
+        labelOfCategory: id => categoryLabelOf(id, i.settings.customCategories, 'expense'),
+    });
+}
+
+function dayKeyOf(d: Date): string {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function refSafe(s: string): string {
+    return s.replace(/[^A-Za-z0-9-]/g, '-');
+}
+
+// Las lecturas-modificaciones de NotificationState van en fila para no pisarse (plan, avisos inmediatos).
+let stateChain: Promise<unknown> = Promise.resolve();
+function withStateLock<T>(fn: () => Promise<T>): Promise<T> {
+    const run = stateChain.then(fn, fn);
+    stateChain = run.then(() => undefined, () => undefined);
+    return run;
+}
+
+interface ImmediateOpts {
+    /** Clave única: el mismo aviso no se repite mientras la clave siga en `state.fired`. */
+    key: string;
+    title: string;
+    body: string;
+    /** true = ignora el tope diario (p. ej. «no alcanza para pagar»). Nunca ignora las horas silenciosas. */
+    bypassCap?: boolean;
+    data?: Record<string, string>;
+}
+
+/**
+ * Aviso inmediato con las reglas del usuario: respeta las horas silenciosas (si cae adentro, queda programado para
+ * cuando terminan) y el tope diario (avisos planeados de hoy + inmediatos de hoy). El interruptor del tipo lo valida
+ * quien llama. Devuelve true si quedó enviado o programado.
+ */
+async function deliverImmediate(prefs: NotifPrefs, o: ImmediateOpts): Promise<boolean> {
+    if (Platform.OS === 'web') return false;
+    return withStateLock(async () => {
+        try {
+            const state = await StorageService.getNotificationState();
+            const fired = state.fired ?? [];
+            if (fired.indexOf(o.key) >= 0) return false;
+            const now = new Date();
+            const today = dayKeyOf(now);
+            const sentToday = state.dayCount && state.dayCount.day === today ? state.dayCount.count : 0;
+            if (!o.bypassCap && sentToday + plannedCountOn(state.planned ?? [], now) >= prefs.maxPerDay) return false;
+
+            const wanted = new Date(now.getTime() + 1000);
+            const fireAt = adjustForQuiet(wanted, prefs);
+            const content = { title: o.title, body: o.body, sound: true, data: { kind: 'immediate', key: o.key, ...(o.data ?? {}) } };
+            if (fireAt.getTime() === wanted.getTime()) {
+                await Notifications.scheduleNotificationAsync({
+                    content,
+                    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 1 },
+                });
+            } else {
+                await Notifications.scheduleNotificationAsync({
+                    identifier: ID_IMMEDIATE_PREFIX + refSafe(o.key),
+                    content,
+                    trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: fireAt },
+                });
+            }
+            const next: NotificationState = {
+                ...state,
+                fired: [...fired, o.key].slice(-FIRED_KEEP),
+                dayCount: dayKeyOf(fireAt) === today ? { day: today, count: sentToday + 1 } : state.dayCount,
+            };
+            await StorageService.saveNotificationState(next);
+            return true;
+        } catch (e) {
+            console.warn('deliverImmediate error:', e);
+            return false;
+        }
+    });
+}
+
+function capLevelFromKey(key: string): number {
+    const lvl = key.slice(key.lastIndexOf('_') + 1) as keyof typeof LEVEL_RANK;
+    return LEVEL_RANK[lvl] ?? 0;
+}
+
+let syncChain: Promise<unknown> = Promise.resolve();
+let syncTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ─────────────────────────────────────────────────────────────
 // LLAMADA A GEMINI
@@ -263,59 +397,6 @@ function joinEs(items: string[]): string {
     return `${items.slice(0, -1).join(', ')} y ${items[items.length - 1]}`;
 }
 
-/** Construye el cuerpo del resumen semanal con datos reales del mes calendario actual */
-function buildWeeklySummaryBody(
-    settings: UserSettings,
-    transactions: Transaction[],
-    categoryBudgets: CategoryBudget[],
-    fixedExpenses: FixedExpense[],
-    now: Date,
-): string {
-    const m = now.getMonth();
-    const y = now.getFullYear();
-
-    const monthTx = transactions.filter(t => {
-        const d = new Date(t.date);
-        return d.getMonth() === m && d.getFullYear() === y;
-    });
-
-    const spentQ = monthTx.filter(t => t.type === 'expense' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-    const budgetLimit = settings.budgetLimit;
-    const hasBudget = budgetLimit > 0;
-    const pct = hasBudget ? Math.round((spentQ / budgetLimit) * 100) : 0;
-    const remaining = budgetLimit - spentQ;
-    const daysLeft = getDaysUntilNextPayment(settings);
-    const unpaid = fixedExpenses.filter(f => f.isActive && !f.isPaid);
-    const catAlerts = categoryBudgets.filter(cb => {
-        if (cb.limit <= 0) return false;
-        const spent = monthTx
-            .filter(t => t.type === 'expense' && t.category === cb.categoryId && t.currency === 'Q')
-            .reduce((s, t) => s + t.amount, 0);
-        return (spent / cb.limit) >= 0.8;
-    });
-
-    const dd = String(now.getDate()).padStart(2, '0');
-    const mm = String(now.getMonth() + 1).padStart(2, '0');
-
-    const parts: string[] = [];
-    parts.push(
-        `Corte al ${dd}/${mm}: llevás Q${spentQ.toFixed(2)} gastados este mes` +
-        (hasBudget ? ` de Q${budgetLimit.toFixed(2)} (${pct}%).` : '.')
-    );
-    if (hasBudget) {
-        parts.push(
-            remaining >= 0
-                ? `Te quedan Q${remaining.toFixed(2)}.`
-                : `Superaste el presupuesto por Q${Math.abs(remaining).toFixed(2)}.`
-        );
-    }
-    parts.push(`Próximo ingreso en ${daysLeft} día(s).`);
-    if (unpaid.length) parts.push(`${unpaid.length} gasto(s) fijo(s) pendiente(s).`);
-    if (catAlerts.length) parts.push(`${catAlerts.length} categoría(s) al 80% o más.`);
-
-    return parts.join(' ');
-}
-
 // ─────────────────────────────────────────────────────────────
 // SERVICIO PRINCIPAL
 // ─────────────────────────────────────────────────────────────
@@ -332,7 +413,156 @@ export const NotificationService = {
         }
     },
 
-    // ── Alerta al agregar transacción ────────────────────────
+    // ── Plan programado (B9a) ────────────────────────────────
+    /** Pide sincronizar el plan (con espera para juntar varios cambios seguidos en una sola corrida). */
+    requestSync(delayMs: number = SYNC_DEBOUNCE_MS): void {
+        if (Platform.OS === 'web') return;
+        if (syncTimer) clearTimeout(syncTimer);
+        syncTimer = setTimeout(() => {
+            syncTimer = null;
+            void NotificationService.syncPlanned().catch(e => console.warn('syncPlanned:', e));
+        }, delayMs);
+    },
+
+    /**
+     * Pone lo programado (`bm_p_*`) igual al plan de los próximos 62 días: agrega lo que falta, reprograma lo que
+     * cambió de hora o de texto y cancela lo que ya no aplica. Idempotente y en fila (nunca duplica). Cancela
+     * de paso los avisos de legado (`bm_fixed_*`, `bm_weekly_summary`). Sin permiso, o en web, no hace nada.
+     */
+    async syncPlanned(data?: Partial<Inputs>): Promise<void> {
+        if (Platform.OS === 'web') return;
+        const run = syncChain.then(() => NotificationService.runSync(data), () => NotificationService.runSync(data));
+        syncChain = run.then(() => undefined, () => undefined);
+        return run;
+    },
+
+    async runSync(data?: Partial<Inputs>): Promise<void> {
+        try {
+            const perm = await Notifications.getPermissionsAsync();
+            if (perm.status !== 'granted') return;
+
+            const now = new Date();
+            const inputs = await loadInputs(data);
+            if (!inputs.settings.onboardingComplete || !inputs.settings.cardsOnboardingComplete) return;
+            const prefs = prefsOf(inputs.settings);
+
+            const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+            // Legado: un solo plan reemplaza los recordatorios por gasto y el resumen semanal anteriores.
+            for (const n of scheduled) {
+                const id = n.identifier;
+                const title = n.content?.title ?? '';
+                const isPlan = id.indexOf(PLAN_ID_PREFIX) === 0;
+                const isLegacy = id.indexOf(ID_FIXED_PREFIX) === 0 || id === ID_WEEKLY
+                    || (!isPlan && (title === LEGACY_FIXED_TITLE || title.indexOf('Resumen Semanal') >= 0));
+                if (isLegacy) await safeCancel(id);
+            }
+            if (!prefs.kinds.ai) await safeCancel(ID_AI_NUDGE);
+
+            const plan = buildPlan(toPlanData(inputs, now), prefs, now);
+            const existing = scheduled
+                .filter(n => n.identifier.indexOf(PLAN_ID_PREFIX) === 0)
+                .map(n => {
+                    const sig = n.content?.data?.sig;
+                    return { id: n.identifier, sig: typeof sig === 'string' ? sig : undefined };
+                });
+            const { add, cancel } = diffPlan(plan, existing);
+
+            for (const id of cancel) await safeCancel(id);
+            for (const p of add) {
+                try {
+                    await Notifications.scheduleNotificationAsync({
+                        identifier: p.id,
+                        content: { title: p.title, body: p.body, sound: true, data: { kind: p.kind, refId: p.ref, sig: sigOf(p) } },
+                        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: p.fireAt },
+                    });
+                } catch (e) {
+                    console.warn('syncPlanned schedule error:', e);
+                }
+            }
+
+            await withStateLock(async () => {
+                const state = await StorageService.getNotificationState();
+                await StorageService.saveNotificationState({ ...state, planned: plan.map(p => p.id) });
+            });
+
+            // 5 días antes del pago (o menos): ¿alcanza lo que tendrás? (una vez por estado y nivel)
+            await NotificationService.evaluateCapacity('daily', inputs);
+        } catch (e) {
+            console.warn('syncPlanned error:', e);
+        }
+    },
+
+    // ── Capacidad de pago ────────────────────────────────────
+    /**
+     * Evalúa la capacidad de pago de las tarjetas y avisa de nivel aviso/alerta/rojo. Una sola vez por estado y nivel:
+     * no repite un nivel ya avisado (ni uno menor). `trigger`: 'charge' (se registró un cargo; evalúa solo esa
+     * tarjeta), 'salary' (llegó el sueldo) o 'daily' (solo si el pago vence en 5 días o menos).
+     */
+    async evaluateCapacity(trigger: 'charge' | 'salary' | 'daily', over?: Partial<Inputs>, cardId?: string): Promise<void> {
+        if (Platform.OS === 'web') return;
+        try {
+            const inputs = await loadInputs(over);
+            const prefs = prefsOf(inputs.settings);
+            if (!prefs.kinds.capacity) return;
+            const now = new Date();
+            const ctx = toCapacityCtx(inputs, now);
+            for (const card of inputs.accounts) {
+                if (card.type !== 'credit' || !card.isActive || (cardId && card.id !== cardId)) continue;
+                const cap = capacityFor(card, ctx);
+                if (!cap || cap.level === 'ok') continue;
+                if (trigger === 'daily' && cap.daysToDue > CAPACITY_NEAR_DAYS) continue;
+
+                const prefix = `cap_${card.id}_${cap.cutKey}_`;
+                const state = await StorageService.getNotificationState();
+                const seen = (state.fired ?? []).filter(k => k.indexOf(prefix) === 0).reduce((m, k) => Math.max(m, capLevelFromKey(k)), 0);
+                if (seen >= LEVEL_RANK[cap.level]) continue;
+
+                const msg = capacityMessage(cap);
+                await deliverImmediate(prefs, {
+                    key: `${prefix}${cap.level}`, title: msg.title, body: msg.body,
+                    bypassCap: cap.level === 'red', data: { kind: 'capacity', refId: card.id },
+                });
+            }
+        } catch (e) {
+            console.warn('evaluateCapacity error:', e);
+        }
+    },
+
+    // ── «Llegó tu sueldo» ────────────────────────────────────
+    /** Un ingreso base se vinculó solo a su fuente: comprometido y libre hasta el próximo pago; luego, capacidad. */
+    async onSalaryArrived(info: IncomeAutoLinkedInfo): Promise<void> {
+        if (Platform.OS === 'web') return;
+        try {
+            const inputs = await loadInputs();
+            if (!inputs.settings.onboardingComplete) return;
+            const prefs = prefsOf(inputs.settings);
+            const tx = inputs.transactions.find(t => t.id === info.txId);
+            const source = inputs.incomeSources.find(s => s.id === info.sourceId);
+            if (!tx || !source || source.role !== 'base') return;
+
+            if (prefs.kinds.salary) {
+                const acc = inputs.accounts.find(a => a.id === tx.accountId);
+                // Una cuenta de saldo automático ya lo incluye; en manual o sin saldo hay que sumarlo aparte.
+                const included = !!acc && balanceModeOf(acc) === 'auto';
+                const rate = inputs.settings.exchangeRate > 0 ? inputs.settings.exchangeRate : 7.7;
+                const extra = included ? 0 : tx.currency === 'Q' ? tx.amount : tx.currency === 'USD' ? tx.amount * rate : 0;
+                const ctx = toCapacityCtx(inputs, new Date());
+                const msg = salaryMessage(salaryFigures(ctx, extra));
+                await deliverImmediate(prefs, {
+                    key: `salary_${tx.id}`, title: msg.title, body: msg.body, bypassCap: true,
+                    data: { kind: 'salary', refId: tx.id },
+                });
+            }
+            await NotificationService.evaluateCapacity('salary', inputs);
+        } catch (e) {
+            console.warn('onSalaryArrived error:', e);
+        }
+    },
+
+    // ── Avisos al agregar una transacción ────────────────────
+    // Ya NO hay un push por cada gasto: los gastos se resumen en el aviso diario. Aquí solo quedan los umbrales
+    // (categoría 80/100 %, presupuesto 50/80/100 %), una vez por umbral y período, y la capacidad de pago si el
+    // gasto es de una tarjeta.
     async onTransactionAdded(
         tx: Transaction,
         transactions: Transaction[],
@@ -340,92 +570,90 @@ export const NotificationService = {
         categoryBudgets: CategoryBudget[],
         fixedExpenses: FixedExpense[],
     ): Promise<void> {
-        if (tx.type !== 'expense' || tx.currency !== 'Q') return;
+        if (Platform.OS === 'web') return;
+        const prefs = prefsOf(settings);
+        // Reprograma el resumen de hoy con datos frescos (y el resto del plan).
+        NotificationService.requestSync();
 
-        const fp = getCurrentFinancialPeriod(settings);
-        const monthTx = transactions.filter(t => {
-            const d = new Date(t.date);
-            return d >= fp.start && d <= fp.end &&
-                t.type === 'expense' && t.currency === 'Q';
-        });
+        if (tx.type === 'expense' && tx.accountId) {
+            await NotificationService.evaluateCapacity(
+                'charge', { settings, transactions, fixedExpenses, categoryBudgets }, tx.accountId,
+            );
+        }
+
+        if (!prefs.kinds.thresholds) return;
+        if (tx.type !== 'expense' || tx.currency !== 'Q' || tx.transferPairId) return;
+
+        const now = new Date();
+        const fp = getCurrentFinancialPeriod(settings, now);
+        const list = txsInPeriod(transactions, fp.start, fp.end);
 
         // "transactions" ya incluye la transacción recién agregada (tx)
-        const totalSpent = monthTx.reduce((s, t) => s + t.amount, 0);
+        const totalSpent = spentQOf(list);
         const pct = settings.budgetLimit > 0 ? (totalSpent / settings.budgetLimit) * 100 : 0;
         const remaining = settings.budgetLimit - totalSpent;
-        const daysLeft = getDaysUntilNextPayment(settings);
+        const daysLeft = getDaysUntilNextPayment(settings, now);
         const dailyLeft = daysLeft > 0 ? remaining / daysLeft : remaining;
+        const ctx = { settings, transactions, categoryBudgets, fixedExpenses };
 
         // ── Alerta por categoría ─────────────────────────────
         const catBudget = categoryBudgets.find(cb => cb.categoryId === tx.category);
         if (catBudget && catBudget.limit > 0) {
-            const catSpent = monthTx
-                .filter(t => t.category === tx.category)
-                .reduce((s, t) => s + t.amount, 0);
+            const catSpent = spentQOf(list, tx.category);
             const catPct = (catSpent / catBudget.limit) * 100;
             const catLabel = categoryLabelOf(tx.category, settings.customCategories, 'expense');
 
             if (catPct >= 100) {
-                await this.sendSmartAlert(
-                    '🔴 Límite de categoría superado',
-                    'critical',
+                const sent = await this.sendSmartAlert(
+                    '🔴 Límite de categoría superado', 'critical',
                     `Superaste el presupuesto de ${catLabel}. Gastado: Q${catSpent.toFixed(2)} de Q${catBudget.limit}. Exceso: Q${(catSpent - catBudget.limit).toFixed(2)}.`,
-                    settings, transactions, categoryBudgets, fixedExpenses,
+                    ctx, `thr_cat_${tx.category}_100_${fp.key}`,
                 );
-                return;
-            }
-            if (catPct >= 80) {
-                await this.sendSmartAlert(
-                    `⚠️ Categoría al ${Math.round(catPct)}%`,
-                    'warning',
+                if (sent) return;
+            } else if (catPct >= 80) {
+                const sent = await this.sendSmartAlert(
+                    `⚠️ Categoría al ${Math.round(catPct)}%`, 'warning',
                     `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${catLabel}. Te quedan Q${(catBudget.limit - catSpent).toFixed(2)}.`,
-                    settings, transactions, categoryBudgets, fixedExpenses,
+                    ctx, `thr_cat_${tx.category}_80_${fp.key}`,
                 );
-                return;
+                if (sent) return;
             }
         }
 
         // ── Alertas por presupuesto general ──────────────────
         if (pct >= 100) {
             await this.sendSmartAlert(
-                '🚨 Presupuesto agotado',
-                'critical',
+                '🚨 Presupuesto agotado', 'critical',
                 `Has gastado Q${totalSpent.toFixed(2)} — superaste tu límite de Q${settings.budgetLimit} en Q${(totalSpent - settings.budgetLimit).toFixed(2)}. Quedan ${daysLeft} días hasta tu próximo ingreso.`,
-                settings, transactions, categoryBudgets, fixedExpenses,
+                ctx, `thr_budget_100_${fp.key}`,
             );
         } else if (pct >= 80) {
             await this.sendSmartAlert(
-                `⚠️ Vas en el ${Math.round(pct)}% de tu presupuesto`,
-                'warning',
+                `⚠️ Vas en el ${Math.round(pct)}% de tu presupuesto`, 'warning',
                 `Gastaste Q${totalSpent.toFixed(2)} de Q${settings.budgetLimit}. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — Q${dailyLeft.toFixed(2)}/día disponibles.`,
-                settings, transactions, categoryBudgets, fixedExpenses,
+                ctx, `thr_budget_80_${fp.key}`,
             );
         } else if (pct >= 50) {
             await this.sendSmartAlert(
-                '📊 Vas en la mitad de tu presupuesto',
-                'discipline',
+                '📊 Vas en la mitad de tu presupuesto', 'discipline',
                 `Llevas el ${Math.round(pct)}% de tu presupuesto. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — aproximadamente Q${dailyLeft.toFixed(2)} por día.`,
-                settings, transactions, categoryBudgets, fixedExpenses,
-            );
-        } else {
-            await sendNotification(
-                '💰 Gasto registrado',
-                `Q${tx.amount.toFixed(2)} registrado. Llevas Q${totalSpent.toFixed(2)} de Q${settings.budgetLimit} este mes (${Math.round(pct)}%). Te quedan Q${remaining.toFixed(2)}.`,
+                ctx, `thr_budget_50_${fp.key}`,
             );
         }
     },
 
     // ── Alerta inteligente Gemini + fallback ─────────────────
+    /** Envía el aviso (con IA si hay clave) respetando horas silenciosas y tope diario. true = se envió o programó. */
     async sendSmartAlert(
         title: string,
         quoteType: keyof typeof QUOTES,
         context: string,
-        settings: UserSettings,
-        transactions: Transaction[],
-        categoryBudgets: CategoryBudget[],
-        fixedExpenses: FixedExpense[],
-    ): Promise<void> {
-        const financialCtx = buildFinancialContext(settings, transactions, categoryBudgets, fixedExpenses);
+        data: Pick<Inputs, 'settings' | 'transactions' | 'categoryBudgets' | 'fixedExpenses'>,
+        key: string,
+    ): Promise<boolean> {
+        const { settings } = data;
+        const prefs = prefsOf(settings);
+        const financialCtx = buildFinancialContextText(settings, snapshotOf(data, new Date()));
         const quote = randomQuote(quoteType);
         let body = '';
 
@@ -450,93 +678,22 @@ Responde SOLO el texto, sin encabezados ni formato.
         }
 
         if (!body) body = `${context}\n\n${quote}`;
-        await sendNotification(title, body);
+        return deliverImmediate(prefs, { key, title, body, data: { kind: 'threshold' } });
     },
 
-    // ── Recordatorio de gasto fijo — identificador fijo por gasto ───
-    async scheduleFixedExpenseReminder(
-        expense: FixedExpense,
-        now: Date = new Date(),
-        cycle?: FixedCycleConfig,
-    ): Promise<void> {
-        const id = ID_FIXED_PREFIX + expense.id;
-        await safeCancel(id);
-        if (!expense.isActive) return;
-
-        const cfg = cycle ?? await StorageService.getFixedCycleConfig();
-        const r = nextFixedReminder(expense, cfg, now);
-        if (!r) return;
-
-        await scheduleWithId(
-            id,
-            '📅 Gasto fijo próximo',
-            `${expense.name} vence en 3 días (día ${r.payDay}) — ${expense.currency} ${expense.amount.toFixed(2)}. Asegurate de tener el dinero disponible.`,
-            (r.date.getTime() - now.getTime()) / 1000,
-            { kind: 'fixed_expense', refId: expense.id },
-        );
+    // ── Recordatorios de gastos fijos: ahora los arma el plan (B9a) ───
+    // Se conservan los métodos (los usan Presupuesto, Transacciones y el asistente) pero solo piden sincronizar.
+    async scheduleFixedExpenseReminder(_expense?: FixedExpense, _now?: Date, _cycle?: unknown): Promise<void> {
+        NotificationService.requestSync();
     },
 
-    /** Cancela el recordatorio de un gasto fijo específico (ej. al eliminarlo) */
-    async cancelFixedExpenseReminder(expenseId: string): Promise<void> {
-        await safeCancel(ID_FIXED_PREFIX + expenseId);
+    /** Al eliminar un gasto fijo su recordatorio sale del plan en la siguiente sincronización. */
+    async cancelFixedExpenseReminder(_expenseId?: string): Promise<void> {
+        NotificationService.requestSync();
     },
 
-    /** Reprograma los recordatorios de todos los gastos fijos activos y limpia los huérfanos/legado. Idempotente. */
-    async syncFixedExpenseReminders(expenses: FixedExpense[]): Promise<void> {
-        try {
-            const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-            const ids = new Set(expenses.map(e => ID_FIXED_PREFIX + e.id));
-
-            for (const n of scheduled) {
-                const isOrphan = n.identifier.startsWith(ID_FIXED_PREFIX) && !ids.has(n.identifier);
-                const isLegacy = !n.identifier.startsWith(ID_FIXED_PREFIX) && n.content?.title === '📅 Gasto fijo próximo';
-                if (isOrphan || isLegacy) await safeCancel(n.identifier);
-            }
-
-            const cycle = await StorageService.getFixedCycleConfig();
-            for (const e of expenses) await this.scheduleFixedExpenseReminder(e, new Date(), cycle);
-        } catch (e) {
-            console.warn('syncFixedExpenseReminders error:', e);
-        }
-    },
-
-    // ── Resumen semanal — fecha de disparo estable, contenido fresco ──
-    // D4: se guarda weeklySummaryFireAt y se conserva mientras no haya pasado
-    // ni falten ≤60s; el texto siempre se recalcula al momento de programar.
-    async scheduleWeeklySummary(
-        settings: UserSettings,
-        transactions: Transaction[],
-        categoryBudgets: CategoryBudget[],
-        fixedExpenses: FixedExpense[],
-    ): Promise<void> {
-        try {
-            // Migración del resumen legado (repeats: true, sin identifier fijo)
-            const scheduled = await Notifications.getAllScheduledNotificationsAsync();
-            for (const n of scheduled) {
-                if (n.identifier !== ID_WEEKLY && n.content?.title?.includes('Resumen Semanal')) {
-                    await safeCancel(n.identifier);
-                }
-            }
-
-            const now = new Date();
-            const state = await StorageService.getNotificationState();
-            let fireAt = state.weeklySummaryFireAt ? new Date(state.weeklySummaryFireAt) : null;
-            if (!fireAt || isNaN(fireAt.getTime()) || fireAt.getTime() - now.getTime() <= 60_000) {
-                fireAt = new Date(now.getTime() + 7 * DAY_S * 1000);
-            }
-
-            const body = buildWeeklySummaryBody(settings, transactions, categoryBudgets, fixedExpenses, now);
-            const ok = await scheduleWithId(
-                ID_WEEKLY,
-                '📊 Resumen Semanal — BudgetMaster',
-                body,
-                (fireAt.getTime() - now.getTime()) / 1000,
-                { kind: 'weekly_summary' },
-            );
-            if (ok) await StorageService.setWeeklySummaryFireAt(fireAt.toISOString());
-        } catch (e) {
-            console.warn('scheduleWeeklySummary error:', e);
-        }
+    async syncFixedExpenseReminders(_expenses?: FixedExpense[]): Promise<void> {
+        NotificationService.requestSync();
     },
 
     // ── Aviso periódico al Asesor IA ──────────────────────────
@@ -623,6 +780,7 @@ Responde SOLO el texto, sin encabezados ni formato.
     },
 
     // ── Briefing diario para el Dashboard ────────────────────
+    // Todo del PERÍODO de pago actual (no del mes calendario), según lo registrado.
     async getDailyBriefing(
         settings: UserSettings,
         transactions: Transaction[],
@@ -630,34 +788,14 @@ Responde SOLO el texto, sin encabezados ni formato.
         fixedExpenses: FixedExpense[],
     ): Promise<string> {
         const now = new Date();
-        const m = now.getMonth();
-        const y = now.getFullYear();
-        const daysLeft = getDaysUntilNextPayment(settings);
-
-        const monthTx = transactions.filter(t => {
-            const d = new Date(t.date);
-            return d.getMonth() === m && d.getFullYear() === y;
-        });
-
-        const expenseQ = monthTx.filter(t => t.type === 'expense' && t.currency === 'Q').reduce((s, t) => s + t.amount, 0);
-        const remaining = settings.budgetLimit - expenseQ;
-        const pct = Math.round((expenseQ / Math.max(settings.budgetLimit, 1)) * 100);
-        const unpaid = fixedExpenses.filter(f => f.isActive && !f.isPaid);
-
-        const catAlerts = categoryBudgets.filter(cb => {
-            if (cb.limit <= 0) return false;
-            const spent = monthTx
-                .filter(t => t.type === 'expense' && t.category === cb.categoryId && t.currency === 'Q')
-                .reduce((s, t) => s + t.amount, 0);
-            return (spent / cb.limit) >= 0.8;
-        });
+        const snap = snapshotOf({ settings, transactions, categoryBudgets, fixedExpenses }, now);
 
         if (settings.geminiApiKey && settings.geminiApiKey.length > 20) {
-            const ctx = buildFinancialContext(settings, transactions, categoryBudgets, fixedExpenses);
+            const ctx = buildFinancialContextText(settings, snap);
             const prompt = `
 Eres el CFO personal de ${settings.userName}. Genera un briefing financiero breve (máximo 4 oraciones).
-Menciona: presupuesto actual (${pct}%), días hasta próximo pago (${daysLeft}), gastos fijos pendientes (${unpaid.length}), categorías en alerta (${catAlerts.length}).
-Sé directo, usa datos reales, termina con una frase motivacional corta.
+Menciona: presupuesto actual (${snap.pct}% del período ${snap.label}), días hasta próximo pago (${snap.daysLeft}), gastos fijos pendientes (${snap.unpaidFixedCount}), categorías en alerta (${snap.catAlerts}).
+Sé directo, usa datos reales, aclara que es según lo registrado y termina con una frase motivacional corta.
 Contexto: ${ctx}
 Responde SOLO el texto del briefing.
             `.trim();
@@ -666,22 +804,10 @@ Responde SOLO el texto del briefing.
             if (aiMsg) return aiMsg;
         }
 
-        // Fallback sin IA
-        const parts: string[] = [];
-        parts.push(`Buenos días, ${settings.userName}. Llevas el ${pct}% de tu presupuesto mensual.`);
-        if (remaining > 0) {
-            parts.push(`Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días.`);
-        } else {
-            parts.push(`Has superado tu presupuesto en Q${Math.abs(remaining).toFixed(2)}.`);
-        }
-        if (unpaid.length > 0) parts.push(`Tienes ${unpaid.length} gasto(s) fijo(s) pendiente(s) este mes.`);
-        if (catAlerts.length > 0) parts.push(`${catAlerts.length} categoría(s) cerca del límite.`);
-        parts.push(randomQuote('discipline'));
-
-        return parts.join(' ');
+        return buildBriefingFallbackText(settings.userName, snap, randomQuote('discipline'));
     },
 
-    // ── Avisos de arranque (resumen semanal, nudge IA, config pendiente) ──
+    // ── Avisos de arranque (plan, nudge IA, config pendiente) ──
     async runStartupNotifications(data: {
         settings: UserSettings;
         transactions: Transaction[];
@@ -693,11 +819,11 @@ Responde SOLO el texto del briefing.
         if (!data.settings.onboardingComplete || !data.settings.cardsOnboardingComplete) return;
 
         try {
-            await this.scheduleWeeklySummary(data.settings, data.transactions, data.categoryBudgets, data.fixedExpenses);
-        } catch (e) { console.warn('runStartupNotifications weeklySummary:', e); }
+            await this.syncPlanned();
+        } catch (e) { console.warn('runStartupNotifications plan:', e); }
 
         try {
-            await this.scheduleAIAdvisorNudge();
+            if (prefsOf(data.settings).kinds.ai) await this.scheduleAIAdvisorNudge();
         } catch (e) { console.warn('runStartupNotifications aiNudge:', e); }
 
         try {
@@ -712,3 +838,10 @@ Responde SOLO el texto del briefing.
         } catch { }
     },
 };
+
+// Cualquier cambio de datos o ajustes que alimenta el plan lo reprograma (con espera, sin duplicar).
+if (Platform.OS !== 'web') {
+    onPlanInputsChanged(() => NotificationService.requestSync());
+    onSettingsChanged(() => NotificationService.requestSync());
+    onIncomeAutoLinked(info => { void NotificationService.onSalaryArrived(info).catch(e => console.warn('onSalaryArrived:', e)); });
+}
