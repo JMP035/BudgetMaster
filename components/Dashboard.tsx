@@ -455,7 +455,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                         <Ionicons name="business-outline" size={22} color={C.primaryLight} />
                     </View>
                     <Text style={ni.title}>Patrimonio Total</Text>
-                    <Text style={ni.body}>El Patrimonio Total muestra lo que tenés en tus cuentas de activos.</Text>
+                    <Text style={ni.body}>El Patrimonio Total muestra lo que tenés en tus cuentas de activos que llevan saldo. Si ninguna lo lleva, es un estimado con tus ingresos y gastos.</Text>
 
                     <View style={ni.row}>
                         <Ionicons name="checkmark-circle" size={15} color={C.income} />
@@ -469,6 +469,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                         <Ionicons name="close-circle" size={15} color={C.danger} />
                         <Text style={ni.rowLabel}>NO INCLUYE</Text>
                     </View>
+                    <Text style={ni.bullet}>• Cuentas «Sin seguimiento» (no llevan saldo)</Text>
                     <Text style={ni.bullet}>• Saldo deudor de tarjetas de crédito</Text>
                     <Text style={ni.bullet}>• Pendiente de visacuotas</Text>
 
@@ -1051,10 +1052,10 @@ export default function DashboardScreen({
                         style={{ color: netGBP >= 0 ? C.fx : C.danger }} containerStyle={[s.moneyFill, { marginTop: 4 }]} />
                 )}
                 {hasAccounts && (
-                    <Text style={s.netWorthSource}>Solo activos (sin tarjetas de crédito) • basado en tus cuentas</Text>
+                    <Text style={s.netWorthSource}>Solo cuentas que llevan saldo (sin tarjetas de crédito) • basado en tus cuentas</Text>
                 )}
                 {!hasAccounts && (
-                    <Text style={s.netWorthSource}>Estimado por ingresos/gastos • agrega cuentas para mayor precisión</Text>
+                    <Text style={s.netWorthSource}>Estimado por ingresos y gastos • ninguna cuenta lleva saldo: actívalo en Mis Cuentas</Text>
                 )}
                 {totalCreditCommitmentsQ > 0 && (
                     <View style={s.netWorthCommitmentsRow}>

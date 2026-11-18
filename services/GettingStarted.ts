@@ -56,7 +56,7 @@ export function buildChecklist(input: ChecklistInput): ChecklistItem[] {
     {
       id: 'accounts',
       title: 'Agregar tus cuentas y tarjetas',
-      hint: 'Así el patrimonio y los saldos salen de tus cuentas.',
+      hint: 'Organiza tus gastos por cuenta. El saldo es opcional: tú eliges si la app lo lleva.',
       done: input.accountsCount > 0,
       hidden: false,
     },
@@ -139,6 +139,7 @@ export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tutorial_visacuotas', label: 'Visacuotas' },
   { tutorialId: 'tutorial_compra_tarjeta', label: 'Compra con tarjeta' },
   { tutorialId: 'tutorial_pago_tarjeta', label: 'Pagar la tarjeta' },
+  { tutorialId: 'tutorial_saldos', label: 'Saldos y transferencias' },
   { tutorialId: 'tutorial_stats', label: 'Estadísticas' },
   { tutorialId: 'tutorial_ia', label: 'Asesor' },
   { tutorialId: 'tutorial_ajustes', label: 'Ajustes' },

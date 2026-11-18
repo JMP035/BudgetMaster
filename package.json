@@ -29,7 +29,8 @@
     "test:onboarding-income": "sucrase-node scripts/onboarding-income.test.ts",
     "test:card-cycle": "sucrase-node scripts/card-cycle.test.ts",
     "test:card-statement": "sucrase-node scripts/card-statement.test.ts",
-    "test:balances": "sucrase-node scripts/balances.test.ts"
+    "test:balances": "sucrase-node scripts/balances.test.ts",
+    "test:transfer-form": "sucrase-node scripts/transfer-form.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

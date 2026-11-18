@@ -4,6 +4,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { Ionicons } from "@expo/vector-icons";
 import { C } from "../theme";
 import { parseAmount } from "../services/storage";
+import { balanceModeOf } from "../services/Balances";
 import type { Account } from "../services/storage";
 import type { CardStatement } from "../services/CardStatement";
 import { formatShortDay } from "../services/BudgetBreakdown";
@@ -88,18 +89,21 @@ export function StatementAmountSheet({ card, statement, onSave, onClose }: {
 // ─────────────────────────────────────────────────────────────
 // HOJA — REGISTRAR EL PAGO DE LA TARJETA
 // ─────────────────────────────────────────────────────────────
-export function CardPaymentSheet({ card, statement, fromChoices, onSave, onClose }: {
+export function CardPaymentSheet({ card, statement, fromChoices, initialFromId, onSave, onClose }: {
     card: Account;
     statement: CardStatement;
     /** Cuentas de las que puede salir el pago (no tarjetas). */
     fromChoices: Account[];
+    /** Cuenta de origen ya elegida (por ejemplo, desde «Transferir»); si no, la «cuenta con la que pagas» de la tarjeta. */
+    initialFromId?: string;
     onSave: (p: { amounts: { Q?: number; USD?: number }; fromAccountId?: string; date: Date }) => void;
     onClose: () => void;
 }) {
     const [q, setQ] = useState(inputText(statement.remaining.Q));
     const [usd, setUsd] = useState(inputText(statement.remaining.USD));
     const [fromId, setFromId] = useState<string | null>(
-        card.payFromAccountId && fromChoices.some(a => a.id === card.payFromAccountId) ? card.payFromAccountId : null,
+        initialFromId && fromChoices.some(a => a.id === initialFromId) ? initialFromId
+            : card.payFromAccountId && fromChoices.some(a => a.id === card.payFromAccountId) ? card.payFromAccountId : null,
     );
     const [date, setDate] = useState(() => {
         const n = new Date();
@@ -124,6 +128,17 @@ export function CardPaymentSheet({ card, statement, fromChoices, onSave, onClose
         onSave({ amounts, ...(fromId ? { fromAccountId: fromId } : {}), date });
         onClose();
     };
+
+    // El aviso dice lo que de verdad pasa con la cuenta elegida según cómo lleva su saldo.
+    const fromAcc = fromChoices.find(a => a.id === fromId);
+    const fromMode = fromAcc ? balanceModeOf(fromAcc) : null;
+    const fromHint = !fromAcc
+        ? "Sin cuenta de origen, el pago solo queda registrado en la tarjeta y no baja el saldo de ninguna cuenta. Nunca es un gasto nuevo."
+        : fromMode === "none"
+            ? `${fromAcc.name} no lleva saldo, así que su saldo no cambia. El pago queda registrado como transferencia a la tarjeta: no es un gasto nuevo.`
+            : fromMode === "auto"
+                ? `El pago baja el saldo de ${fromAcc.name} (se calcula solo con tus movimientos) y queda registrado como transferencia a la tarjeta: no es un gasto nuevo.`
+                : `El pago baja el saldo guardado de ${fromAcc.name} y queda registrado como transferencia a la tarjeta: no es un gasto nuevo.`;
 
     return (
         <GlassSheet
@@ -226,7 +241,7 @@ export function CardPaymentSheet({ card, statement, fromChoices, onSave, onClose
                     </TouchableOpacity>
                 ))}
             </View>
-            <Text style={st.hint}>El pago resta de la cuenta con la que pagas, si lleva saldo, y queda registrado como transferencia a la tarjeta: no es un gasto nuevo.</Text>
+            <Text style={st.hint}>{fromHint}</Text>
             <View style={{ height: 8 }} />
         </GlassSheet>
     );

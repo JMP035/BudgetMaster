@@ -9,7 +9,7 @@ import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule
 import { planIncomeLinksUndo, planSmsUndo } from './SmsUndoPlan';
 import { applyCardPaymentMatch, applyCardPaymentProposal, buildCardPaymentTxs, cardPaymentProposalKey, planCardPaymentsUndo } from './CardStatement';
 import type { CardPaymentMatch } from './CardStatement';
-import { applyManualEffects, balanceModeOf, planBalanceAnchorsUndo, planSmsBalanceAnchors, withBalanceAnchor } from './Balances';
+import { applyManualEffects, balanceModeOf, planBalanceAnchorsUndo, planManualEffectsRevert, planSmsBalanceAnchors, withBalanceAnchor } from './Balances';
 import type { BalanceAnchorRecord } from './Balances';
 import { planAssignTransferDestination, planDismissTransferQuestion } from './TransferQuestions';
 import { planIncomeLink, sanitizeIncomeSources } from './IncomeSources';
@@ -734,6 +734,14 @@ export const StorageService = {
     // Mitad de un par de transferencia: la otra queda neutra pero sin transferPairId (sin huérfanos).
     if (target?.transferPairId) updated = clearPairIdOfPartner(updated, target.transferPairId);
     await this.saveTransactions(updated);
+    // Una transferencia o pago de tarjeta hecho a mano ajustó el saldo guardado de las cuentas manuales: se devuelve.
+    if (target) {
+      try {
+        const accounts = await this.getAccounts();
+        const reverted = planManualEffectsRevert(accounts, target);
+        if (reverted !== accounts) await this.saveAccounts(reverted);
+      } catch { }
+    }
     // Un sueldo vinculado a una fuente pudo haber movido el inicio del período: esa ancla se va con él.
     if (target?.incomeSourceId) {
       try {
@@ -2139,6 +2147,40 @@ export const StorageService = {
     const adjusted = applyManualEffects(accounts, [tx]);
     if (adjusted.some((a, i) => a !== accounts[i])) await this.saveAccounts(adjusted);
     return { accounts: adjusted, transactions: nextTxs };
+  },
+
+  /**
+   * La persona registra a mano una transferencia cuyo SMS ya llegó: en vez de crear otro movimiento se une a él.
+   * Llegaron los dos SMS → se emparejan; solo la salida → pasa a ser la transferencia hacia `toId`; solo la entrada →
+   * pasa a ser la transferencia desde `fromId`. Un SMS sin cuenta toma la de la transferencia. Como la persona la
+   * registró a propósito, las cuentas de saldo 'manual' sí se ajustan (los SMS solos no mueven ese saldo).
+   */
+  async joinTransferWithSms(p: {
+    outId?: string; inId?: string; fromId: string; toId: string; toAmount?: number;
+  }): Promise<{ accounts: Account[]; transactions: Transaction[] }> {
+    const [accounts, txs] = await Promise.all([this.getAccounts(), this.getTransactions()]);
+    const work = txs.map(t => {
+      if (t.id === p.outId && !t.accountId) return { ...t, accountId: p.fromId };
+      if (t.id === p.inId && !t.accountId) return { ...t, accountId: p.toId };
+      return t;
+    });
+    let next: Transaction[] = work;
+    if (p.outId && p.inId) {
+      next = applyTransferPair(work, p.outId, p.inId);
+    } else if (p.outId || p.inId) {
+      const id = (p.outId ?? p.inId) as string;
+      const target = work.find(t => t.id === id);
+      const planned = target
+        ? planAssignTransferDestination(target, p.outId ? p.toId : p.fromId, accounts, p.outId ? { toAmount: p.toAmount } : undefined)
+        : null;
+      if (planned) next = work.map(t => (t.id === id ? planned : t));
+    }
+    const changed = next.filter(t => t.type === 'transfer' && !txs.some(o => o === t));
+    if (next === work || changed.length === 0) return { accounts, transactions: txs };
+    await this.saveTransactions(next);
+    const adjusted = applyManualEffects(accounts, changed);
+    if (adjusted.some((a, i) => a !== accounts[i])) await this.saveAccounts(adjusted);
+    return { accounts: adjusted, transactions: next };
   },
 
   /**

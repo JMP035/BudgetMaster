@@ -126,6 +126,38 @@ export function applyManualEffects(accounts: Account[], newTxs: Transaction[]): 
   });
 }
 
+/** Instante en que se creó un movimiento hecho en la app: lo guarda su id (`transfer_<ms>`, `cardpay_<ms>_Q`); si no, su fecha. */
+function createdAtMs(tx: Transaction): number {
+  const m = /_(\d{12,})/.exec(tx.id);
+  if (m) return Number(m[1]);
+  return Date.parse(tx.date);
+}
+
+/**
+ * Borrar una transferencia o un pago de tarjeta hecho A MANO en la app: devuelve a las cuentas de modo 'manual' lo que
+ * ese movimiento les había sumado o restado al guardarse (applyManualEffects). No revierte:
+ * - movimientos que vienen de un SMS (nunca movieron el saldo guardado) ni mitades de un par,
+ * - cuentas 'auto' (derivan solas: al borrar el movimiento el saldo se recalcula) ni 'none',
+ * - cuentas que se re-ajustaron («Ajustar al saldo real») después de crear el movimiento: el ancla ya lo incluye.
+ * Devuelve el mismo arreglo si no cambia nada.
+ */
+export function planManualEffectsRevert(accounts: Account[], tx: Transaction): Account[] {
+  if (tx.source !== 'manual' || tx.type !== 'transfer' || tx.transferPairId) return accounts;
+  if (!tx.fromAccountId && !tx.toAccountId) return accounts;
+  const created = createdAtMs(tx);
+  let changed = false;
+  const next = accounts.map(a => {
+    if (balanceModeOf(a) !== 'manual') return a;
+    const anchorMs = a.balanceAnchorAt ? Date.parse(a.balanceAnchorAt) : NaN;
+    if (!isNaN(anchorMs) && !isNaN(created) && created <= anchorMs) return a;
+    const delta = accountEffect(tx, a.id, { currency: a.currency, isCard: a.type === 'credit' });
+    if (delta === 0) return a;
+    changed = true;
+    return { ...a, balance: round2(a.balance - delta) };
+  });
+  return changed ? next : accounts;
+}
+
 /** El saldo más reciente que trajo un SMS de esta cuenta (misma moneda). null si ninguno trae saldo. */
 export function latestSmsBalance(acc: Account, txs: Transaction[]): { amount: number; at: string; txId: string } | null {
   let best: { amount: number; at: string; txId: string } | null = null;

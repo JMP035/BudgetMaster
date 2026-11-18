@@ -14,6 +14,8 @@ import { findManualSmsDuplicates } from "../services/DuplicateDetector";
 import type { DupPair } from "../services/DuplicateDetector";
 import { findTransferPairs } from "../services/TransferPairs";
 import type { TransferPair } from "../services/TransferPairs";
+import { findUnpairedTransfers } from "../services/TransferQuestions";
+import type { UnpairedTransfer } from "../services/TransferQuestions";
 import { groupUnassigned } from "../services/AccountLinking";
 import { incomeProposalsTitle, liveIncomeProposals } from "../services/IncomeSourceView";
 import type { IncomeProposal } from "../services/IncomeSources";
@@ -31,9 +33,10 @@ import TransferPairsModal from "./TransferPairsModal";
 import IncomeProposalsModal from "./IncomeProposalsModal";
 import UnassignedAccountsModal from "./UnassignedAccountsModal";
 import CardPaymentProposalsModal from "./CardPaymentProposalsModal";
+import TransferQuestionsModal from "./TransferQuestionsModal";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
-type Kind = "review" | "dups" | "fixed" | "transfers" | "income" | "cardpay" | "unassigned" | "inbox";
+type Kind = "review" | "dups" | "fixed" | "transfers" | "transferq" | "income" | "cardpay" | "unassigned" | "inbox";
 // 'sheet' = la hoja visible; 'none' = pausa entre dos ventanas (Android no maneja dos Modal a la vez)
 type ViewState = "sheet" | "none" | Kind;
 
@@ -212,6 +215,18 @@ export default function SmsPendingSheet({
         }
     }, [visible, result, transactions, dupIgnored, accounts]);
 
+    // «¿A qué cuenta fue?»: transferencias de SMS sin su otra mitad (pasadas 36 h o sin contraparte posible). Siempre se
+    // recalcula con los movimientos vigentes; solo hay pregunta si hay al menos 2 cuentas que no sean tarjeta.
+    const transferQuestions: UnpairedTransfer[] = useMemo(() => {
+        if (!visible) return [];
+        try {
+            return findUnpairedTransfers(transactions, accounts, new Set(dupIgnored));
+        } catch (e) {
+            console.warn("[SmsPendingSheet] ¿a qué cuenta fue?:", e);
+            return [];
+        }
+    }, [visible, transactions, accounts, dupIgnored]);
+
     // «¿Es tu sueldo?»: con resultado se revisan solo los ingresos de esa sincronización; sin resultado, todos los
     // ingresos de SMS sin fuente. Siempre se vuelve a correr matchIncome, así que lo ya resuelto desaparece.
     const incomeProposals: IncomeProposal[] = useMemo(() => {
@@ -277,7 +292,7 @@ export default function SmsPendingSheet({
     }, [visible, result, transactions, keptIds, txIds]);
 
     const total = liveReview.length + dupPairs.length + fixedMatches.length
-        + transferPairs.length + incomeProposals.length + cardPayProposals.length + unassignedCount + inboxCount;
+        + transferPairs.length + transferQuestions.length + incomeProposals.length + cardPayProposals.length + unassignedCount + inboxCount;
 
     // Una sola ventana a la vez: cerrar la actual y abrir la siguiente con una pausa.
     const goTo = useCallback((next: ViewState) => {
@@ -342,6 +357,15 @@ export default function SmsPendingSheet({
                                     hint="Una salida y una entrada que parecen la misma"
                                     count={transferPairs.length}
                                     onPress={() => goTo("transfers")}
+                                />
+                            )}
+                            {transferQuestions.length > 0 && (
+                                <PendingRow
+                                    icon="swap-horizontal-outline"
+                                    title="¿A qué cuenta fue?"
+                                    hint="Transferencias del banco sin su otra mitad: elige la cuenta"
+                                    count={transferQuestions.length}
+                                    onPress={() => goTo("transferq")}
                                 />
                             )}
                             {incomeProposals.length > 0 && (
@@ -413,6 +437,15 @@ export default function SmsPendingSheet({
                 visible={view === "transfers"}
                 pairs={transferPairs}
                 transactions={transactions}
+                onClose={backToSheet}
+                onChanged={childChanged}
+            />
+            <TransferQuestionsModal
+                visible={view === "transferq"}
+                items={transferQuestions}
+                transactions={transactions}
+                accounts={accounts}
+                exchangeRate={settings.exchangeRate}
                 onClose={backToSheet}
                 onChanged={childChanged}
             />

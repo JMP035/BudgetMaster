@@ -569,18 +569,19 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_3', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Cada cuenta muestra su tipo, banco y saldo (si lo lleva). Cuando asignás una cuenta a un gasto o ingreso, la cuenta organiza tus movimientos; el saldo no cambia solo. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y, en su detalle, el «Estado al corte» (lo que debés pagar, en quetzales y dólares por separado, con la fecha límite de pago y si está pendiente, parcial, pagado o vencido) y el «Ciclo abierto»: lo que llevás gastado desde el último corte. El ciclo abierto se ve también sin SMS: la tarjeta funciona con gastos anotados a mano. Cada moneda se paga en su moneda.',
+                description: 'Cada cuenta muestra su tipo, banco y saldo si lo lleva: «Sin saldo» cuando no lo lleva y la etiqueta «Automático» cuando la app lo suma y resta sola con tus movimientos. En «Manual» el saldo solo cambia cuando lo editás o cuando hacés una transferencia o un pago de tarjeta en la app; en las demás cuentas, asignar una cuenta a un gasto o ingreso solo organiza tus movimientos. Tocá el lápiz (o mantené presionada la cuenta) para editarla y usá la papelera para eliminarla. En las tarjetas de crédito ves el día de corte, el de pago, la cuota mensual de sus visacuotas y, en su detalle, el «Estado al corte» (lo que debés pagar, en quetzales y dólares por separado, con la fecha límite de pago y si está pendiente, parcial, pagado o vencido) y el «Ciclo abierto»: lo que llevás gastado desde el último corte. El ciclo abierto se ve también sin SMS: la tarjeta funciona con gastos anotados a mano. Cada moneda se paga en su moneda.',
                 emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
             },
             {
                 id: 'acc_4', elementId: 'accounts_fab', screen: 'accounts', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar una cuenta',
-                description: 'Elegí el tipo, el nombre, el banco, la moneda y el saldo actual. En las tarjetas de crédito indicá el día de corte, que es la fecha de «Saldo al corte» de tu estado de cuenta (ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente), y el día de pago. También podés elegir la «Cuenta con la que pagás» de la tarjeta: de ahí sale el dinero cuando la pagás.',
+                description: 'Elegí el tipo, el nombre, el banco, la moneda y cómo llevar el saldo: «Sin seguimiento», «Manual» o «Automático» (mirá «Saldos y transferencias» en la ayuda). En las tarjetas de crédito indicá el día de corte, que es la fecha de «Saldo al corte» de tu estado de cuenta (ese día todavía entra en el estado y el ciclo nuevo empieza al día siguiente), y el día de pago. También podés elegir la «Cuenta con la que pagás» de la tarjeta: de ahí sale el dinero cuando la pagás.',
             },
             {
                 id: 'acc_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
-                title: 'Transferir entre cuentas',
-                description: 'Mové dinero entre tus cuentas, por ejemplo de BAC a efectivo. No cuenta como gasto ni ingreso, y si una cuenta lleva saldo se ajusta. Si las monedas son distintas se convierte con el tipo de cambio actual, y la transferencia queda registrada en Movimientos. Necesitás al menos dos cuentas que no sean tarjeta de crédito.',
+                title: 'Transferir entre mis cuentas',
+                description: 'Mové dinero entre tus cuentas, por ejemplo de BAC a efectivo: elegís origen y destino, el monto y la fecha. No cuenta como gasto ni ingreso, y no te pide saldo suficiente: si una cuenta lleva saldo se ajusta (en «Automático» se calcula sola) y si no lo lleva solo queda el registro. Si las monedas son distintas la app sugiere lo que recibe el destino con el tipo de cambio de Ajustes y lo podés corregir. Si elegís una tarjeta como destino, te lleva a «Registrar pago». Si el SMS del banco ya llegó, la transferencia se une a él en vez de duplicarse. La transferencia queda registrada en Movimientos. Necesitás al menos dos cuentas que no sean tarjeta de crédito.',
+                emptyHint: 'Necesitás al menos dos cuentas que no sean tarjeta de crédito para transferir. Creá la segunda con el botón +.',
             },
             {
                 id: 'acc_6', elementId: 'accounts_tabs', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'installments' }, position: 'bottom', icon: 'layers-outline', padding: 8,
@@ -705,6 +706,52 @@ export const TUTORIALS: Tutorial[] = [
                 title: '5. No es un gasto nuevo',
                 description: 'Pagar la tarjeta es una transferencia de tu cuenta a la tarjeta: no suma a tus gastos del período ni se cuenta dos veces, porque cada compra ya contó cuando la hiciste con la tarjeta. Al pagar todo, el estado queda «Pagado»; si pasa la fecha límite sin pagar, «Vencido».',
                 emptyHint: 'Cuando una tarjeta tenga estado verás aquí si está pagado o vencido.',
+            },
+        ],
+    },
+
+    // ── Llevar el saldo de tus cuentas (tutorial de proceso) ──
+    {
+        id: 'tutorial_saldos', title: 'Llevar el saldo de tus cuentas',
+        description: 'El saldo es opcional: elegí cómo llevarlo, cómo se mueve con tus transferencias y cómo ajustarlo.',
+        icon: 'analytics-outline', color: C.primary,
+        steps: [
+            {
+                id: 'sal_1', elementId: 'accounts_balance', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'options-outline', padding: 8,
+                requires: 'bank_account',
+                title: '1. Elegí cómo llevar el saldo',
+                description: 'El saldo es opcional. Al crear o editar una cuenta (lápiz), en «Saldo» elegís: «Sin seguimiento» (la app solo registra tus gastos e ingresos), «Manual» (vos escribís el saldo) o «Automático» (la app suma y resta sola cada movimiento). Sin saldos, la app es solo un registrador de gastos. Las tarjetas arrancan en «Sin seguimiento».',
+                emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'sal_2', elementId: 'accounts_balance', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'flag-outline', padding: 8,
+                requires: 'bank_account',
+                title: '2. El saldo de partida',
+                description: 'En «Automático» escribís el «Saldo de partida»: lo que tiene la cuenta hoy, o en la fecha que elijas. Desde ahí la app suma tus ingresos y resta tus gastos. Si lo dejás vacío usa el saldo actual de la cuenta con la fecha de hoy. Los movimientos anteriores a esa fecha no cuentan: ya están dentro del saldo.',
+                emptyHint: 'Todavía no tenés cuentas. Creá la primera con el botón +.',
+            },
+            {
+                id: 'sal_3', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
+                requires: 'bank_account',
+                title: '3. Los movimientos y las transferencias lo mueven solos',
+                description: 'Ejemplo: te cae el sueldo en Banrural (suma en Banrural), transferís a BAC (resta en Banrural y suma en BAC) y pagás la tarjeta desde BAC (resta en BAC; la tarjeta no lleva saldo). Ni la transferencia ni el pago de la tarjeta cuentan como gasto: solo cuentan las compras con la tarjeta, el día que las hiciste. Con «Transferir» podés registrarla antes o después de que llegue el SMS del banco, y la app no la duplica.',
+                noSmsDescription: 'Ejemplo: te cae el sueldo en Banrural (suma en Banrural), transferís a BAC (resta en Banrural y suma en BAC) y pagás la tarjeta desde BAC (resta en BAC; la tarjeta no lleva saldo). Ni la transferencia ni el pago de la tarjeta cuentan como gasto: solo cuentan las compras con la tarjeta, el día que las hiciste. Cada transferencia la registrás vos con «Transferir».',
+                emptyHint: 'Necesitás al menos dos cuentas que no sean tarjeta de crédito para transferir. Creá la segunda con el botón +.',
+            },
+            {
+                id: 'sal_4', elementId: 'accounts_adjust_btn', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'analytics-outline', padding: 8,
+                requires: 'bank_account',
+                title: '4. Ajustar al saldo real',
+                description: 'Si el saldo de la app no coincide con tu banco, tocá «Ajustar al saldo real» en la cuenta y escribí el saldo que ves en tu banco: desde ese momento la app sigue sumando y restando. Si tus SMS traen el saldo, al editar la cuenta ves «Según tu banco (SMS)» con el botón «Usar este saldo».',
+                noSmsDescription: 'Si el saldo de la app no coincide con tu banco, tocá «Ajustar al saldo real» en la cuenta y escribí el saldo que ves en tu banco: desde ese momento la app sigue sumando y restando.',
+                emptyHint: 'El botón aparece en las cuentas con saldo «Automático». Cambiá una cuenta a «Automático» desde su lápiz.',
+            },
+            {
+                id: 'sal_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'help-circle-outline', padding: 8,
+                title: '5. ¿A qué cuenta fue?',
+                description: 'Si el banco manda solo uno de los dos SMS de una transferencia, el Centro de revisión te pregunta «¿A qué cuenta fue?» con tus cuentas como opciones (o «A otra persona» / «Ingreso externo» si no es tuya). Elegida la cuenta, deja de contar como gasto o ingreso. Solo pregunta si tenés dos cuentas que no sean tarjeta. Si el SMS nunca llega, registrala vos con «Transferir».',
+                noSmsDescription: 'Sin SMS, cada transferencia la registrás vos con «Transferir»: elegís origen, destino, monto y fecha, y la app mueve los saldos de las cuentas que los llevan.',
+                emptyHint: 'Necesitás al menos dos cuentas que no sean tarjeta de crédito para transferir. Creá la segunda con el botón +.',
             },
         ],
     },

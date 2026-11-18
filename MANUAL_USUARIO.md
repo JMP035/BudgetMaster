@@ -205,17 +205,17 @@ Registrá dónde está tu dinero real:
 |------|-----|
 | 💵 Efectivo | Dinero físico |
 | 🏦 Banco | Cuenta monetaria o de ahorro |
-| 💳 Tarjeta de Crédito | **Saldo deudor** (lo que debés) y límite de crédito |
+| 💳 Tarjeta de Crédito | Su deuda se ve en el **«Estado al corte»** y el **«Ciclo abierto»** (la tarjeta normalmente no lleva saldo) |
 | 📈 Inversión | Acciones, cripto, fondos |
 | 💰 Ahorro | Cuenta de ahorro separada |
 
-- **Crear**: botón ➕ → tipo, nombre, banco (opcional), moneda (Q/USD), saldo actual, color y notas. Las tarjetas de crédito piden además el **día de corte** y el **día de pago**.
+- **Crear**: botón ➕ → tipo, nombre, banco (opcional), moneda (Q/USD), **cómo llevar el saldo** (ver «Saldo opcional» abajo), color y notas. Las tarjetas de crédito piden además el **día de corte** y el **día de pago**.
 - **Día de corte de la tarjeta** = la fecha de **«Saldo al corte»** de tu estado de cuenta. Ese día todavía entra en el estado y el **ciclo nuevo empieza al día siguiente** (corte el 9 → el ciclo nuevo arranca el 10 a las 00:00). El pago cae en la primera aparición del día de pago después del corte (corte el 9 y pago el 2 → se paga el 2 del mes siguiente).
 - En cada tarjeta ves el **«Ciclo abierto»**: lo que llevás gastado desde el último corte, **separado por moneda** («Q 9,276.01 · $39.67»): las compras en dólares se pagan en dólares, no se mezclan. Las transferencias nunca suman.
 - El «Ciclo abierto» se ve **también sin SMS**: la tarjeta funciona con gastos anotados a mano (en el detalle del movimiento elegís la tarjeta en «Cuenta»). Lo que depende de los SMS se oculta si apagás la lectura de SMS.
 - **Cuenta con la que pagás**: al crear o editar la tarjeta podés elegir de qué cuenta sale el dinero cuando la pagás (por ejemplo: te pagan en un banco, transferís a tu cuenta de BAC y pagás la tarjeta desde ahí).
 - **Editar**: mantené presionada la tarjeta. **Eliminar**: ícono 🗑.
-- El resumen superior muestra **Activos, Deudas y Neto** (las tarjetas de crédito restan del patrimonio).
+- El resumen superior muestra **Activos, Visacuotas pendientes y Neto**: solo suman las cuentas que **llevan saldo** (las tarjetas de crédito no suman al patrimonio; su deuda se muestra aparte). Si ninguna cuenta lleva saldo, la app lo avisa y el patrimonio del Inicio es un estimado con tus ingresos y gastos.
 
 ### Estado de cuenta y pago de la tarjeta
 
@@ -231,11 +231,32 @@ En el detalle de cada tarjeta ves el bloque **«Estado al {corte}»**:
 - En **Presupuesto → Gastos Fijos**, la sección **«Deuda programada»** lista las tarjetas (lo que falta de su estado) y los préstamos que vencen en el período, y se suma a lo «Comprometido» junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo.
 - Dos tutoriales lo cuentan en orden (también en la guía del Inicio): **«Registrar una compra con tarjeta»** y **«Pagar la tarjeta»**.
 
+### Saldo opcional
+
+El saldo es **opcional**: sin saldos, la app es solo un registrador de tus gastos e ingresos. Al crear o editar una cuenta, en **«Saldo»** elegís cómo llevarlo:
+
+| Modo | Qué hace |
+|------|----------|
+| **Sin seguimiento** | La cuenta solo organiza tus movimientos. No lleva saldo y no suma al patrimonio. Es lo normal en las tarjetas. |
+| **Manual** | Vos escribís el saldo. Solo cambia cuando lo editás o cuando hacés una transferencia o un pago de tarjeta en la app. |
+| **Automático** | La app suma y resta sola cada ingreso, gasto, transferencia y pago de la cuenta, a partir del **saldo de partida** y su fecha. En la lista aparece con la etiqueta «Automático». |
+
+- **Saldo de partida** (modo Automático): lo que tiene la cuenta en la fecha que elegís. Si lo dejás vacío, la app usa el saldo actual de la cuenta con la fecha de hoy. Los movimientos anteriores a esa fecha no cuentan: ya están dentro del saldo.
+- **Ajustar al saldo real**: si el saldo de la app no coincide con tu banco, tocá el botón en la cuenta (también está al editarla), escribí el saldo que ves en tu banco y la app sigue desde ahí.
+- **Según tu banco (SMS)** (Android): si tus SMS traen el saldo y no coincide con el que calcula la app, al editar la cuenta ves esa línea con el botón **«Usar este saldo»**. Con **«Ajustar sola con el saldo de mis SMS»** la app lo hace en cada sincronización, y **Deshacer** la sincronización lo devuelve.
+- Ejemplo: te cae el sueldo en Banrural, transferís a BAC y pagás la tarjeta desde BAC. Banrural sube con el sueldo y baja con la transferencia; BAC sube con la transferencia y baja con el pago; la tarjeta no lleva saldo. Ni la transferencia ni el pago de la tarjeta son gasto: solo cuentan las compras hechas con la tarjeta.
+- Un tutorial lo cuenta en orden: **«Llevar el saldo de tus cuentas»** (en la guía del Inicio como «Saldos y transferencias»).
+
 ### Transferencias entre cuentas
 
-Botón **"Transferir"** (necesitás al menos 2 cuentas activas): elegí origen, destino y monto. Si las cuentas llevan saldo, se mueve entre ellas (en la de saldo manual se ajusta el número) y queda registrado como movimiento tipo *transferencia* — **no cuenta como gasto ni ingreso**.
+Botón **«Transferir»** («Transferir entre mis cuentas»; necesitás al menos 2 cuentas activas que no sean tarjeta): elegí origen, destino, monto y fecha. Queda registrado como movimiento tipo *transferencia* — **no cuenta como gasto ni ingreso**.
 
-> ⚠️ Transferí entre cuentas de la **misma moneda**: la app no convierte Q↔USD automáticamente.
+- No te pide saldo suficiente: el saldo es opcional. Si las cuentas llevan saldo, se mueve entre ellas (en la de saldo manual se ajusta el número; en la automática se calcula sola); si no lo llevan, solo queda el registro.
+- **Otra moneda** (Q↔USD): la app sugiere cuánto recibe la cuenta de destino con el tipo de cambio de Ajustes y lo podés corregir con lo que realmente recibió. No hay conversión confiable entre USD y EUR/£.
+- **Si el destino es una tarjeta**, el botón te lleva a **«Registrar pago»** de esa tarjeta (con la cuenta de origen ya elegida): pagar la tarjeta no es un gasto nuevo y baja el saldo de la cuenta con la que pagás si lo lleva.
+- **Antes o después del SMS (Android)**: la app reconoce las transferencias entre tus cuentas por pares de SMS (la salida y la entrada). Si registrás la transferencia a mano y el SMS del banco **ya llegó** (mismo monto, hasta 36 horas), se une a él en vez de duplicarse (podés elegir «No unir»). Si el SMS llega **después**, el Centro de revisión te ofrece **«Unirlas»**: se queda la tuya y se descarta el SMS repetido.
+- Si falta uno de los dos SMS, el Centro de revisión te pregunta **«¿A qué cuenta fue?»** (o de cuál vino) con tus cuentas como opciones, o **«A otra persona» / «Ingreso externo»** si no es tuya. Solo pregunta si tenés al menos dos cuentas que no sean tarjeta.
+- Si borrás una transferencia hecha a mano, las cuentas de saldo manual recuperan lo que se les había movido.
 
 ### Visacuotas (compras en cuotas)
 
@@ -390,6 +411,7 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real:
 10. **Cómo funcionan las visacuotas** (también en la guía del Inicio como «Visacuotas») — la tarjeta con su día de corte, la compra en cuotas, la cuota que se carga en cada corte y la última cuota.
 11. **Registrar una compra con tarjeta** (también en la guía del Inicio como «Compra con tarjeta») — crear la tarjeta con su corte y su pago, registrar el gasto (o dejar que el SMS lo detecte) y verlo en el «Ciclo abierto».
 12. **Pagar la tarjeta** (también en la guía del Inicio) — la cuenta con la que pagás, el monto real del estado, registrar el pago o dejar que el SMS lo detecte, y por qué no es un gasto nuevo.
+13. **Llevar el saldo de tus cuentas** (también en la guía del Inicio como «Saldos y transferencias») — elegir el modo de saldo, el saldo de partida, cómo lo mueven los movimientos y las transferencias (sueldo → transferir → pagar la tarjeta), «Ajustar al saldo real» y «¿A qué cuenta fue?».
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 

@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated, BackHandler, Easing, ScrollView, StyleSheet,
   Text, TextInput, TouchableOpacity, View, useWindowDimensions
@@ -16,6 +16,12 @@ import {
 import { cycleSpentForCard, linkKeyLabel } from "../services/AccountLinking";
 import { detectBankName } from "../services/BankSmsParser";
 import { balanceModeOf } from "../services/Balances";
+import type { BalanceMode } from "../services/Balances";
+import {
+  balanceModeHelp, balanceModeTag, canTransfer, findEquivalentTransferSms, planSmsJoin,
+  resolveBalanceFields, smsBalanceMismatch, suggestToAmount, transferFromChoices, transferToChoices, validateTransferForm,
+} from "../services/TransferForm";
+import type { SmsJoinPlan } from "../services/TransferForm";
 import { nextInstallmentCut } from "../services/InstallmentSchedule";
 import { statementFor } from "../services/CardStatement";
 import type { StatementStatus } from "../services/CardStatement";
@@ -33,6 +39,8 @@ import InstallmentModal from "./InstallmentModal";
 import { InlineNotice, InlineNoticeVariant } from "./InlineNotice";
 import { ScreenHeader } from "./ScreenHeader";
 import { CardPaymentSheet, StatementAmountSheet } from "./CardStatementSheets";
+import { BalanceAdjustSheet } from "./BalanceAdjustSheet";
+import { DateField, noonOf } from "./DateField";
 import Money from "./Money";
 import { isTutorialActive } from "./TutorialOverlay";
 
@@ -56,6 +64,16 @@ const ACCOUNT_COLORS = [
 const CURRENCY_OPTIONS: { value: 'Q' | 'USD'; label: string }[] = [
   { value: 'Q', label: 'Q' },
   { value: 'USD', label: 'USD' },
+];
+
+// Cómo lleva su saldo cada cuenta (ver services/Balances.ts): el saldo es opcional.
+/** Pausa entre cerrar una ventana y abrir la siguiente (Android). */
+const SWITCH_DELAY_MS = 250;
+
+const BALANCE_MODE_OPTIONS: { value: BalanceMode; label: string }[] = [
+  { value: 'none', label: 'Sin seguimiento' },
+  { value: 'manual', label: 'Manual' },
+  { value: 'auto', label: 'Automático' },
 ];
 
 // Bancos conocidos para vincular mensajes (códigos que usa el lector de SMS)
@@ -100,13 +118,19 @@ function AnimBar({ pct, color }: { pct: number; color: string }) {
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVA CUENTA
 // ─────────────────────────────────────────────────────────────
-export function AccountModal({ onSave, onClose, existing, defaultType, defaultCurrency, smsOn = false, allAccounts }: {
+export function AccountModal({ onSave, onClose, existing, defaultType, defaultCurrency, smsOn = false, allAccounts, transactions, onAdjust, onRequestAdjust }: {
   onSave: (a: Account) => void; onClose: () => void; existing?: Account; defaultType?: AccountType;
   defaultCurrency?: Currency;
   /** Muestra la sección de mensajes (SMS) que actualizan la cuenta. Apagado = oculta. */
   smsOn?: boolean;
   /** Todas las cuentas, para avisar si otra ya usa la misma clave de vínculo. */
   allAccounts?: Account[];
+  /** Movimientos, para mostrar «Según tu banco (SMS)» en las cuentas con saldo automático. */
+  transactions?: Transaction[];
+  /** «Usar este saldo»: re-ancla la cuenta con el saldo que trajo el SMS. */
+  onAdjust?: (accountId: string, amount: number, atIso: string) => void;
+  /** «Ajustar al saldo real»: el padre cierra este formulario y abre la hoja de ajuste. */
+  onRequestAdjust?: (accountId: string) => void;
 }) {
   const [name, setName] = useState(existing?.name || '');
   const [type, setType] = useState<AccountType>(existing?.type || defaultType || 'bank');
@@ -119,6 +143,20 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
   const [paymentDueDay, setPaymentDueDay] = useState(existing?.paymentDueDay?.toString() || '');
   const [payFromId, setPayFromId] = useState<string | null>(existing?.payFromAccountId ?? null);
   const [error, setError] = useState('');
+
+  // ── Saldo opcional (ver services/Balances.ts) ─────────────
+  const existingAuto = !!existing && balanceModeOf(existing) === 'auto';
+  const [mode, setMode] = useState<BalanceMode>(
+    existing ? balanceModeOf(existing) : ((defaultType ?? 'bank') === 'credit' ? 'none' : 'manual'),
+  );
+  const [modeTouched, setModeTouched] = useState(false);
+  const [startText, setStartText] = useState(existingAuto ? String(existing?.balanceAnchorAmount ?? existing?.balance ?? 0) : '');
+  const [startDate, setStartDate] = useState<Date>(() => {
+    const at = existing?.balanceAnchorAt ? new Date(existing.balanceAnchorAt) : null;
+    return noonOf(at && !isNaN(at.getTime()) ? at : new Date());
+  });
+  const [startTouched, setStartTouched] = useState(false);
+  const [smsAutoBal, setSmsAutoBal] = useState(!!existing?.smsAutoBalance);
 
   // ── Mensajes (SMS) que actualizan esta cuenta ─────────────
   const [smsLinks, setSmsLinks] = useState<string[]>(existing?.smsLinks ?? []);
@@ -185,15 +223,18 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
   const handleSave = () => {
     if (!name.trim()) { setError('Ingresa el nombre de la cuenta.'); return; }
 
+    // Saldo opcional (ver services/Balances.ts): modo, saldo y ancla según lo elegido.
+    const bf = resolveBalanceFields({ mode, existing, manualText: balance, startText, startDate, startTouched });
+    if ('error' in bf) { setError(bf.error); return; }
+
     const linksChanged = [...smsLinks].sort().join('\n') !== [...(existing?.smsLinks ?? [])].sort().join('\n');
     const smsFields = {
       smsLinks: smsLinks.length > 0 ? smsLinks : undefined,
       smsLinkedAt: linksChanged ? new Date().toISOString() : existing?.smsLinkedAt,
-      smsAutoBalance: existing?.smsAutoBalance,
-      // Saldo opcional (ver services/Balances.ts): se conserva lo que la cuenta ya tenía.
-      balanceMode: existing?.balanceMode ?? (type === 'credit' ? 'none' as const : 'manual' as const),
-      balanceAnchorAt: existing?.balanceAnchorAt,
-      balanceAnchorAmount: existing?.balanceAnchorAmount,
+      smsAutoBalance: bf.balanceMode === 'auto' && smsOn ? smsAutoBal : existing?.smsAutoBalance,
+      balanceMode: bf.balanceMode,
+      balanceAnchorAt: bf.balanceAnchorAt,
+      balanceAnchorAmount: bf.balanceAnchorAmount,
     };
 
     if (type === 'credit') {
@@ -219,8 +260,8 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
         name: name.trim(),
         type,
         currency,
-        balance: existing?.balance ?? 0,
-        initialBalance: existing?.initialBalance ?? 0,
+        balance: bf.balance,
+        initialBalance: bf.initialBalance,
         color,
         icon: typeInfo.icon,
         bankName: bankName.trim() || undefined,
@@ -239,19 +280,13 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
       return;
     }
 
-    const balTrim = balance.trim();
-    const isNegBal = balTrim.startsWith('-');
-    const balAbs = parseAmount(isNegBal ? balTrim.slice(1) : balTrim);
-    const bal = isNegBal ? -balAbs : balAbs;
-    if (isNaN(bal)) { setError('Ingresa un saldo válido.'); return; }
-
     const account: Account = {
       id: existing?.id || `acc_${Date.now()}`,
       name: name.trim(),
       type,
       currency,
-      balance: bal,
-      initialBalance: existing?.initialBalance ?? bal,
+      balance: bf.balance,
+      initialBalance: bf.initialBalance,
       color,
       icon: typeInfo.icon,
       bankName: bankName.trim() || undefined,
@@ -280,7 +315,11 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
       <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={{ marginBottom: 16 }}>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {ACCOUNT_TYPES.map(t => (
-            <TouchableOpacity key={t.type} style={[md.typeChip, type === t.type && { borderColor: t.color, backgroundColor: t.color + '22' }]} onPress={() => { setType(t.type); setError(''); }}>
+            <TouchableOpacity key={t.type} style={[md.typeChip, type === t.type && { borderColor: t.color, backgroundColor: t.color + '22' }]} onPress={() => {
+              setType(t.type); setError('');
+              // Mientras la persona no elija el modo, la tarjeta no lleva saldo y el resto sí.
+              if (!modeTouched) setMode(t.type === 'credit' ? 'none' : (mode === 'none' ? 'manual' : mode));
+            }}>
               <Ionicons name={t.icon as any} size={16} color={type === t.type ? t.color : C.textSub} />
               <Text style={[md.typeChipTxt, type === t.type && { color: t.color }]}>{t.label}</Text>
             </TouchableOpacity>
@@ -301,25 +340,92 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
         </>
       )}
 
-      {/* Moneda y saldo */}
-      {type === 'credit' ? (
+      {/* Moneda */}
+      <View>
+        <Text style={md.lbl}>MONEDA</Text>
+        <GlassSegmented options={CURRENCY_OPTIONS} value={currency === 'USD' ? 'USD' : 'Q'} onChange={v => setCurrency(v)} />
+      </View>
+
+      {/* Saldo opcional: Sin seguimiento / Manual / Automático */}
+      <Text style={md.lbl}>SALDO</Text>
+      <GlassSegmented
+        options={BALANCE_MODE_OPTIONS}
+        value={mode}
+        onChange={v => { setMode(v); setModeTouched(true); setError(''); }}
+      />
+      <Text style={[md.hint, { marginTop: 8 }]}>{balanceModeHelp(mode, type)}</Text>
+
+      {mode === 'manual' && (
         <View>
-          <Text style={md.lbl}>MONEDA</Text>
-          <GlassSegmented options={CURRENCY_OPTIONS} value={currency === 'USD' ? 'USD' : 'Q'} onChange={v => setCurrency(v)} />
+          <Text style={md.lbl}>SALDO ACTUAL</Text>
+          <View style={md.amtRow}>
+            <Text style={md.cur}>{currency}</Text>
+            <TextInput style={md.amtInput} value={balance} onChangeText={ch(setBalance)} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+          </View>
         </View>
-      ) : (
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={md.lbl}>MONEDA</Text>
-            <GlassSegmented options={CURRENCY_OPTIONS} value={currency === 'USD' ? 'USD' : 'Q'} onChange={v => setCurrency(v)} />
+      )}
+
+      {mode === 'auto' && (
+        <View>
+          <Text style={md.lbl}>SALDO DE PARTIDA</Text>
+          <View style={md.amtRow}>
+            <Text style={md.cur}>{currency}</Text>
+            <TextInput
+              style={md.amtInput}
+              value={startText}
+              onChangeText={v => { setStartText(v); setStartTouched(true); setError(''); }}
+              placeholder={existing ? existing.balance.toFixed(2) : '0.00'}
+              placeholderTextColor={C.textMuted}
+              keyboardType="decimal-pad"
+              accessibilityLabel="Saldo de partida"
+            />
           </View>
-          <View style={{ flex: 2 }}>
-            <Text style={md.lbl}>SALDO ACTUAL</Text>
-            <View style={md.amtRow}>
-              <Text style={md.cur}>{currency}</Text>
-              <TextInput style={md.amtInput} value={balance} onChangeText={ch(setBalance)} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" />
+          <Text style={[md.hint, { marginTop: 6 }]}>
+            Lo que tiene la cuenta en la fecha de abajo. Si lo dejas vacío, se usa el saldo actual de la cuenta con la fecha de hoy.
+          </Text>
+          <DateField label="FECHA DEL SALDO DE PARTIDA" value={startDate} onChange={d => { setStartDate(d); setStartTouched(true); setError(''); }} />
+
+          {existingAuto && !!existing && (
+            <View style={{ marginTop: 12 }}>
+              <Text style={md.hint}>La app calcula hoy: {formatMoney(existing.balance, existing.currency)}</Text>
+              {(() => {
+                const mm = smsOn && transactions ? smsBalanceMismatch(existing, transactions) : null;
+                return mm && onAdjust ? (
+                  <InlineNotice
+                    variant="info"
+                    text={`Según tu banco (SMS): ${formatMoney(mm.amount, existing.currency)}. La app calculaba ${formatMoney(mm.expected, existing.currency)} para ese momento.`}
+                    actionLabel="Usar este saldo"
+                    onAction={() => { onAdjust(existing.id, mm.amount, mm.at); onClose(); }}
+                    style={{ marginBottom: 8 }}
+                  />
+                ) : null;
+              })()}
+              {!!onRequestAdjust && (
+                <GlassButton
+                  kind="secondary"
+                  icon="analytics-outline"
+                  label="Ajustar al saldo real"
+                  onPress={() => onRequestAdjust(existing.id)}
+                />
+              )}
             </View>
-          </View>
+          )}
+
+          {smsOn && type !== 'credit' && (
+            <TouchableOpacity
+              style={md.checkRow}
+              onPress={() => setSmsAutoBal(v => !v)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: smsAutoBal }}
+              accessibilityLabel="Ajustar sola con el saldo de mis SMS"
+            >
+              <Ionicons name={smsAutoBal ? 'checkbox' : 'square-outline'} size={22} color={smsAutoBal ? C.primary : C.textSub} />
+              <View style={{ flex: 1 }}>
+                <Text style={md.checkTitle}>Ajustar sola con el saldo de mis SMS</Text>
+                <Text style={md.hint}>Si el SMS del banco trae tu saldo, la app lo toma como el saldo real al sincronizar. «Deshacer» la última sincronización lo devuelve.</Text>
+              </View>
+            </TouchableOpacity>
+          )}
         </View>
       )}
 
@@ -477,7 +583,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
           </Text>
           {type === 'credit' && (
             <Text style={md.hint}>
-              Las tarjetas no llevan saldo en la app: verás «Consumido este ciclo».
+              Las tarjetas normalmente no llevan saldo: verás «Ciclo abierto» y el «Estado al corte».
             </Text>
           )}
         </View>
@@ -504,38 +610,94 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
 // ─────────────────────────────────────────────────────────────
 // MODAL — TRANSFERENCIA ENTRE CUENTAS
 // ─────────────────────────────────────────────────────────────
-function TransferModal({ accounts, settings, onSave, onClose }: {
+/** Lo que el formulario entrega al guardar una transferencia entre cuentas que no son tarjeta. */
+interface TransferSubmit {
+  fromId: string;
+  toId: string;
+  amount: number;
+  toAmount?: number;
+  date: Date;
+  /** SMS equivalentes que ya llegaron: se unen en lugar de crear otro movimiento. */
+  join: SmsJoinPlan;
+}
+
+function TransferModal({ accounts, transactions, settings, smsOn, onSave, onPayCard, onClose }: {
+  /** Todas las cuentas activas (las tarjetas solo como destino: llevan al pago de la tarjeta). */
   accounts: Account[];
+  transactions: Transaction[];
   settings: UserSettings;
-  onSave: (from: string, to: string, amount: number) => void;
+  smsOn: boolean;
+  onSave: (p: TransferSubmit) => void;
+  onPayCard: (cardId: string, fromId: string) => void;
   onClose: () => void;
 }) {
-  const [fromId, setFromId] = useState(accounts[0]?.id || '');
-  const [toId, setToId] = useState(accounts[1]?.id || '');
+  const fromChoices = transferFromChoices(accounts);
+  const [fromId, setFromId] = useState(fromChoices[0]?.id || '');
+  const [toId, setToId] = useState(fromChoices[1]?.id || '');
   const [amount, setAmount] = useState('');
+  const [toAmountText, setToAmountText] = useState('');
+  const [toAmountTouched, setToAmountTouched] = useState(false);
+  const [date, setDate] = useState<Date>(() => noonOf(new Date()));
+  const [joinSms, setJoinSms] = useState(true);
+  const [ignored, setIgnored] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<{ variant: InlineNoticeVariant; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!smsOn) return;
+    let alive = true;
+    StorageService.getDupIgnored()
+      .then(list => { if (alive) setIgnored(new Set(list)); })
+      .catch(() => { });
+    return () => { alive = false; };
+  }, [smsOn]);
 
   const fromAcc = accounts.find(a => a.id === fromId);
   const toAcc = accounts.find(a => a.id === toId);
+  const toChoices = transferToChoices(accounts, fromId);
+  const isCardDest = toAcc?.type === 'credit';
 
-  const fxBlocked = !!fromAcc && !!toAcc && !hasReliableConversion(fromAcc.currency, toAcc.currency);
+  const amountNum = parseAmount(amount);
+  const crossCurrency = !!fromAcc && !!toAcc && !isCardDest && fromAcc.currency !== toAcc.currency;
+  const fxBlocked = crossCurrency && !!fromAcc && !!toAcc && !hasReliableConversion(fromAcc.currency, toAcc.currency);
   const fxBlockedText = fxBlocked
     ? `No hay tipo de cambio confiable entre ${fromAcc!.currency} y ${toAcc!.currency}. Solo se puede transferir USD↔Q, o entre cuentas de la misma moneda.`
     : '';
+  // Lo que recibe el destino: sugerido con el tipo de cambio de Ajustes, y la persona lo puede corregir.
+  const suggested = crossCurrency && fromAcc && toAcc
+    ? suggestToAmount(amountNum, fromAcc.currency, toAcc.currency, settings.exchangeRate)
+    : null;
+  const toAmountShown = toAmountTouched ? toAmountText : (suggested !== null ? String(suggested) : '');
+  const toAmountNum = toAmountTouched ? parseAmount(toAmountText) : (suggested ?? NaN);
 
-  const previewAmt = parseAmount(amount);
-  const showPreview = !!fromAcc && !!toAcc && toAcc.currency !== fromAcc.currency && !isNaN(previewAmt) && previewAmt > 0 && !fxBlocked;
-  const convertedPreview = showPreview ? convertAmount(previewAmt, fromAcc!.currency, toAcc!.currency, settings.exchangeRate) : 0;
+  // ¿Ya llegó el SMS de esta transferencia? (antes o después, la app no la duplica)
+  const match = useMemo(() => {
+    if (!smsOn || !fromAcc || !toAcc || isCardDest || !(amountNum > 0)) return {};
+    return findEquivalentTransferSms(transactions, {
+      fromAcc, toAcc, amount: amountNum, toAmount: isNaN(toAmountNum) ? undefined : toAmountNum, date, ignored,
+    });
+  }, [smsOn, fromAcc, toAcc, isCardDest, amountNum, toAmountNum, date, transactions, ignored]);
+  const plan: SmsJoinPlan = joinSms ? planSmsJoin(match) : { kind: 'none' };
+  const hasMatch = !!match.out || !!match.inn;
+
+  const joinText = match.out && match.inn
+    ? 'Ya llegaron los dos SMS de esta transferencia (la salida y la entrada). Al guardar se unen en una sola transferencia.'
+    : match.out
+      ? 'Ya llegó el SMS de la salida de esta transferencia. Al guardar se une a él en vez de crear otro movimiento.'
+      : 'Ya llegó el SMS de la entrada de esta transferencia. Al guardar se une a él en vez de crear otro movimiento.';
 
   const handleSave = () => {
-    if (fromId === toId) { setNotice({ variant: 'error', text: 'Las cuentas deben ser diferentes.' }); return; }
-    if (fxBlocked) { setNotice({ variant: 'warning', text: fxBlockedText }); return; }
-    const amt = parseAmount(amount);
-    if (isNaN(amt) || amt <= 0) { setNotice({ variant: 'error', text: 'Ingresa un monto válido.' }); return; }
-    if (!fromAcc) { setNotice({ variant: 'error', text: 'Elige la cuenta origen.' }); return; }
-    // Una cuenta sin saldo (modo 'none') no se valida: la app no sabe cuánto tiene.
-    if (balanceModeOf(fromAcc) !== 'none' && fromAcc.balance < amt) { setNotice({ variant: 'error', text: 'Saldo insuficiente en la cuenta origen.' }); return; }
-    onSave(fromId, toId, amt);
+    if (isCardDest && toAcc) {
+      if (!fromAcc) { setNotice({ variant: 'error', text: 'Elige la cuenta de origen.' }); return; }
+      onPayCard(toAcc.id, fromAcc.id);
+      return;
+    }
+    const err = validateTransferForm({ fromAcc, toAcc, amount: amountNum, toAmount: crossCurrency ? toAmountNum : undefined });
+    if (err) { setNotice({ variant: err.startsWith('No hay tipo de cambio') ? 'warning' : 'error', text: err }); return; }
+    onSave({
+      fromId, toId, amount: amountNum,
+      ...(crossCurrency ? { toAmount: toAmountNum } : {}),
+      date, join: plan,
+    });
     onClose();
   };
 
@@ -549,10 +711,12 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
       >
         <View style={[md.accDot, { backgroundColor: acc.color }]} />
         <Text style={md.accSelectName} numberOfLines={1}>{acc.name}</Text>
-        {balanceModeOf(acc) === 'none'
-          ? <Text style={md.noBal}>Sin saldo</Text>
-          : <Money amount={acc.balance} currency={acc.currency} size="sm" gradient={false} align="right" />}
-        {selected &&<Ionicons name="checkmark-circle" size={18} color={acc.color} />}
+        {acc.type === 'credit'
+          ? <Text style={md.noBal}>Tarjeta</Text>
+          : balanceModeOf(acc) === 'none'
+            ? <Text style={md.noBal}>Sin saldo</Text>
+            : <Money amount={acc.balance} currency={acc.currency} size="sm" gradient={false} align="right" />}
+        {selected && <Ionicons name="checkmark-circle" size={18} color={acc.color} />}
       </GlassCard>
     </TouchableOpacity>
   );
@@ -560,37 +724,85 @@ function TransferModal({ accounts, settings, onSave, onClose }: {
   return (
     <GlassSheet
       onClose={onClose}
-      title="Transferencia entre Cuentas"
+      title="Transferir entre mis cuentas"
       footer={
         <View style={md.footer}>
           {fxBlocked
             ? <InlineNotice variant="warning" text={fxBlockedText} />
             : !!notice && <InlineNotice variant={notice.variant} text={notice.text} />}
-          <GlassButton label="Transferir" icon="swap-horizontal-outline" onPress={handleSave} disabled={fxBlocked} />
+          <GlassButton
+            label={isCardDest ? 'Continuar al pago de la tarjeta' : plan.kind !== 'none' ? 'Guardar y unir con el SMS' : 'Transferir'}
+            icon={isCardDest ? 'card-outline' : 'swap-horizontal-outline'}
+            onPress={handleSave}
+            disabled={fxBlocked}
+          />
         </View>
       }
     >
-      <Text style={md.hint}>Mover dinero entre tus cuentas no cuenta como gasto ni ingreso.</Text>
+      <Text style={md.hint}>
+        Mover dinero entre tus cuentas no cuenta como gasto ni ingreso. Puedes registrarla antes o después de que llegue el SMS del banco: la app no la duplica.
+      </Text>
 
       <Text style={md.lbl}>DESDE</Text>
-      {accounts.map(acc => renderAccRow(acc, fromId === acc.id, () => setFromId(acc.id)))}
+      {fromChoices.map(acc => renderAccRow(acc, fromId === acc.id, () => {
+        setFromId(acc.id);
+        if (toId === acc.id) setToId(fromChoices.find(a => a.id !== acc.id)?.id ?? '');
+      }))}
 
       <View style={md.transferArrow}>
         <Ionicons name="arrow-down" size={24} color={C.primary} />
       </View>
 
       <Text style={md.lbl}>HACIA</Text>
-      {accounts.filter(a => a.id !== fromId).map(acc => renderAccRow(acc, toId === acc.id, () => setToId(acc.id)))}
+      {toChoices.map(acc => renderAccRow(acc, toId === acc.id, () => setToId(acc.id)))}
 
-      <Text style={[md.lbl, { marginTop: 16 }]}>MONTO</Text>
-      <View style={md.amtRow}>
-        <Text style={md.cur}>{fromAcc?.currency || 'Q'}</Text>
-        <TextInput style={md.amtInput} value={amount} onChangeText={v => { setAmount(v); setNotice(null); }} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" autoFocus />
-      </View>
-      {showPreview && (
-        <Text style={[md.hint, { marginTop: 8 }]}>
-          Se acreditarán {formatMoney(convertedPreview, toAcc!.currency)} en {toAcc!.name} (tipo de cambio Q {settings.exchangeRate}/USD)
-        </Text>
+      {isCardDest ? (
+        <InlineNotice
+          variant="info"
+          text="Pagar una tarjeta se registra con su «Registrar pago»: ahí eliges el estado, el monto en cada moneda y la fecha. Es una transferencia a la tarjeta, no un gasto nuevo, y baja el saldo de la cuenta con la que pagas si lo lleva."
+          style={{ marginTop: 12 }}
+        />
+      ) : (
+        <>
+          <Text style={[md.lbl, { marginTop: 16 }]}>MONTO</Text>
+          <View style={md.amtRow}>
+            <Text style={md.cur}>{fromAcc?.currency || 'Q'}</Text>
+            <TextInput style={md.amtInput} value={amount} onChangeText={v => { setAmount(v); setNotice(null); }} placeholder="0.00" placeholderTextColor={C.textMuted} keyboardType="decimal-pad" autoFocus accessibilityLabel="Monto de la transferencia" />
+          </View>
+
+          {crossCurrency && !fxBlocked && toAcc && (
+            <View>
+              <Text style={md.lbl}>LO QUE RECIBE {toAcc.name.toUpperCase()}</Text>
+              <View style={md.amtRow}>
+                <Text style={md.cur}>{toAcc.currency}</Text>
+                <TextInput
+                  style={md.amtInput}
+                  value={toAmountShown}
+                  onChangeText={v => { setToAmountText(v); setToAmountTouched(true); setNotice(null); }}
+                  placeholder="0.00"
+                  placeholderTextColor={C.textMuted}
+                  keyboardType="decimal-pad"
+                  accessibilityLabel="Monto que recibe la cuenta de destino"
+                />
+              </View>
+              <Text style={[md.hint, { marginTop: 8 }]}>
+                Sugerido con el tipo de cambio de Ajustes (Q {settings.exchangeRate}/USD). Si tu banco aplicó otro, escribe lo que realmente recibió.
+              </Text>
+            </View>
+          )}
+
+          <DateField label="FECHA" value={date} onChange={d => { setDate(d); setNotice(null); }} />
+
+          {hasMatch && (
+            <InlineNotice
+              variant="info"
+              text={joinSms ? joinText : 'No se unirá con el SMS: se creará una transferencia nueva y el SMS seguirá pendiente.'}
+              actionLabel={joinSms ? 'No unir' : 'Unir'}
+              onAction={() => setJoinSms(v => !v)}
+              style={{ marginTop: 12 }}
+            />
+          )}
+        </>
       )}
       <View style={{ height: 16 }} />
     </GlassSheet>
@@ -632,7 +844,17 @@ export default function AccountsScreen({
   const [editingAcc, setEditingAcc] = useState<Account | undefined>();
   const [editingInst, setEditingInst] = useState<CreditInstallment | undefined>();
   const [createType, setCreateType] = useState<AccountType | undefined>();
-  const [cardSheet, setCardSheet] = useState<{ kind: 'amount' | 'pay'; cardId: string } | null>(null);
+  const [cardSheet, setCardSheet] = useState<{ kind: 'amount' | 'pay'; cardId: string; fromId?: string } | null>(null);
+  const [adjustId, setAdjustId] = useState<string | null>(null);
+
+  // Android no maneja dos Modal a la vez: al pasar de una ventana a otra se cierra la actual y se abre la siguiente
+  // con una pausa (mismo patrón que SmsPendingSheet).
+  const switchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openAfterPause = (fn: () => void) => {
+    if (switchTimer.current) clearTimeout(switchTimer.current);
+    switchTimer.current = setTimeout(() => { switchTimer.current = null; fn(); }, SWITCH_DELAY_MS);
+  };
+  useEffect(() => () => { if (switchTimer.current) clearTimeout(switchTimer.current); }, []);
 
   // «Crearlo ahora» del tutorial: abre el alta de la cuenta o tarjeta que falta.
   useEffect(() => {
@@ -657,6 +879,8 @@ export default function AccountsScreen({
   const stmtRef = useTutorialRef('accounts_card_statement');
   const cycleRef = useTutorialRef('accounts_card_cycle');
   const stmtActionsRef = useTutorialRef('accounts_card_actions');
+  const balanceRef = useTutorialRef('accounts_balance');
+  const adjustBtnRef = useTutorialRef('accounts_adjust_btn');
   const tutScroll = useTutorialScroll('accounts');
   useTutorialAction('accounts:setTab', arg => setActiveTab(arg === 'installments' ? 'installments' : 'accounts'));
 
@@ -688,6 +912,10 @@ export default function AccountsScreen({
   const activeInstallments = creditInstallments.filter(i => i.isActive);
   // El tutorial señala el estado de la primera tarjeta (los refs son únicos)
   const firstCreditId = activeAccounts.find(a => a.type === 'credit')?.id;
+  // ...y el saldo de la primera cuenta que no es tarjeta y el botón «Ajustar al saldo real» de la primera automática
+  const firstBalanceId = activeAccounts.find(a => a.type !== 'credit')?.id;
+  const firstAutoId = activeAccounts.find(a => a.type !== 'credit' && balanceModeOf(a) === 'auto')?.id;
+  const adjustAcc = adjustId ? accounts.find(a => a.id === adjustId) : undefined;
   const sheetCard = cardSheet ? accounts.find(a => a.id === cardSheet.cardId) : undefined;
   const sheetStatement = sheetCard ? statementFor(sheetCard, transactions, creditInstallments, new Date()) : null;
 
@@ -785,24 +1013,59 @@ export default function AccountsScreen({
     }
   };
 
-  // ── Handler Transferencia ─────────────────────────────────
-  const handleTransfer = async (fromId: string, toId: string, amount: number) => {
-    const fromAcc = accounts.find(a => a.id === fromId);
-    const toAcc = accounts.find(a => a.id === toId);
+  // ── Handlers Saldo y Transferencia ────────────────────────
+  const handleAdjustBalance = async (accountId: string, amount: number, atIso: string) => {
+    try {
+      setAccounts(await StorageService.setBalanceAnchor(accountId, amount, atIso));
+    } catch (e) {
+      console.warn('[AccountsScreen] No se pudo ajustar el saldo:', e);
+      void dialog.alert({ variant: 'error', title: 'No se pudo ajustar', message: 'No se pudo ajustar el saldo. Intenta de nuevo.' });
+    }
+  };
+
+  const handleTransfer = async (p: TransferSubmit) => {
+    const fromAcc = accounts.find(a => a.id === p.fromId);
+    const toAcc = accounts.find(a => a.id === p.toId);
     if (!fromAcc || !toAcc) return;
     if (!hasReliableConversion(fromAcc.currency, toAcc.currency)) return;
+    try {
+      // El SMS ya llegó: se une a él en vez de crear un movimiento repetido.
+      if (p.join.kind !== 'none') {
+        const j = p.join;
+        const res = await StorageService.joinTransferWithSms({
+          outId: j.kind === 'pair' || j.kind === 'out' ? j.outId : undefined,
+          inId: j.kind === 'pair' || j.kind === 'in' ? j.inId : undefined,
+          fromId: p.fromId, toId: p.toId, toAmount: p.toAmount,
+        });
+        setAccounts(res.accounts);
+        setTransactions(res.transactions);
+        return;
+      }
+      const description = fromAcc.currency !== toAcc.currency && p.toAmount
+        ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${formatMoney(p.amount, fromAcc.currency)} → ${formatMoney(p.toAmount, toAcc.currency)})`
+        : `Transferencia: ${fromAcc.name} → ${toAcc.name}`;
+      // Un solo movimiento type 'transfer' (neutro); el saldo de las cuentas con saldo manual se ajusta en storage.
+      const res = await StorageService.transferBetweenAccounts(p.fromId, p.toId, p.amount, {
+        description, date: p.date,
+        ...(fromAcc.currency !== toAcc.currency ? { toAmount: p.toAmount } : {}),
+      });
+      setAccounts(res.accounts);
+      setTransactions(res.transactions);
+    } catch (e) {
+      console.warn('[AccountsScreen] No se pudo registrar la transferencia:', e);
+      void dialog.alert({ variant: 'error', title: 'No se pudo registrar', message: 'No se pudo registrar la transferencia. Intenta de nuevo.' });
+    }
+  };
 
-    const amountToCredit = convertAmount(amount, fromAcc.currency, toAcc.currency, settings.exchangeRate);
-    const description = fromAcc.currency !== toAcc.currency
-      ? `Transferencia: ${fromAcc.name} → ${toAcc.name} (${formatMoney(amount, fromAcc.currency)} → ${formatMoney(amountToCredit, toAcc.currency)})`
-      : `Transferencia: ${fromAcc.name} → ${toAcc.name}`;
-    // Un solo movimiento type 'transfer' (neutro); el saldo de las cuentas con saldo manual se ajusta en storage.
-    const res = await StorageService.transferBetweenAccounts(fromId, toId, amount, {
-      description,
-      ...(fromAcc.currency !== toAcc.currency ? { toAmount: amountToCredit } : {}),
-    });
-    setAccounts(res.accounts);
-    setTransactions(res.transactions);
+  const openTransfer = () => {
+    if (!canTransfer(accounts)) {
+      void dialog.alert({
+        variant: 'info', title: 'Necesitas dos cuentas',
+        message: 'Para transferir hacen falta al menos dos cuentas que no sean tarjeta de crédito. Crea otra con el botón +.',
+      });
+      return;
+    }
+    setShowTransfer(true);
   };
 
   return (
@@ -830,8 +1093,8 @@ export default function AccountsScreen({
           }
           right={
             <>
-              <View ref={transferBtnRef} collapsable={false}>
-                <TouchableOpacity style={s.transferBtn} onPress={() => setShowTransfer(true)} accessibilityRole="button" accessibilityLabel="Transferir entre cuentas">
+              <View ref={canTransfer(accounts) ? transferBtnRef : undefined} collapsable={false}>
+                <TouchableOpacity style={s.transferBtn} onPress={openTransfer} accessibilityRole="button" accessibilityLabel="Transferir entre cuentas">
                   <GlassBackground radius={18} blur={false} />
                   <Ionicons name="swap-horizontal-outline" size={18} color={C.primaryLight} />
                   <Text style={s.transferBtnTxt} numberOfLines={1}>Transferir</Text>
@@ -901,6 +1164,9 @@ export default function AccountsScreen({
                 </View>
               )}
             </View>
+          )}
+          {activeAccounts.length > 0 && !activeAccounts.some(a => a.type !== 'credit' && balanceModeOf(a) !== 'none') && (
+            <Text style={s.summaryNote}>Ninguna cuenta lleva saldo: son cifras en cero. Al editar una cuenta elige Saldo → Manual o Automático.</Text>
           )}
         </GlassCard>
       </View>
@@ -975,6 +1241,12 @@ export default function AccountsScreen({
                           )}
                         </View>
                         <Text style={s.accType}>{typeInfo.label}</Text>
+                        {!isCredit && balanceModeTag(acc) === 'Automático' && (
+                          <View style={s.modeBadge}>
+                            <Ionicons name="sync-outline" size={10} color={C.primaryLight} />
+                            <Text style={s.modeBadgeTxt}>Automático</Text>
+                          </View>
+                        )}
                         {isCredit && cutoffPaymentLabel && (
                           <Text style={s.accExtra}>{cutoffPaymentLabel}</Text>
                         )}
@@ -991,6 +1263,7 @@ export default function AccountsScreen({
                         )}
                       </View>
                       <View style={{ alignItems: 'flex-end', width: balColW }}>
+                        <View ref={acc.id === firstBalanceId ? balanceRef : undefined} collapsable={false} style={{ alignSelf: 'stretch', alignItems: 'flex-end' }}>
                         {isCredit ? (
                           monthlyTotal > 0 ? (
                             <Money amount={monthlyTotal} currency={acc.currency} size="sm" tone="warning" align="right" containerStyle={s.accMoney} />
@@ -1002,6 +1275,7 @@ export default function AccountsScreen({
                         ) : (
                           <Money amount={acc.balance} currency={acc.currency} size="md" tone="auto" align="right" containerStyle={s.accMoney} />
                         )}
+                        </View>
                         <View style={s.accActions}>
                           <TouchableOpacity
                             onPress={() => { setEditingAcc(acc); setShowAccModal(true); }}
@@ -1024,6 +1298,15 @@ export default function AccountsScreen({
                         </View>
                       </View>
                       </View>
+                      {!isCredit && balanceModeOf(acc) === 'auto' && (
+                        <View ref={acc.id === firstAutoId ? adjustBtnRef : undefined} collapsable={false} style={s.adjustRow}>
+                          <GlassButton
+                            kind="ghost" icon="analytics-outline" label="Ajustar al saldo real"
+                            onPress={() => setAdjustId(acc.id)}
+                            style={s.adjustBtn}
+                          />
+                        </View>
+                      )}
                       {isCredit && stmt && cycle && (
                         <View style={s.stmtBox}>
                           <View ref={isFirstCard ? stmtRef : undefined} collapsable={false}>
@@ -1187,6 +1470,12 @@ export default function AccountsScreen({
           defaultCurrency={settings.currency}
           smsOn={smsOn}
           allAccounts={accounts}
+          transactions={transactions}
+          onAdjust={(id, amount, atIso) => { void handleAdjustBalance(id, amount, atIso); }}
+          onRequestAdjust={id => {
+            setShowAccModal(false); setEditingAcc(undefined); setCreateType(undefined);
+            openAfterPause(() => setAdjustId(id));
+          }}
           onSave={handleSaveAccount}
           onClose={() => { setShowAccModal(false); setEditingAcc(undefined); setCreateType(undefined); }}
         />
@@ -1204,6 +1493,7 @@ export default function AccountsScreen({
           card={sheetCard}
           statement={sheetStatement}
           fromChoices={accounts.filter(a => a.isActive && a.type !== 'credit')}
+          initialFromId={cardSheet.fromId}
           onSave={p => { void handleRegisterPayment(sheetCard.id, sheetStatement.cutKey, p); }}
           onClose={() => setCardSheet(null)}
         />
@@ -1211,8 +1501,28 @@ export default function AccountsScreen({
       {showInstModal && (
         <InstallmentModal accounts={accounts} existing={editingInst} customCategories={settings.customCategories} onSave={handleSaveInstallment} onClose={() => { setShowInstModal(false); setEditingInst(undefined); }} />
       )}
-      {showTransfer && accounts.filter(a => a.isActive && a.type !== 'credit').length >= 2 && (
-        <TransferModal accounts={accounts.filter(a => a.isActive && a.type !== 'credit')} settings={settings} onSave={handleTransfer} onClose={() => setShowTransfer(false)} />
+      {adjustAcc && (
+        <BalanceAdjustSheet
+          account={adjustAcc}
+          mismatch={smsOn ? smsBalanceMismatch(adjustAcc, transactions) : null}
+          onSave={(amount, atIso) => { void handleAdjustBalance(adjustAcc.id, amount, atIso); }}
+          onClose={() => setAdjustId(null)}
+        />
+      )}
+      {showTransfer && canTransfer(accounts) && (
+        <TransferModal
+          accounts={accounts.filter(a => a.isActive)}
+          transactions={transactions}
+          settings={settings}
+          smsOn={smsOn}
+          onSave={p => { void handleTransfer(p); }}
+          onPayCard={(cardId, fromId) => {
+            // Pagar la tarjeta es su propio flujo (estado, monto por moneda): se cierra esta ventana y se abre esa.
+            setShowTransfer(false);
+            openAfterPause(() => setCardSheet({ kind: 'pay', cardId, fromId }));
+          }}
+          onClose={() => setShowTransfer(false)}
+        />
       )}
     </Animated.View>
   );
@@ -1236,6 +1546,7 @@ const s = StyleSheet.create({
   summaryLbl: { color: C.textSub, fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 4, textAlign: 'center' },
   summaryVal: { fontSize: 15, fontWeight: '900', color: C.textPrimary },
   summaryMoney: { alignSelf: 'stretch' },
+  summaryNote: { color: C.textSub, fontSize: 11, lineHeight: 16, marginTop: 10, textAlign: 'center' },
   summarySub: { color: C.textSub, fontSize: 10, marginTop: 2 },
   summaryDivider: { width: 1, height: 32, backgroundColor: C.glassBorder, marginHorizontal: 8 },
 
@@ -1262,6 +1573,10 @@ const s = StyleSheet.create({
   bankBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   bankBadgeTxt: { fontSize: 9, fontWeight: '800' },
   accActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
+  modeBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+  modeBadgeTxt: { color: C.primaryLight, fontSize: 9, fontWeight: '800' },
+  adjustRow: { marginTop: 8, alignItems: 'flex-start' },
+  adjustBtn: { alignSelf: 'flex-start' },
   editBtn: { padding: 8, borderRadius: 8, backgroundColor: C.glassActive, borderWidth: 1, borderColor: C.glassActiveBorder },
   deleteBtn: { padding: 8, borderRadius: 8, backgroundColor: C.danger + '11' },
   linkBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', maxWidth: '100%', marginTop: 5, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: C.accent + '55', backgroundColor: C.accent + '22' },
@@ -1292,6 +1607,8 @@ const md = StyleSheet.create({
   lbl: { color: C.textSub, fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 14 },
   hint: { color: C.textSub, fontSize: 12, lineHeight: 17, marginBottom: 8 },
   noBal: { color: C.textSub, fontSize: 12 },
+  checkRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 14, minHeight: 44 },
+  checkTitle: { color: C.text, fontSize: 14, fontWeight: '800' },
   input: { backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, padding: 14, color: C.text, fontSize: 15 },
   amtRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.glassInput, borderRadius: 12, borderWidth: 1, borderColor: C.glassInputBorder, paddingHorizontal: 14, paddingVertical: 10 },
   amtInput: { flex: 1, color: C.text, fontSize: 18, fontWeight: '700' },
