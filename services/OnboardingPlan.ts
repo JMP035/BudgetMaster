@@ -14,6 +14,7 @@ import { dueDateInPeriod, periodFor, periodForWith } from './FixedCycle';
 import type { FixedCycleConfig, PeriodStartResolver } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
 import { suggestInstallmentCount } from './InstallmentMath';
+import { monthlyToWeekly } from './PeriodBudget';
 
 // ─────────────────────────────────────────────────────────────
 // TIPOS
@@ -564,7 +565,7 @@ function buildIncomeSource(
   // Semanal: el día declarado gana sobre el del SMS; un borrador viejo sin día usa el del SMS y, si no, domingo.
   else if (cycle === 'weekly') srcDays = [days.declaredWeekday ?? weekday ?? 0];
   const perPayment = cycle === 'biweekly' ? round2(monthlyAmount / 2)
-    : cycle === 'weekly' ? round2(monthlyAmount * 12 / 52)
+    : cycle === 'weekly' ? round2(monthlyToWeekly(monthlyAmount))
       : monthlyAmount;
   return {
     id: ONB_INCOME_SOURCE_ID,

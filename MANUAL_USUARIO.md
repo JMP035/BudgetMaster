@@ -167,7 +167,7 @@ Asigná un límite mensual en Q a cada categoría (ej. Comida Q1,500):
 - Tocá una categoría de la lista "Agregar presupuesto", escribí el límite y confirmá ✓.
 - Cada categoría con presupuesto muestra su barra de avance: color normal → **amarillo al 80 %** → **rojo si te excedés** (con el monto de exceso exacto).
 - Al registrar un gasto que lleva una categoría al 80 % o 100 % de su límite en el período, recibís una notificación (una vez por umbral y período).
-- El resumen superior compara lo planificado vs. lo gastado del mes.
+- El resumen superior compara lo planificado vs. lo gastado del período. Escribes siempre el límite MENSUAL; si cobras por quincena o por semana, la app lo reparte por período y cada tarjeta muestra «Q{x} por quincena (Q{y} al mes)» o «por semana».
 
 ### 6.3 Metas de Ahorro
 
@@ -353,7 +353,7 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 ## 10. Ajustes
 
 - **Tu Perfil** — tu nombre.
-- **Presupuesto mensual** — límite de gasto en Q (obligatorio, > 0) y opcional en USD.
+- **Presupuesto mensual** — límite de gasto al mes en Q (obligatorio, > 0) y opcional en USD. Si cobras por quincena o por semana, la app lo reparte por período (debajo del monto ves «Por período: Q{x}») y con ese monto miden el anillo del Inicio, los avisos, el score y el asesor.
 - **Ingresos y período** — muestra tu día de pago y el período actual. **Mis fuentes de ingreso** te lleva a Presupuesto → Ingresos. En **Ciclo de pago** cambiás el ciclo (mensual, quincenal, semanal o irregular) y el día o los dos días de pago; se guarda con **Guardar ciclo y día de pago** (no con *Guardar Cambios*). Cambiar el día mueve tu período; lo que fijaste a mano en un período anterior se conserva. El botón **Cuándo empieza mi período** abre el mismo detalle que se abre al tocar el encabezado del Inicio:
   - **Inicio del período** — chips con las fechas cercanas a tu día de pago (±la tolerancia); nunca se ofrece una fecha futura. **Guardar** fija a mano el inicio; **Volver a automático** quita lo fijado a mano. *Lo que fijás a mano siempre gana*: la app no lo cambia sola.
   - **Reglas** — qué hacer si el día de pago cae en fin de semana o feriado (**Viernes antes**, **Lunes después** o **Día exacto**), si cuentan los **feriados de Guatemala**, la **tolerancia** (de 1 a 7 días de diferencia máxima con el día de pago) y **Adelantar el período cuando llega el sueldo** (cuando la app reconoce por SMS el depósito de tu sueldo y cae antes o después de lo esperado, dentro de la tolerancia, el período empieza ese día). Se guardan con **Guardar reglas**, no con *Guardar Cambios*.

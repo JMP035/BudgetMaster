@@ -21,6 +21,7 @@ import {
 } from './Queries';
 import { formatDateEs } from './DateParser';
 import { guessCategoryForText } from './Lexicon';
+import { periodCategoryLimit } from '../PeriodBudget';
 
 export const MAX_AMOUNT = 100_000_000;
 export const HIGH_AMOUNT = 100_000;
@@ -165,7 +166,7 @@ const BUDGET_SLOTS: SlotSpec[] = [
     question: '¿De qué categoría?', description: 'Categoría de gasto a limitar.',
     chips: ctx => topCategoryChips(ctx, 'expense'),
   },
-  AMOUNT_SLOT('¿Cuál es el límite por período, en quetzales?'),
+  AMOUNT_SLOT('¿Cuál es el límite mensual, en quetzales?'),
   {
     key: 'currency', type: 'currency', label: 'Moneda', required: false,
     question: '¿En qué moneda?', description: 'Solo se admite Q: los presupuestos por categoría se manejan en quetzales.',
@@ -352,7 +353,7 @@ const setCategoryBudget: ActionSpec = {
   title: 'Límite por categoría',
   icon: 'pie-chart-outline',
   geminiName: 'proponer_presupuesto_categoria',
-  geminiDescription: 'Prepara un límite de gasto por período para una categoría, siempre en quetzales. Reemplaza el límite actual si existe. La persona debe confirmarlo en la app.',
+  geminiDescription: 'Prepara un límite de gasto MENSUAL para una categoría, siempre en quetzales (la app lo reparte por período si la persona cobra por quincena o semana). Reemplaza el límite actual si existe. La persona debe confirmarlo en la app.',
   slots: BUDGET_SLOTS,
 
   validate(slots, ctx) {
@@ -376,8 +377,9 @@ const setCategoryBudget: ActionSpec = {
       const prev = ctx.categoryBudgets.find(b => b.categoryId === id);
       if (prev) out.push(`Reemplaza el límite actual de ${formatMoney(prev.limit, 'Q')}.`);
       if (amount !== undefined) {
+        // El límite es mensual: el gasto del período se compara contra el límite repartido a ese período.
         const spent = spentQInPeriod(ctx, id);
-        if (spent > amount) out.push(`En el período ya van ${formatMoney(spent, 'Q')}.`);
+        if (spent > periodCategoryLimit(amount, ctx.settings.paymentCycle)) out.push(`En el período ya van ${formatMoney(spent, 'Q')}.`);
       }
     }
     return [...out, ...highAmountWarning(slots)];
@@ -387,7 +389,7 @@ const setCategoryBudget: ActionSpec = {
     const id = resolveCategoryId(ctx, slots.category, 'expense');
     return [
       { label: 'Categoría', value: id ? catLabel(ctx, id, 'expense') : '—', slotKey: 'category' },
-      moneyRow('Límite por período', amountOf(slots), 'Q', 'amount'),
+      moneyRow('Límite mensual', amountOf(slots), 'Q', 'amount'),
     ];
   },
 

@@ -13,6 +13,7 @@ import { formatDateOnly } from '../DateAmount';
 import { isBalanceTracked } from '../Balances';
 import { normalizeWeekday } from '../FinancialPeriod';
 import { formatMoney } from '../format';
+import { periodBudgetLimit, periodCategoryLimit } from '../PeriodBudget';
 import { currencyOf, formatPeriodRange, formatShortDay } from '../BudgetBreakdown';
 import { fixedCycleConfig, fixedDueInfo, isPaidForPeriod, storedToLocalDate } from '../FixedCycle';
 import { categoryLabelOf } from '../../categories';
@@ -88,7 +89,8 @@ const joinTotals = (totals: { currency: string; amount: number }[]): string => t
  */
 export function buildCompactContext(ctx: AssistantContext, userName: string, extras: CompactExtras = {}): string {
   const full = ctx.settings as Partial<UserSettings>;
-  const budgetLimit = extras.budgetLimit ?? num(full.budgetLimit) ?? 0;
+  // El presupuesto guardado es MENSUAL: se reparte al período (quincena o semana) para compararlo con el gasto del período.
+  const budgetLimit = periodBudgetLimit({ budgetLimit: extras.budgetLimit ?? num(full.budgetLimit) ?? 0, paymentCycle: ctx.settings.paymentCycle });
   const monthlyIncome = extras.monthlyIncome ?? num(full.monthlyIncome) ?? 0;
   const debt = extras.debt;
   const savingsGoal = extras.monthlySavingsGoal ?? num(full.monthlySavingsGoal) ?? 0;
@@ -187,10 +189,11 @@ export function buildCompactContext(ctx: AssistantContext, userName: string, ext
     }
     const items = budgets
       .map(b => ({ b, spent: round2(spentCat.get(b.categoryId) ?? 0) }))
-      .map(x => ({ ...x, pct: Math.round((x.spent / x.b.limit) * 100) }))
+      .map(x => ({ ...x, limit: periodCategoryLimit(x.b.limit, ctx.settings.paymentCycle) }))
+      .map(x => ({ ...x, pct: Math.round((x.spent / x.limit) * 100) }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 5)
-      .map(({ b, spent, pct }) => `${oneLine(categoryLabelOf(b.categoryId, custom, 'expense'), 24)} ${money(spent, 'Q')} de ${money(b.limit, 'Q')} (${pct}%${spent > b.limit ? ', excedido' : ''})`)
+      .map(({ b, spent, pct, limit }) => `${oneLine(categoryLabelOf(b.categoryId, custom, 'expense'), 24)} ${money(spent, 'Q')} de ${money(limit, 'Q')} (${pct}%${spent > limit ? ', excedido' : ''})`)
       .join('; ');
     lines.push(`Presupuestos por categoría (solo Q): ${items}.`);
   }

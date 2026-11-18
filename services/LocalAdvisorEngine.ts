@@ -6,6 +6,7 @@ import {
     getDaysUntilNextPayment, parseAmount, parseDateOnly, storedDateToDateOnly,
 } from './storage';
 import { isBalanceTracked } from './Balances';
+import { periodBudgetLimit, periodCategoryLimit } from './PeriodBudget';
 import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
 import { fixedCycleConfig, fixedDueInfo } from './FixedCycle';
@@ -163,6 +164,8 @@ export interface LocalMetrics {
     activeAccounts: Account[];
     activeGoals: SavingsGoal[];
     completedGoalsCount: number;
+    /** Presupuesto del PERÍODO (el mensual repartido según el ciclo de pago; 0 si no hay). */
+    budgetLimit: number;
     budgetAlerts: { id: string; label: string; spent: number; limit: number; pctB: number }[];
     tone: QuoteTone;
     hasAnyData: boolean;
@@ -194,9 +197,11 @@ export function computeLocalMetrics(
     const incomeQ = periodTx.filter(t => t.type === 'income' && isQ(t)).reduce((s, t) => s + t.amount, 0);
     const net = incomeQ - expenseQ;
 
-    const hasBudget = settings.budgetLimit > 0;
-    const remaining = settings.budgetLimit - expenseQ;
-    const pct = hasBudget ? Math.round((expenseQ / settings.budgetLimit) * 100) : 0;
+    // El presupuesto es mensual: se compara contra el del período (quincena o semana si cobra así).
+    const budgetLimit = periodBudgetLimit(settings);
+    const hasBudget = budgetLimit > 0;
+    const remaining = budgetLimit - expenseQ;
+    const pct = hasBudget ? Math.round((expenseQ / budgetLimit) * 100) : 0;
 
     const daysLeftInPeriod = Math.max(fp.daysTotal - fp.daysPassed, 1);
     const dailyRate = expenseQ / Math.max(fp.daysPassed, 1);
@@ -259,14 +264,15 @@ export function computeLocalMetrics(
         .filter(cb => cb.limit > 0)
         .map(cb => {
             const spent = periodTx.filter(t => t.type === 'expense' && t.category === cb.categoryId && isQ(t)).reduce((s, t) => s + t.amount, 0);
-            const pctB = Math.round((spent / cb.limit) * 100);
-            return { id: cb.categoryId, label: categoryLabelOf(cb.categoryId, settings.customCategories, 'expense'), spent, limit: cb.limit, pctB };
+            const limit = periodCategoryLimit(cb.limit, settings.paymentCycle);
+            const pctB = Math.round((spent / limit) * 100);
+            return { id: cb.categoryId, label: categoryLabelOf(cb.categoryId, settings.customCategories, 'expense'), spent, limit, pctB };
         })
         .filter(b => b.pctB >= 80)
         .sort((a, b) => b.pctB - a.pctB);
 
     let tone: QuoteTone;
-    if (pct >= 100 || (hasBudget && projected > settings.budgetLimit * 1.1)) {
+    if (pct >= 100 || (hasBudget && projected > budgetLimit * 1.1)) {
         tone = 'critical';
     } else if (pct >= 80 || budgetAlerts.some(b => b.pctB >= 100)) {
         tone = 'warning';
@@ -285,7 +291,7 @@ export function computeLocalMetrics(
         fixedActive, fixedPendingList, fixedTotalQ, fixedPendingQ,
         installTotal, debt, installmentsPendingQ, activeInstallments, totalBalance,
         activeAccounts: activeAccountsAll, activeGoals, completedGoalsCount,
-        budgetAlerts, tone, hasAnyData, settings,
+        budgetLimit, budgetAlerts, tone, hasAnyData, settings,
     };
 }
 
@@ -299,7 +305,7 @@ function budgetLine(m: LocalMetrics): string {
     if (m.remaining < 0) {
         return `Te pasaste del presupuesto por ${fmtQ(-m.remaining)}.`;
     }
-    return `Llevás ${fmtQ(m.expenseQ)} de ${fmtQ(m.settings.budgetLimit)} (${m.pct}%) y te quedan ${fmtQ(m.remaining)}.`;
+    return `Llevas ${fmtQ(m.expenseQ)} de ${fmtQ(m.budgetLimit)} (${m.pct}%) y te quedan ${fmtQ(m.remaining)}.`;
 }
 
 function perDayLine(m: LocalMetrics): string {
@@ -422,8 +428,8 @@ export function getLocalResponse(
         if (m.hasBudget && m.pct >= 100) {
             tips.push(`Ya superaste tu presupuesto por ${fmtQ(-m.remaining)}. Congelá gastos no esenciales el resto de ${m.fp.label}.`);
         }
-        if (m.hasBudget && m.pct < 100 && m.projected > m.settings.budgetLimit) {
-            const exceso = m.projected - m.settings.budgetLimit;
+        if (m.hasBudget && m.pct < 100 && m.projected > m.budgetLimit) {
+            const exceso = m.projected - m.budgetLimit;
             tips.push(`A tu ritmo actual (${fmtQ(m.dailyRate)}/día) vas a proyectar ${fmtQ(m.projected)}, ${fmtQ(exceso)} por encima del presupuesto. Bajá el ritmo diario para no pasarte.`);
         }
         if (m.budgetAlerts[0]) {
@@ -525,8 +531,9 @@ export function getLocalResponse(
 
             const budget = categoryBudgets.find(cb => cb.categoryId === catId);
             if (budget && budget.limit > 0) {
-                const pctB = Math.round((amount / budget.limit) * 100);
-                parts.push(`Tu límite ahí es ${fmtQ(budget.limit)} (${pctB}%), te quedan ${fmtQ(budget.limit - amount)}.`);
+                const catLimit = periodCategoryLimit(budget.limit, settings.paymentCycle);
+                const pctB = Math.round((amount / catLimit) * 100);
+                parts.push(`Tu límite ahí es ${fmtQ(catLimit)} en este período (${pctB}%), te quedan ${fmtQ(catLimit - amount)}.`);
             }
 
             parts.push(`Tenés ${catTx.length} transacción(es) registrada(s)${biggest ? `; la mayor fue "${biggest.description}" por ${fmtQ(biggest.amount)}` : ''}.`);
@@ -630,9 +637,9 @@ export function getLocalResponse(
             : '';
         const perDay = perDayLine(m);
         const projectionNote = m.hasBudget
-            ? (m.projected > m.settings.budgetLimit
-                ? ` A tu ritmo actual proyectás ${fmtQ(m.projected)}, por encima de tu presupuesto de ${fmtQ(m.settings.budgetLimit)}.`
-                : ` A tu ritmo actual proyectás ${fmtQ(m.projected)}, dentro de tu presupuesto de ${fmtQ(m.settings.budgetLimit)}.`)
+            ? (m.projected > m.budgetLimit
+                ? ` A tu ritmo actual proyectas ${fmtQ(m.projected)}, por encima de tu presupuesto de ${fmtQ(m.budgetLimit)}.`
+                : ` A tu ritmo actual proyectas ${fmtQ(m.projected)}, dentro de tu presupuesto de ${fmtQ(m.budgetLimit)}.`)
             : '';
 
         const variants7 = [
@@ -803,8 +810,8 @@ export function buildLocalOpening(
     const budgetAlert100 = m.budgetAlerts.find(b => b.pctB >= 100);
     if (budgetAlert100) {
         line3 = `Tu categoría "${budgetAlert100.label}" ya superó su límite (${budgetAlert100.pctB}%).`;
-    } else if (m.hasBudget && m.projected > m.settings.budgetLimit) {
-        line3 = `A tu ritmo actual proyectás ${fmtQ(m.projected)}, por encima de tu presupuesto.`;
+    } else if (m.hasBudget && m.projected > m.budgetLimit) {
+        line3 = `A tu ritmo actual proyectas ${fmtQ(m.projected)}, por encima de tu presupuesto.`;
     } else if (m.fixedPendingList.length > 0) {
         line3 = `Tenés ${m.fixedPendingList.length} gasto(s) fijo(s) pendiente(s) por ${fmtQ(m.fixedPendingQ)}.`;
     } else if (m.catTotals[0]) {

@@ -21,6 +21,7 @@ import type { PayRules } from './PayCalendar';
 import { buildStartResolver, removeAnchorsForTx, upsertAutoAnchor } from './PeriodAnchors';
 import type { PeriodAnchor } from './PeriodAnchors';
 import { effectiveDay, storedToLocalDate } from './FixedCycle';
+import { weeklyToMonthly } from './PeriodBudget';
 
 /** Tolerancia de monto (%) con que se aprende un patrón nuevo (los centavos cambian de un mes a otro). */
 export const DEFAULT_TOLERANCE_PCT = 1.5;
@@ -378,7 +379,7 @@ export function baseMonthlyIncome(sources: IncomeSource[], txs: Transaction[], r
     if (s.frequency === 'irregular') monthly = irregularAverage(s, txs);
     else {
       const per = latestAmount(s, txs);
-      monthly = s.frequency === 'biweekly' ? per * 2 : s.frequency === 'weekly' ? per * 52 / 12 : per;
+      monthly = s.frequency === 'biweekly' ? per * 2 : s.frequency === 'weekly' ? weeklyToMonthly(per) : per;
     }
     total += toQ(monthly, s.currency, rate);
   }

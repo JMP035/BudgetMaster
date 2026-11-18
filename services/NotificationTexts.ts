@@ -4,6 +4,7 @@
 import type { CategoryBudget, FixedExpense, Transaction, UserSettings } from './storage';
 import { storedToLocalDate } from './FixedCycle';
 import type { DebtLoad } from './DebtLoad';
+import { periodBudgetLimit, periodCategoryLimit } from './PeriodBudget';
 
 /** Período (inicio y fin inclusive; `nextStart` = inicio del siguiente si se conoce). */
 export interface PeriodRange { start: Date; end: Date; nextStart?: Date; }
@@ -87,6 +88,7 @@ export interface PeriodSnapshot {
   label: string;
   spentQ: number;
   incomeQ: number;
+  /** Presupuesto del PERÍODO: el mensual de Ajustes repartido según el ciclo de pago (ver PeriodBudget). */
   budgetLimit: number;
   hasBudget: boolean;
   pct: number;
@@ -101,9 +103,12 @@ export interface PeriodSnapshot {
   catAlerts: number;
 }
 
-/** Cifras del período de pago actual con lo registrado (puro). */
+/**
+ * Cifras del período de pago actual con lo registrado (puro). El presupuesto y los límites por categoría son
+ * mensuales: aquí se reparten al período (quincena o semana) para compararlos con el gasto de ese período.
+ */
 export function periodSnapshot(input: {
-  settings: Pick<UserSettings, 'budgetLimit'>;
+  settings: Pick<UserSettings, 'budgetLimit' | 'paymentCycle'>;
   txs: Transaction[];
   categoryBudgets: CategoryBudget[];
   fixed: FixedExpense[];
@@ -116,7 +121,7 @@ export function periodSnapshot(input: {
   const list = txsInPeriod(input.txs, period.start, period.end);
   const spentQ = spentQOf(list);
   const incomeQ = incomeQOf(list);
-  const budgetLimit = settings.budgetLimit > 0 ? settings.budgetLimit : 0;
+  const budgetLimit = periodBudgetLimit(settings);
   const hasBudget = budgetLimit > 0;
   const pct = hasBudget ? Math.round((spentQ / budgetLimit) * 100) : 0;
   const nextStart = period.nextStart ?? new Date(period.end.getFullYear(), period.end.getMonth(), period.end.getDate() + 1, 12);
@@ -125,9 +130,10 @@ export function periodSnapshot(input: {
   const unpaid = fixed.filter(f => f.isActive && !f.isPaid);
   const catRows: CatRow[] = categoryBudgets.filter(cb => cb.limit > 0).map(cb => {
     const spent = spentQOf(list, cb.categoryId);
+    const limit = periodCategoryLimit(cb.limit, settings.paymentCycle);
     return {
       categoryId: cb.categoryId, label: input.labelOfCategory(cb.categoryId),
-      spent, limit: cb.limit, pct: Math.round((spent / cb.limit) * 100),
+      spent, limit, pct: Math.round((spent / limit) * 100),
     };
   });
   return {
@@ -158,7 +164,7 @@ export function buildFinancialContextText(
   return `
 Usuario: ${settings.userName}
 Ingreso declarado: Q${settings.monthlyIncome}
-Presupuesto del período: Q${settings.budgetLimit}
+Presupuesto del período: Q${snap.hasBudget ? snap.budgetLimit : settings.budgetLimit}
 Período de pago actual: ${snap.label} (según lo registrado)
 Gastado en este período en Q: ${snap.spentQ.toFixed(2)}
 Ingresos registrados en este período: Q${snap.incomeQ.toFixed(2)}

@@ -7,6 +7,7 @@ import {
 import Svg, { Circle, G, Path } from "react-native-svg";
 import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysUntilNextPayment } from "../services/storage";
 import { monthlyDebtLoad } from "../services/DebtLoad";
+import { periodBudgetLimit } from "../services/PeriodBudget";
 import { getAllExpenseCategories } from "../categories";
 import { C } from "../theme";
 import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
@@ -374,7 +375,8 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     });
 
     const avgDaily = dailyRate;
-    const avgDailyBudget = settings.budgetLimit / Math.max(fp.daysTotal, 1);
+    // Presupuesto del período (el mensual repartido según el ciclo) ÷ días del período.
+    const avgDailyBudget = periodBudgetLimit(settings) / Math.max(fp.daysTotal, 1);
     const dailyPct = avgDailyBudget > 0 ? (avgDaily / avgDailyBudget) * 100 : 0;
 
     const daysWithExpense = new Set(expensesQ.map(t => new Date(t.date).toDateString())).size;

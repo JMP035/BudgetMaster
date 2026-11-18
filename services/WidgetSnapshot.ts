@@ -13,6 +13,7 @@ import { scheduledDebts } from './CardStatement';
 import { fixedCycleConfig } from './FixedCycle';
 import { sanitizePayRules } from './PayCalendar';
 import { periodSnapshot } from './NotificationTexts';
+import { periodBudgetFactor } from './PeriodBudget';
 import type { PeriodRange } from './NotificationTexts';
 
 export const WIDGET_SNAPSHOT_VERSION = 1;
@@ -100,7 +101,10 @@ export function buildWidgetSnapshot(data: WidgetSnapshotData, now: Date): Widget
     settings, txs: data.transactions, categoryBudgets: [], fixed: data.fixedExpenses, now, period,
     daysLeft, labelOfCategory: id => id,
   });
-  const base = snap.hasBudget ? snap.budgetLimit : (settings.monthlyIncome > 0 ? settings.monthlyIncome : snap.incomeQ);
+  // snap.budgetLimit ya es el del PERÍODO (el mensual repartido). Sin presupuesto, el ingreso mensual declarado se reparte igual.
+  const base = snap.hasBudget
+    ? snap.budgetLimit
+    : (settings.monthlyIncome > 0 ? settings.monthlyIncome * periodBudgetFactor(settings.paymentCycle) : snap.incomeQ);
   const availablePeriod = round2(base - snap.spentQ);
   const availablePerDay = daysLeft > 0 ? round2(availablePeriod / daysLeft) : availablePeriod;
 

@@ -153,7 +153,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_6', elementId: 'dash_budget', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Presupuesto del período',
-                description: 'Cuánto llevás gastado frente al presupuesto mensual que definiste en Ajustes. Cambia de color al acercarte al límite. Si tenés una tarjeta con corte y día de pago, justo debajo aparece el semáforo de capacidad de pago (verde, ámbar o rojo): te dice qué parte de lo que tendrás para pagarla ya está comprometida.',
+                description: 'Cuánto llevas gastado frente a tu presupuesto del período (el mensual de Ajustes, repartido si cobras por quincena o semana). Cambia de color al acercarte al límite. Si tienes una tarjeta con corte y día de pago, justo debajo aparece el semáforo de capacidad de pago (verde, ámbar o rojo): te dice qué parte de lo que tendrás para pagarla ya está comprometida.',
             },
             {
                 id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
@@ -425,7 +425,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_5', elementId: 'budget_cat_summary', screen: 'budget', action: { id: 'budget:setTab', arg: 1 }, scrollKey: 'budget_categories', position: 'bottom', icon: 'bar-chart-outline', padding: 8,
                 title: 'Planificado contra gastado',
-                description: 'La suma de los límites que asignaste, cuánto llevás gastado en esas categorías este período y cuánto te queda disponible o cuánto te excediste.',
+                description: 'La suma de los límites de tus categorías (repartidos al período si cobras por quincena o semana), cuánto llevas gastado en esas categorías este período y cuánto te queda disponible o cuánto te excediste.',
             },
             {
                 id: 'budget_5b', elementId: 'budget_cat_list', screen: 'budget', scrollKey: 'budget_categories', position: 'bottom', icon: 'list-outline', padding: 8,
@@ -436,7 +436,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_6', elementId: 'budget_cat_grid', screen: 'budget', scrollKey: 'budget_categories', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Asignar un límite',
-                description: 'Tocá una categoría, escribí el monto máximo para el período y confirmá con el check. La app te avisa una vez cuando llegás al 80% en ese período y otra si lo superás; no te manda un aviso por cada gasto. Para quitar un límite usá la papelera de su tarjeta.',
+                description: 'Toca una categoría, escribe el límite MENSUAL y confirma con el check. Si cobras por quincena o por semana, el límite también se reparte por período (cada tarjeta muestra cuánto toca por período y cuánto al mes). La app te avisa una vez cuando llegas al 80% del límite del período y otra si lo superas; no te manda un aviso por cada gasto. Para quitar un límite usa la papelera de su tarjeta.',
             },
             {
                 id: 'budget_7', elementId: 'budget_goals_list', screen: 'budget', action: { id: 'budget:setTab', arg: 2 }, scrollKey: 'budget_goals', position: 'bottom', icon: 'trophy-outline', padding: 8,
@@ -503,7 +503,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_7', elementId: 'stats_daily', screen: 'stats', position: 'top', icon: 'today-outline', padding: 8,
                 title: 'Gasto promedio diario',
-                description: 'Cuánto gastás por día en promedio frente a tu presupuesto diario ideal (presupuesto mensual dividido entre los días del período). Por encima de 100% vas más rápido de lo planificado.',
+                description: 'Cuánto gastas por día en promedio frente a tu presupuesto diario ideal (presupuesto del período ÷ días del período; si cobras por quincena o semana, el mensual de Ajustes ya viene repartido). Por encima de 100% vas más rápido de lo planificado.',
             },
             {
                 id: 'stats_8', elementId: 'stats_nospend', screen: 'stats', position: 'top', icon: 'shield-checkmark-outline', padding: 8,
@@ -833,7 +833,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_2', elementId: 'settings_budget', screen: 'settings', position: 'bottom', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto mensual',
-                description: 'Lo máximo que planeás gastar por período, en quetzales. Con este número se calculan las alertas, el presupuesto diario ideal y parte de tu score. El equivalente en dólares se calcula solo con el tipo de cambio; si preferís, podés fijarlo a mano.',
+                description: 'Lo máximo que planeas gastar al mes, en quetzales. Si cobras por quincena o por semana, la app lo reparte por período (debajo del monto ves cuánto toca por período). Con ese presupuesto del período se calculan el anillo del Inicio, las alertas, el presupuesto diario ideal y parte de tu score. El equivalente en dólares se calcula solo con el tipo de cambio; si prefieres, puedes fijarlo a mano.',
             },
             {
                 id: 'set_period', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'calendar-outline', padding: 8,

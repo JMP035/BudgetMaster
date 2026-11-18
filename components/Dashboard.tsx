@@ -43,6 +43,7 @@ import { fmtDM, incomeQOf, spentQOf, txsInPeriod } from "../services/Notificatio
 import { computeFinancialScore } from "../services/FinancialScore";
 import type { ScoreFactor, ScoreResult } from "../services/FinancialScore";
 import { isTransferLike } from "../services/BudgetBreakdown";
+import { periodBudgetLimit } from "../services/PeriodBudget";
 import {
     capacityBasisText, capacityChipText, capacityLevelLabel, capacityPct, capacityTone, dueInText,
 } from "../services/NotifUi";
@@ -834,7 +835,7 @@ export default function DashboardScreen({
             setBriefingLoading(false);
         };
         load();
-    }, [transactions.length, settings.budgetLimit, settings.userName]);
+    }, [transactions.length, settings.budgetLimit, settings.paymentCycle, settings.userName]);
 
     const smsEnabled = isSmsFeatureOn(settings);
     useEffect(() => {
@@ -1064,9 +1065,10 @@ export default function DashboardScreen({
     const { installmentsPendingQ: totalInstallmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
     const totalCreditCommitmentsQ = totalInstallmentsPendingQ;
 
-    // Score del PERÍODO de pago (no el mes calendario). budgetForPeriod: hoy el límite guardado.
+    // Score del PERÍODO de pago (no el mes calendario). El presupuesto es mensual: se mide contra el del período.
+    const budgetPeriod = periodBudgetLimit(settings);
     const scoreResult = computeFinancialScore({
-        transactions, window: period, budgetForPeriod: settings.budgetLimit, fixedExpenses,
+        transactions, window: period, budgetForPeriod: budgetPeriod, fixedExpenses,
         activeAccountsCount: accounts.filter(a => a.isActive).length,
     });
     const daysLeft = getDaysUntilNextPayment(settings);
@@ -1311,7 +1313,7 @@ export default function DashboardScreen({
                 <GlassCard style={s.glassOuter} contentStyle={[s.cardContent, { alignItems: "center", paddingVertical: 24 }]}>
                     <Text style={[s.sectionTitle, { marginBottom: 4 }]}>PRESUPUESTO DEL PERÍODO</Text>
                     <Text style={{ color: C.textMuted, fontSize: 10, marginBottom: 16 }}>{period.label}</Text>
-                    <BudgetRing spent={expenseQ} limit={settings.budgetLimit} currency="Q" />
+                    <BudgetRing spent={expenseQ} limit={budgetPeriod} currency="Q" />
                 </GlassCard>
             </View>
 

@@ -42,6 +42,7 @@ import { buildIncomeList, suggestionText } from "../services/IncomeSourceView";
 import type { StatusTone } from "../services/IncomeSourceView";
 import { sanitizePayRules } from "../services/PayCalendar";
 import { debtsNotInFixed, scheduledDebts, sumDebts } from "../services/CardStatement";
+import { isSplitCycle, periodCategoryLimit, periodUnitName } from "../services/PeriodBudget";
 
 // ─────────────────────────────────────────────────────────────
 // BARRA DE PROGRESO ANIMADA
@@ -795,6 +796,12 @@ function CategoryBudgetTab({
     const getSpent = (catId: string) =>
         periodTx.filter(t => t.category === catId).reduce((s, t) => s + t.amount, 0);
 
+    // El límite se escribe MENSUAL; el gasto es de UN período, así que se compara contra el límite repartido.
+    const cycle = settings.paymentCycle;
+    const unit = periodUnitName(cycle);
+    const split = isSplitCycle(cycle);
+    const periodLimitOf = (cb: CategoryBudget) => periodCategoryLimit(cb.limit, cycle);
+
     const handleSaveBudget = async (catId: string) => {
         const val = parseAmount(limitVal);
         if (isNaN(val) || val <= 0) { setLimitError("Ingresa un límite válido."); return; }
@@ -811,7 +818,7 @@ function CategoryBudgetTab({
         setCategoryBudgets(all);
     };
 
-    const totalBudgeted = categoryBudgets.reduce((s, b) => s + b.limit, 0);
+    const totalBudgeted = categoryBudgets.reduce((s, b) => s + periodLimitOf(b), 0);
     const totalSpent = categoryBudgets.reduce((s, b) => s + getSpent(b.categoryId), 0);
 
     // Desglose del período por categoría y moneda (solo lectura; el total en Q de arriba sigue usando getSpent)
@@ -863,8 +870,9 @@ function CategoryBudgetTab({
             {categoryBudgets.map(cb => {
                 const cat = getCat(cb.categoryId, settings.customCategories);
                 const spent = getSpent(cb.categoryId);
-                const pct = Math.min((spent / cb.limit) * 100, 100);
-                const over = spent > cb.limit;
+                const limit = periodLimitOf(cb);
+                const pct = Math.min((spent / limit) * 100, 100);
+                const over = spent > limit;
                 const barColor = over ? C.danger : pct > 80 ? C.warning : cat.color;
                 const fxLines = foreignLine(breakdowns.get(cb.categoryId)?.foreign ?? []);
                 const openBreakdown = () => setBreakdownCat(cb.categoryId);
@@ -885,12 +893,12 @@ function CategoryBudgetTab({
                                 <View style={{ flex: 1, flexShrink: 1 }}>
                                     <Text style={s.catName}>{cat.label}</Text>
                                     <Text style={[s.catStatus, { color: barColor }]}>
-                                        {over ? `Excedido ${formatMoney(spent - cb.limit, "Q")}` : `${formatMoney(cb.limit - spent, "Q")} disponibles`}
+                                        {over ? `Excedido ${formatMoney(spent - limit, "Q")}` : `${formatMoney(limit - spent, "Q")} disponibles`}
                                     </Text>
                                 </View>
                                 <View style={{ alignItems: "flex-end" }}>
                                     <Money amount={spent} currency="Q" size="sm" align="right" />
-                                    <Text style={s.catLimit}>de {formatMoney(cb.limit, "Q")}</Text>
+                                    <Text style={s.catLimit}>de {formatMoney(limit, "Q")}</Text>
                                 </View>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -908,6 +916,11 @@ function CategoryBudgetTab({
                                 <Text key={line} style={s.fxLine}>{line}</Text>
                             ))}
                             <AnimatedBar pct={pct} color={barColor} height={8} />
+                            {split && (
+                                <Text style={s.catLimit}>
+                                    {`${formatMoney(limit, "Q")} por ${unit} (${formatMoney(cb.limit, "Q")} al mes)`}
+                                </Text>
+                            )}
                             <View style={s.catFooter}>
                                 <Text style={s.pctLabel}>{Math.round(pct)}%</Text>
                                 <View style={s.viewMore}>
@@ -963,7 +976,11 @@ function CategoryBudgetTab({
             {/* AGREGAR PRESUPUESTO A CATEGORÍAS */}
             <View ref={gridRef} collapsable={false}>
                 <Text style={[s.sectionTitle, { marginTop: 8 }]}>AGREGAR PRESUPUESTO</Text>
-                <Text style={s.sectionHint}>Toca una categoría para asignarle un límite mensual.</Text>
+                <Text style={s.sectionHint}>
+                    {split
+                        ? `Toca una categoría para asignarle un límite mensual; la app lo reparte por ${unit}.`
+                        : "Toca una categoría para asignarle un límite mensual."}
+                </Text>
 
                 <View style={s.catGrid}>
                     {allCats
@@ -1019,7 +1036,10 @@ function CategoryBudgetTab({
             <CategoryBreakdownSheet
                 categoryId={breakdownCat}
                 breakdown={breakdowns.get(breakdownCat)}
-                limit={categoryBudgets.find(b => b.categoryId === breakdownCat)?.limit}
+                limit={(() => {
+                    const cb = categoryBudgets.find(b => b.categoryId === breakdownCat);
+                    return cb ? periodLimitOf(cb) : undefined;
+                })()}
                 period={{ start: fp.start, end: fp.end }}
                 settings={settings}
                 fixedExpenses={fixedExpenses}

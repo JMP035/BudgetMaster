@@ -29,6 +29,7 @@ import type { CapacityContext } from './Capacity';
 import { onIncomeAutoLinked, onPlanInputsChanged } from './NotifEvents';
 import type { IncomeAutoLinkedInfo } from './NotifEvents';
 import { onSettingsChanged } from './SettingsEvents';
+import { budgetThresholdFigures } from './PeriodBudget';
 
 // ─────────────────────────────────────────────────────────────
 // CONFIGURACIÓN — tipos correctos para SDK 54
@@ -637,30 +638,35 @@ export const NotificationService = {
 
         // "transactions" ya incluye la transacción recién agregada (tx)
         const totalSpent = spentQOf(list);
-        const pct = settings.budgetLimit > 0 ? (totalSpent / settings.budgetLimit) * 100 : 0;
-        const remaining = settings.budgetLimit - totalSpent;
+        // El presupuesto y los límites por categoría son mensuales: los umbrales se miden contra el del PERÍODO.
+        const catBudget = categoryBudgets.find(cb => cb.categoryId === tx.category);
+        const catSpent = spentQOf(list, tx.category);
+        const fig = budgetThresholdFigures({
+            settings, spent: totalSpent, catMonthlyLimit: catBudget?.limit, catSpent,
+        });
+        const periodLimit = fig.budgetLimit;
+        const pct = fig.pct;
+        const remaining = fig.remaining;
         const daysLeft = getDaysUntilNextPayment(settings, now);
         const dailyLeft = daysLeft > 0 ? remaining / daysLeft : remaining;
         const ctx = { settings, transactions, categoryBudgets, fixedExpenses };
 
         // ── Alerta por categoría ─────────────────────────────
-        const catBudget = categoryBudgets.find(cb => cb.categoryId === tx.category);
-        if (catBudget && catBudget.limit > 0) {
-            const catSpent = spentQOf(list, tx.category);
-            const catPct = (catSpent / catBudget.limit) * 100;
+        if (catBudget && fig.catLimit > 0) {
+            const catPct = fig.catPct;
             const catLabel = categoryLabelOf(tx.category, settings.customCategories, 'expense');
 
             if (catPct >= 100) {
                 const sent = await this.sendSmartAlert(
                     '🔴 Límite de categoría superado', 'critical',
-                    `Superaste el presupuesto de ${catLabel}. Gastado: Q${catSpent.toFixed(2)} de Q${catBudget.limit}. Exceso: Q${(catSpent - catBudget.limit).toFixed(2)}.`,
+                    `Superaste el presupuesto de ${catLabel}. Gastado: Q${catSpent.toFixed(2)} de Q${fig.catLimit}. Exceso: Q${(catSpent - fig.catLimit).toFixed(2)}.`,
                     ctx, `thr_cat_${tx.category}_100_${fp.key}`,
                 );
                 if (sent) return;
             } else if (catPct >= 80) {
                 const sent = await this.sendSmartAlert(
                     `⚠️ Categoría al ${Math.round(catPct)}%`, 'warning',
-                    `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${catLabel}. Te quedan Q${(catBudget.limit - catSpent).toFixed(2)}.`,
+                    `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${catLabel}. Te quedan Q${(fig.catLimit - catSpent).toFixed(2)}.`,
                     ctx, `thr_cat_${tx.category}_80_${fp.key}`,
                 );
                 if (sent) return;
@@ -671,13 +677,13 @@ export const NotificationService = {
         if (pct >= 100) {
             await this.sendSmartAlert(
                 '🚨 Presupuesto agotado', 'critical',
-                `Has gastado Q${totalSpent.toFixed(2)} — superaste tu límite de Q${settings.budgetLimit} en Q${(totalSpent - settings.budgetLimit).toFixed(2)}. Quedan ${daysLeft} días hasta tu próximo ingreso.`,
+                `Has gastado Q${totalSpent.toFixed(2)} — superaste tu límite de Q${periodLimit} en Q${(totalSpent - periodLimit).toFixed(2)}. Quedan ${daysLeft} días hasta tu próximo ingreso.`,
                 ctx, `thr_budget_100_${fp.key}`,
             );
         } else if (pct >= 80) {
             await this.sendSmartAlert(
                 `⚠️ Vas en el ${Math.round(pct)}% de tu presupuesto`, 'warning',
-                `Gastaste Q${totalSpent.toFixed(2)} de Q${settings.budgetLimit}. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — Q${dailyLeft.toFixed(2)}/día disponibles.`,
+                `Gastaste Q${totalSpent.toFixed(2)} de Q${periodLimit}. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — Q${dailyLeft.toFixed(2)}/día disponibles.`,
                 ctx, `thr_budget_80_${fp.key}`,
             );
         } else if (pct >= 50) {

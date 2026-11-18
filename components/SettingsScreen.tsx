@@ -7,6 +7,8 @@ import {
 import * as LocalAuthentication from "expo-local-authentication";
 import { Account, Currency, CustomCategory, FixedExpense, IncomeSource, PaymentCycle, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
 import { normalizeWeekday } from "../services/FinancialPeriod";
+import { isSplitCycle, periodBudgetLimit, periodUnitName } from "../services/PeriodBudget";
+import { formatMoney } from "../services/format";
 import { WEEKDAY_NAMES, weeklySourceMismatch } from "../services/IncomeSourceView";
 import { Chip, ChipRow } from "./onboarding/OnbPrimitives";
 import { PeriodStartSheet, payDayText } from "./PeriodStartSheet";
@@ -685,13 +687,18 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* PRESUPUESTO */}
-                <Section tutId="settings_budget" onLayoutY={trackY("budget")} icon="wallet-outline" title="Presupuesto Mensual" description="Cuánto planeás gastar cada mes. La app te avisará cuando te acerques al límite.">
+                <Section tutId="settings_budget" onLayoutY={trackY("budget")} icon="wallet-outline" title="Presupuesto Mensual" description="Cuánto planeas gastar al mes. Si cobras por quincena o por semana, la app lo reparte por período.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>
                         <TextInput style={s.input} value={budgetQ} onChangeText={onText(setBudgetQ)} keyboardType="decimal-pad" placeholder="6000.00" placeholderTextColor={C.textMuted} returnKeyType="done" {...focusProps("budget")} />
                     </View>
                     <Text style={s.hint}>Valor inicial sugerido al configurar la app: 80% de tu ingreso mensual.</Text>
+                    {isSplitCycle(cycle) && !isNaN(bQNum) && bQNum > 0 && (
+                        <Text style={s.hint}>
+                            {`Por período: ${formatMoney(periodBudgetLimit({ budgetLimit: bQNum, paymentCycle: cycle }), "Q")} por ${periodUnitName(cycle)}. Con eso se miden el anillo del Inicio, los avisos y el asesor.`}
+                        </Text>
+                    )}
 
                     <Text style={[s.subLabel, { marginTop: 14 }]}>EQUIVALENTE EN DÓLARES (USD)</Text>
                     {usdMode === 'auto' ? (

@@ -12,6 +12,7 @@ import { flatText } from '../Categorizer';
 import { merchantKey, merchantOfTransaction } from '../MerchantRules';
 import { formatDateOnly, parseDateOnly } from '../DateAmount';
 import { formatMoney } from '../format';
+import { periodCategoryLimit } from '../PeriodBudget';
 import { categoryLabelOf, getAllExpenseCategories, getAllIncomeCategories } from '../../categories';
 
 // ─────────────────────────────────────────────────────────────
@@ -408,7 +409,9 @@ function runBudgetStatus(slots: SlotMap, ctx: AssistantContext): QueryResult {
     else foreignCurrencies.add(cur);
   }
 
-  const items = budgets.map(b => {
+  // El límite guardado es mensual: se compara el gasto del período contra el límite repartido a ese período.
+  const items = budgets.map(raw => {
+    const b = { ...raw, limit: periodCategoryLimit(raw.limit, ctx.settings.paymentCycle) };
     const spent = round2(spentQ.get(b.categoryId) ?? 0);
     const pct = b.limit > 0 ? Math.round((spent / b.limit) * 100) : 0;
     return { b, spent, pct };
@@ -506,7 +509,7 @@ export const QUERIES: Record<QueryId, QuerySpec> = {
   budget_status: {
     id: 'budget_status', title: 'Estado de presupuestos',
     geminiName: 'estado_presupuestos',
-    geminiDescription: 'Gasto en quetzales contra el límite de cada presupuesto por categoría en el periodo actual.',
+    geminiDescription: 'Gasto en quetzales contra el límite de cada presupuesto por categoría en el periodo actual (el límite mensual ya viene repartido a ese período).',
     slots: [{ ...CATEGORY_SLOT, type: 'category_expense', description: 'Categoría de gasto a revisar (opcional; sin ella, todas).' }],
     run: runBudgetStatus,
   },

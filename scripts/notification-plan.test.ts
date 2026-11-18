@@ -212,7 +212,7 @@ check('contexto Gemini: deuda = cuotas reales con ratio y base', ctxDebt.indexOf
 check('contexto Gemini: sin cuotas lo dice', ctxText.indexOf('Cuotas de deuda al mes: Q0') >= 0, ctxText);
 check('contexto Gemini: del período, no del mes', ctxText.indexOf('Período de pago actual: 27/10 – 26/11') >= 0 && ctxText.indexOf('Gastado en este período en Q: 1150.00') >= 0 && ctxText.indexOf('Días transcurridos: 23 de 31') >= 0, ctxText);
 const over = periodSnapshot({
-  settings: { budgetLimit: 1000 }, txs, categoryBudgets: [], fixed: [], now: NOW,
+  settings: { budgetLimit: 1000, paymentCycle: 'monthly' }, txs, categoryBudgets: [], fixed: [], now: NOW,
   period: computeFinancialPeriod(settings, NOW, null) as never, daysLeft: 9, labelOfCategory: () => '',
 });
 check('briefing: presupuesto superado', buildBriefingFallbackText('Ana', over, 'F').indexOf('superado tu presupuesto en Q150.00') >= 0);
