@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 import { C } from '../theme';
 import type { TutorialRequirement } from './TutorialRequirements';
 
@@ -45,11 +46,26 @@ export interface Tutorial {
     steps: TutorialStep[];
     // el tutorial completo se omite cuando la sincronización SMS está desactivada
     requiresSms?: boolean;
+    // solo existe en Android: en otra plataforma el recorrido se reduce a un paso que explica que no está disponible
+    androidOnly?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
 // TUTORIALES
 // ─────────────────────────────────────────────────────────────
+// Fuera de Android un tutorial `androidOnly` se reduce a un paso que dice que no está disponible (nunca señala nada).
+function androidOnlyNotice(t: Tutorial): Tutorial {
+    if (!t.androidOnly) return t;
+    return {
+        ...t,
+        steps: [{
+            id: `${t.id}_na`, position: 'center', icon: 'information-circle-outline',
+            title: 'Solo para Android',
+            description: 'El widget de la pantalla de inicio está disponible solo en teléfonos Android. En iPhone y en la versión web no existe; la app funciona igual, sin él.',
+        }],
+    };
+}
+
 export const TUTORIALS: Tutorial[] = [
 
     // ── Tour inicial ──────────────────────────────────────────
@@ -762,6 +778,35 @@ export const TUTORIALS: Tutorial[] = [
         ],
     },
 
+    // ── Widget de la pantalla de inicio (solo Android) ────────
+    {
+        id: 'tutorial_widget', title: 'Widget en tu pantalla de inicio',
+        description: 'Mirá cómo vas sin abrir la app: agregarlo, qué muestra, el ojo y «+ gasto».',
+        icon: 'apps-outline', color: C.accent, androidOnly: true,
+        steps: [
+            {
+                id: 'wid_1', position: 'center', icon: 'add-circle-outline',
+                title: '1. Agregalo desde tu teléfono',
+                description: 'Mantené presionado un espacio vacío de la pantalla de inicio de tu teléfono, tocá «Widgets», buscá «BudgetMaster», elegí el tamaño (pequeño 2×2 o mediano 4×2) y arrastralo. Abrí la app al menos una vez para que cargue tus cifras.',
+            },
+            {
+                id: 'wid_2', position: 'center', icon: 'speedometer-outline',
+                title: '2. Qué muestra',
+                description: 'El pequeño: lo disponible del período y los días al cobro. El mediano: lo disponible por día, la barra del presupuesto, el próximo pago de tarjeta (fecha y monto, «estimado» si todavía no escribiste el estado de cuenta real), el próximo gasto fijo, el semáforo de capacidad de pago y los saldos de tus cuentas con seguimiento. Son las mismas cifras del Inicio y se actualizan cuando abrís la app o registrás algo.',
+            },
+            {
+                id: 'wid_3', position: 'center', icon: 'eye-off-outline',
+                title: '3. El ojo: ocultar o ver los montos',
+                description: 'Por defecto los montos salen ocultos (••••) para que nadie los vea de reojo. Tocá el ojo del widget para verlos y tocalo otra vez para ocultarlos. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.',
+            },
+            {
+                id: 'wid_4', position: 'center', icon: 'add-outline',
+                title: '4. «+ gasto»',
+                description: 'El botón «+ gasto» del widget abre BudgetMaster directo en la pestaña Agregar para anotar un gasto al instante. Si tenés la seguridad biométrica activada, la app te la pide primero.',
+            },
+        ],
+    },
+
     // ── Ajustes ───────────────────────────────────────────────
     {
         id: 'tutorial_ajustes', title: 'Ajustes',
@@ -879,8 +924,9 @@ export const TutorialService = {
     // Con smsEnabled === false quita lo relacionado con SMS (tutoriales y pasos marcados con
     // requiresSms) y usa los textos alternativos; por defecto devuelve TUTORIALS sin cambios.
     getTutorials(opts?: { smsEnabled?: boolean }): Tutorial[] {
-        if (opts?.smsEnabled !== false) return TUTORIALS;
-        return TUTORIALS
+        const base = Platform.OS === 'android' ? TUTORIALS : TUTORIALS.map(androidOnlyNotice);
+        if (opts?.smsEnabled !== false) return base;
+        return base
             .filter(t => !t.requiresSms)
             .map(t => ({
                 ...t,

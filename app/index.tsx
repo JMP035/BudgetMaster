@@ -5,16 +5,19 @@ import {
   StyleSheet, Text, TouchableOpacity,
   UIManager, View
 } from "react-native";
+import { useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Account, AppData, CategoryBudget, CreditInstallment,
-  DEFAULT_SETTINGS, FixedExpense, IncomeSource, parseAmount, SavingsGoal,
-  StorageService, Transaction, UserSettings
+  DEFAULT_SETTINGS, FixedExpense, getCurrentFinancialPeriod, getDaysUntilNextPayment, IncomeSource, parseAmount,
+  SavingsGoal, StorageService, Transaction, UserSettings
 } from "../services/storage";
 import { ExchangeRateService } from "../services/ExchangeRateService";
 import { NotificationService } from "../services/NotificationService";
 import { isSmsFeatureOn } from "../services/features";
 import { withDerivedBalances } from "../services/Balances";
+import { buildWidgetSnapshot } from "../services/WidgetSnapshot";
+import { refreshWidgets } from "../services/WidgetBridge";
 import { maybeAutoSync } from "../services/SmsAutoSync";
 import { onSettingsChanged } from "../services/SettingsEvents";
 import { hasSomethingToShow } from "../services/SmsService";
@@ -162,6 +165,10 @@ function AppContent() {
   // true mientras la importación guiada espera (al recorrido o a que arranque): frena la sync automática.
   const pendingImportRef = useRef(false);
 
+  // «+ gasto» del widget de Android: budgetmaster://quick-add llega como /?open=add.
+  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
+  const quickAddHandledRef = useRef(false);
+
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
     // El reset mensual debe correr ANTES de leer los datos,
@@ -280,6 +287,39 @@ function AppContent() {
     });
     return () => sub.remove();
   }, [runAutoSync]);
+
+  // «+ gasto» del widget: abre la pestaña Agregar UNA sola vez, ya pasada la splash, el onboarding y la biometría
+  // (los hijos de BiometricGate solo se montan después de desbloquear: el bloqueo nunca se salta).
+  useEffect(() => {
+    if (openParam !== "add" || quickAddHandledRef.current) return;
+    if (showSplash || !settings.onboardingComplete || !settings.cardsOnboardingComplete) return;
+    quickAddHandledRef.current = true;
+    setShowAccounts(false);
+    setShowAI(false);
+    setTab("add");
+  }, [openParam, showSplash, settings.onboardingComplete, settings.cardsOnboardingComplete]);
+
+  // ── Widget de Android: la foto de cifras se rehace 1 s después del último cambio de datos ──
+  useEffect(() => {
+    if (Platform.OS !== "android" || showSplash || !settings.onboardingComplete) return;
+    const timer = setTimeout(() => {
+      try {
+        const now = new Date();
+        const snapshot = buildWidgetSnapshot({
+          settings, transactions: txs, fixedExpenses, accounts, creditInstallments, incomeSources,
+          daysLeft: getDaysUntilNextPayment(settings, now),
+          periodAt: d => {
+            const fp = getCurrentFinancialPeriod(settings, d);
+            return { start: fp.start, end: fp.end, nextStart: fp.nextStart };
+          },
+        }, now);
+        void refreshWidgets(snapshot);
+      } catch (e) {
+        console.warn("[widget] foto de cifras:", e);
+      }
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [showSplash, txs, settings, accounts, fixedExpenses, creditInstallments, incomeSources]);
 
   // ── Handlers ──────────────────────────────────────────────
   const hRefresh = async () => {

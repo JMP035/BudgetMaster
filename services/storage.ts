@@ -36,6 +36,8 @@ import {
 import { sanitizeDraft } from './OnboardingPlan';
 import type { OnboardingCommit, OnboardingDraft } from './OnboardingPlan';
 import { sanitizeGettingStarted } from './GettingStarted';
+import { sanitizeWidgetSnapshot } from './WidgetSnapshot';
+import type { WidgetSnapshot } from './WidgetSnapshot';
 import { migrateMilitaryToSalary } from './CategoryMigration';
 import { emitSettingsChanged } from './SettingsEvents';
 import { emitPlanInputsChanged } from './NotifEvents';
@@ -424,7 +426,12 @@ const K = {
   GETTING_STARTED: '@bm_getting_started',
   ASSISTANT_CHAT: '@bm_assistant_chat',
   MIGRATIONS: '@bm_migrations',
+  WIDGET_SNAPSHOT: '@bm_widget_snapshot',
+  WIDGET_PRIVACY: '@bm_widget_privacy',
 };
+
+/** Privacidad del widget de Android: 'hidden' (por defecto) esconde los montos; 'shown' los muestra. */
+export type WidgetPrivacy = 'hidden' | 'shown';
 
 /** Lista JSON guardada; [] si no hay nada. A diferencia de los getters, propaga los errores (commitOnboarding). */
 async function readListStrict<T>(key: string): Promise<T[]> {
@@ -2455,6 +2462,30 @@ export const StorageService = {
 
   async saveGettingStarted(s: GettingStartedState): Promise<void> {
     try { await AsyncStorage.setItem(K.GETTING_STARTED, JSON.stringify(s)); } catch { }
+  },
+
+  /** Última foto de cifras para el widget de Android; null si todavía no se guardó (o es de otra versión). */
+  async getWidgetSnapshot(): Promise<WidgetSnapshot | null> {
+    try {
+      const data = await AsyncStorage.getItem(K.WIDGET_SNAPSHOT);
+      return data ? sanitizeWidgetSnapshot(JSON.parse(data)) : null;
+    } catch { return null; }
+  },
+
+  async saveWidgetSnapshot(s: WidgetSnapshot): Promise<void> {
+    try { await AsyncStorage.setItem(K.WIDGET_SNAPSHOT, JSON.stringify(s)); } catch { }
+  },
+
+  /** Privacidad del widget: 'hidden' por defecto (los montos no se ven hasta tocar el ojo). */
+  async getWidgetPrivacy(): Promise<WidgetPrivacy> {
+    try {
+      const v = await AsyncStorage.getItem(K.WIDGET_PRIVACY);
+      return v === 'shown' ? 'shown' : 'hidden';
+    } catch { return 'hidden'; }
+  },
+
+  async saveWidgetPrivacy(p: WidgetPrivacy): Promise<void> {
+    try { await AsyncStorage.setItem(K.WIDGET_PRIVACY, p); } catch { }
   },
 
   /** Fusiona `p` con el estado guardado; si no existe, lo crea (con tourDeferred: true) y devuelve el resultado. */

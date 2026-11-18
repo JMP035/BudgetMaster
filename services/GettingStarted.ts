@@ -143,6 +143,7 @@ export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tutorial_stats', label: 'Estadísticas' },
   { tutorialId: 'tutorial_ia', label: 'Asesor' },
   { tutorialId: 'tutorial_ajustes', label: 'Ajustes' },
+  { tutorialId: 'tutorial_widget', label: 'Widget' },
   { tutorialId: 'tutorial_sms', label: 'SMS', requiresSms: true },
 ];
 

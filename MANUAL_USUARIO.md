@@ -20,9 +20,10 @@ BudgetMaster es tu asesor financiero personal: registra tus gastos e ingresos (m
 10. [Ajustes](#10-ajustes)
 11. [Seguridad biométrica](#11-seguridad-biométrica)
 12. [Notificaciones y alertas](#12-notificaciones-y-alertas)
-13. [Academia (tutoriales)](#13-academia-tutoriales)
-14. [Preguntas frecuentes](#14-preguntas-frecuentes)
-15. [Privacidad](#15-privacidad)
+13. [Widget (Android)](#13-widget-android)
+14. [Academia (tutoriales)](#14-academia-tutoriales)
+15. [Preguntas frecuentes](#15-preguntas-frecuentes)
+16. [Privacidad](#16-privacidad)
 
 ---
 
@@ -420,7 +421,26 @@ Las alertas de umbral incluyen una frase de disciplina financiera (Hill, Kiyosak
 
 ---
 
-## 13. Academia (tutoriales)
+## 13. Widget (Android)
+
+Un **widget en la pantalla de inicio de tu teléfono** para ver cómo vas sin abrir la app. Es **solo para Android**: en iPhone y en la versión web no existe.
+
+**Cómo agregarlo:** mantén presionado un espacio vacío de la pantalla de inicio → **Widgets** → **BudgetMaster** → elige el tamaño y arrástralo. Abre la app al menos una vez para que cargue tus cifras.
+
+| Tamaño | Qué muestra |
+|--------|-------------|
+| Pequeño (2×2) | Lo **disponible del período** y los **días al cobro**. |
+| Mediano (4×2) | Lo **disponible por día**, la **barra del presupuesto** gastado, el **próximo pago de tarjeta** (fecha y monto; «estimado» si todavía no escribes el estado de cuenta real), el **próximo gasto fijo**, el **semáforo de capacidad de pago** y los **saldos** de las cuentas que llevan seguimiento. |
+
+- **El ojo (ocultar los montos):** por defecto los montos salen ocultos (••••). Toca el **ojo** para verlos y tócalo otra vez para ocultarlos de nuevo; vale para los dos widgets. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.
+- **«+ gasto»:** abre BudgetMaster directo en la pestaña **Agregar**. Si tienes la seguridad biométrica activada, te la pide primero.
+- Tocar cualquier otra parte del widget abre la app.
+- Las cifras son las mismas del Inicio (período de pago real, sin traslados ni pagos de tarjeta). Se actualizan cuando abres la app o registras algo, y el sistema los repinta cada ~30 minutos.
+- Un tutorial lo cuenta: **Widget** en la guía del Inicio.
+
+---
+
+## 14. Academia (tutoriales)
 
 Tutoriales interactivos con "spotlight" sobre la pantalla real:
 
@@ -437,12 +457,13 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real:
 11. **Registrar una compra con tarjeta** (también en la guía del Inicio como «Compra con tarjeta») — crear la tarjeta con su corte y su pago, registrar el gasto (o dejar que el SMS lo detecte) y verlo en el «Ciclo abierto».
 12. **Pagar la tarjeta** (también en la guía del Inicio) — la cuenta con la que pagás, el monto real del estado, registrar el pago o dejar que el SMS lo detecte, y por qué no es un gasto nuevo.
 13. **Llevar el saldo de tus cuentas** (también en la guía del Inicio como «Saldos y transferencias») — elegir el modo de saldo, el saldo de partida, cómo lo mueven los movimientos y las transferencias (sueldo → transferir → pagar la tarjeta), «Ajustar al saldo real» y «¿A qué cuenta fue?».
+14. **Widget en tu pantalla de inicio** (también en la guía del Inicio como «Widget», solo Android) — agregarlo desde el teléfono, qué muestra cada tamaño, el ojo para ocultar los montos (ocultos por defecto) y «+ gasto».
 
 En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Para repetirlos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 
 ---
 
-## 14. Preguntas frecuentes
+## 15. Preguntas frecuentes
 
 **¿Por qué el "período" no coincide con el mes calendario?**
 Porque la app trabaja de pago a pago según tu ciclo (ej. si te pagan el 15, tu período va del 15 al 14 del mes siguiente). Así el presupuesto refleja tu realidad. Si tu ciclo es "irregular", sí se usa el mes calendario. Además, el período empieza el día en que de verdad te pagan: si tu día de pago cae en fin de semana o feriado, arranca el día hábil anterior o siguiente según tus reglas, y siempre podés fijarlo a mano (tocá el rango del período en el Inicio).
@@ -467,7 +488,7 @@ Revisá en Ajustes/onboarding tu ciclo y día(s) de pago. Para quincenal deben s
 
 ---
 
-## 15. Privacidad
+## 16. Privacidad
 
 - **Todos tus datos se guardan localmente** en tu teléfono (AsyncStorage). No hay servidores de BudgetMaster ni cuentas en la nube.
 - La lectura de SMS filtra por palabras bancarias y **nunca** procesa mensajes personales; el análisis ocurre en el dispositivo.
