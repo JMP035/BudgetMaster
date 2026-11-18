@@ -413,6 +413,35 @@ export const NotificationService = {
         }
     },
 
+    // ── Aviso de prueba ──────────────────────────────────────
+    /**
+     * Envía un aviso de prueba en un par de segundos (ignora horas silenciosas y tope: es a pedido de la persona).
+     * Si falta el permiso lo pide. 'sent' = programado; 'denied' = permiso denegado; 'unavailable' = web o error.
+     */
+    async sendTestNotification(): Promise<'sent' | 'denied' | 'unavailable'> {
+        if (Platform.OS === 'web') return 'unavailable';
+        try {
+            let granted = (await Notifications.getPermissionsAsync()).status === 'granted';
+            if (!granted) granted = await NotificationService.requestPermissions();
+            if (!granted) return 'denied';
+            await Notifications.scheduleNotificationAsync({
+                content: {
+                    title: 'Aviso de prueba',
+                    body: 'Así te llegarán los avisos de BudgetMaster. Si lo ves, las notificaciones funcionan.',
+                    sound: true,
+                    data: { kind: 'test' },
+                },
+                trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 2 },
+            });
+            // Con el permiso recién concedido, deja el plan programado al día.
+            NotificationService.requestSync();
+            return 'sent';
+        } catch (e) {
+            console.warn('sendTestNotification error:', e);
+            return 'unavailable';
+        }
+    },
+
     // ── Plan programado (B9a) ────────────────────────────────
     /** Pide sincronizar el plan (con espera para juntar varios cambios seguidos en una sola corrida). */
     requestSync(delayMs: number = SYNC_DEBOUNCE_MS): void {

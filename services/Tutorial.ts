@@ -137,7 +137,13 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_6', elementId: 'dash_budget', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Presupuesto del período',
-                description: 'Cuánto llevás gastado frente al presupuesto mensual que definiste en Ajustes. Cambia de color al acercarte al límite.',
+                description: 'Cuánto llevás gastado frente al presupuesto mensual que definiste en Ajustes. Cambia de color al acercarte al límite. Si tenés una tarjeta con corte y día de pago, justo debajo aparece el semáforo de capacidad de pago (verde, ámbar o rojo): te dice qué parte de lo que tendrás para pagarla ya está comprometida.',
+            },
+            {
+                id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
+                title: 'Semáforo de capacidad de pago',
+                description: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás: verde si usás menos del 70 %, ámbar desde el 70 %, rojo desde el 90 % y «no alcanza» al llegar al 100 %. Tocalo para ver el detalle: de dónde sale lo que tendrás (los saldos de tus cuentas más los ingresos que esperás antes del pago, o tu ingreso declarado si ninguna cuenta lleva saldo) y cuánto te sobra o te falta.',
+                emptyHint: 'Aparece cuando tenés una tarjeta con día de corte y de pago, y algo por pagar. Creala en Cuentas.',
             },
             {
                 id: 'ini_7', elementId: 'accounts_widget', screen: 'dashboard', position: 'top', icon: 'business-outline', padding: 8,
@@ -808,6 +814,11 @@ export const TUTORIALS: Tutorial[] = [
                 id: 'set_8', elementId: 'settings_gemini', screen: 'settings', position: 'top', icon: 'sparkles-outline', padding: 8,
                 title: 'Gemini (opcional)',
                 description: 'Pegá tu API Key gratuita de aistudio.google.com para que el Asesor responda en lenguaje natural. Sin clave, el asesor funciona igual en modo local.',
+            },
+            {
+                id: 'set_notif', elementId: 'settings_notifications', screen: 'settings', position: 'top', icon: 'notifications-outline', padding: 8,
+                title: 'Notificaciones',
+                description: 'Elegí qué avisos recibir: gastos fijos, pago y corte de tarjeta, última visacuota, deudas, llegada del sueldo, capacidad de pago, fin de período, resumen diario y semanal, alertas de presupuesto y recordatorio del Asesor IA. Ya no hay un aviso por cada gasto: el resumen diario los junta en uno solo. También fijás la hora de los recordatorios, las horas silenciosas (dentro de ellas no suena nada y el aviso se mueve a cuando terminan) y el máximo de avisos por día. «Enviar aviso de prueba» te manda uno en unos segundos para comprobar que funcionan. Se guardan con el botón del propio detalle, no con Guardar Cambios.',
             },
             {
                 id: 'set_9', elementId: 'settings_categories', screen: 'settings', position: 'top', icon: 'pricetag-outline', padding: 8,

@@ -63,6 +63,7 @@ Es tu centro de mando. De arriba hacia abajo:
 - **Balance por moneda** — ingresos, gastos y neto del período en Q (y en USD si tenés movimientos en dólares).
 - **Comparativa con el período anterior** — cuánto más (rojo) o menos (verde) llevás gastado respecto al período pasado.
 - **Anillo de presupuesto** — porcentaje del presupuesto del período ya consumido. Cambia a amarillo al superar el 80 % y a rojo al excederlo.
+- **Semáforo de capacidad de pago** — aparece debajo del anillo si tienes una tarjeta con día de corte y de pago y algo por pagar. Muestra, para la tarjeta con el pago más próximo, qué parte de lo que tendrás para pagarla ya está comprometida («Capacidad de pago: 62% comprometido»): **verde** por debajo del 70 %, **ámbar** desde el 70 %, **rojo** desde el 90 % (y «no alcanza» al llegar al 100 %). Tócalo para ver el detalle: lo que tendrás (los saldos de tus cuentas más los ingresos que esperas antes de la fecha de pago, o tu ingreso declarado si ninguna cuenta lleva saldo; el detalle dice cuál se usó), lo que debes hasta esa fecha (estado de la tarjeta, gastos fijos por pagar y otras deudas) y cuánto te queda libre o te falta.
 - **Widgets**: Mis Cuentas (patrimonio, deuda, cuotas del mes), Gastos Fijos (pagados/pendientes, vencidos), Metas de Ahorro (avance).
 - **Gráfica de gastos de los últimos 6 meses** y **transacciones recientes**.
 
@@ -362,6 +363,7 @@ Podés acotar el rango con frases como "este período", "período anterior", "ay
 - **Seguridad biométrica** — ver [sección 11](#11-seguridad-biométrica). Solo aparece si tu teléfono tiene huella/rostro configurado.
 - **Sincronización SMS** — activar/desactivar la lectura automática.
 - **Inteligencia Artificial (Gemini)** — tu API Key.
+- **Notificaciones** — resume tus avisos («Resumen diario 8:00 pm · Recordatorios 8:00 am · Silencio 10 pm–7 am») y **Configurar notificaciones** abre el detalle (ver [sección 12](#12-notificaciones-y-alertas)). Se guarda con su propio botón **Guardar**, no con *Guardar Cambios*.
 - **Mis Categorías** — creá categorías personalizadas: nombre, si aplica a gastos/ingresos/ambos, color e ícono. Aparecen junto a las predefinidas al registrar transacciones. También puedes crearlas al vuelo con **+ Nueva categoría**, y para cambiar el nombre, color, ícono o tipo de una propia, tócala en esta lista.
 - **Academia** — reiniciar los tutoriales.
 - **Guardar Cambios** — 💾 **los cambios no se aplican hasta tocar este botón.**
@@ -384,10 +386,12 @@ La app envía notificaciones locales (acepta el permiso la primera vez). Están 
 
 **Reglas generales**
 
-- **Horas silenciosas:** de 22:00 a 07:00 no suena nada; lo que caiga en ese rato se mueve a las 07:00.
-- **Tope por día:** máximo 4 avisos por día (si hay más, quedan los más importantes: primero los pagos).
-- **Recordatorios de pagos:** a las 08:00.
-- **Interruptor por tipo:** cada tipo de aviso se puede encender o apagar (las preferencias ya están guardadas en tus ajustes; la pantalla para cambiarlas llega pronto).
+- **Horas silenciosas:** por defecto de 22:00 a 07:00 no suena nada; lo que caiga en ese rato se mueve a la hora en que termina el silencio.
+- **Tope por día:** por defecto máximo 4 avisos por día (si hay más, quedan los más importantes: primero los pagos).
+- **Recordatorios de pagos:** por defecto a las 08:00.
+- **Interruptor por tipo:** cada tipo de aviso se puede encender o apagar.
+
+**Dónde se cambia todo esto:** en **Ajustes → Notificaciones → Configurar notificaciones**. Ahí encuentras un interruptor con su explicación por cada tipo de aviso (gastos fijos, pago de tarjeta, corte de tarjeta, última visacuota, deudas, llegó tu sueldo, capacidad de pago, fin de período, resumen diario, resumen semanal, alertas de presupuesto y recordatorio del Asesor IA), la **hora de los recordatorios** (6 am a 12 pm), el **resumen diario** (interruptor y hora), las **horas silenciosas** (desde y hasta) y el **máximo de avisos por día** (de 1 a 8). Se guardan con **Guardar** y la app reajusta enseguida lo que tiene programado. **Enviar aviso de prueba** te manda uno en unos segundos (aunque estés en horas silenciosas) y, si el permiso de notificaciones está denegado, te lo dice y te lleva a los ajustes del teléfono. El **resumen diario** reemplaza al aviso por cada gasto.
 
 **Avisos programados** (la app los prepara para los próximos ~2 meses y los reajusta cada vez que cambian tus datos)
 
@@ -407,7 +411,7 @@ La app envía notificaciones locales (acepta el permiso la primera vez). Están 
 | Aviso | Cuándo |
 |-------|--------|
 | Llegó tu sueldo | Cuando la app reconoce solo el depósito de tu sueldo: «comprometido X, libre Y» hasta tu próximo pago. |
-| Capacidad de pago | Si el pago de una tarjeta ya compromete el 70 % (aviso), el 90 % (alerta) o el 100 % (no alcanza) de lo que tendrás: tus saldos más los ingresos que esperás **antes de la fecha de pago**. Se avisa al registrar un cargo de la tarjeta, al llegar el sueldo y 5 días antes del pago, una sola vez por nivel. Si ninguna cuenta lleva saldo, usa tu ingreso declarado y el aviso lo dice. |
+| Capacidad de pago | Si el pago de una tarjeta ya compromete el 70 % (aviso), el 90 % (alerta) o el 100 % (no alcanza) de lo que tendrás: tus saldos más los ingresos que esperás **antes de la fecha de pago**. Se avisa al registrar un cargo de la tarjeta, al llegar el sueldo y 5 días antes del pago, una sola vez por nivel. Si ninguna cuenta lleva saldo, usa tu ingreso declarado y el aviso lo dice. En el Inicio, el **semáforo de capacidad de pago** (ver [sección 2](#2-pantalla-de-inicio-dashboard)) muestra lo mismo en cualquier momento. |
 | ⚠️ Umbrales de presupuesto | Al llegar al 50 %, 80 % y 100 % del presupuesto del período, y al 80 % y 100 % de una categoría: una vez por umbral y período, con el gasto diario que te queda. |
 | 🎯 / 🏆 Metas | Al pasar el 50 % y al completar una meta. |
 

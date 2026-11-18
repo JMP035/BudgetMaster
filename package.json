@@ -32,7 +32,8 @@
     "test:balances": "sucrase-node scripts/balances.test.ts",
     "test:transfer-form": "sucrase-node scripts/transfer-form.test.ts",
     "test:capacity": "sucrase-node scripts/capacity.test.ts",
-    "test:notification-plan": "sucrase-node scripts/notification-plan.test.ts"
+    "test:notification-plan": "sucrase-node scripts/notification-plan.test.ts",
+    "test:notif-ui": "sucrase-node scripts/notif-ui.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",

@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator, Animated, Easing, Linking, Modal, Platform, RefreshControl,
     ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
 import {
-    Account, CategoryBudget, CreditInstallment, FixedExpense,
+    Account, CategoryBudget, CreditInstallment, FixedExpense, IncomeSource,
     FinancialPeriod, SavingsGoal, StorageService, Transaction, UserSettings,
     calcCreditCommitments, calcFinancialScore, calcNetWorthFromAccounts,
     getAccountMonthlyInstallmentTotal, getCurrentFinancialPeriod,
@@ -36,6 +36,14 @@ import { InlineNotice } from "./InlineNotice";
 import { useGlassDialog } from "./GlassDialogProvider";
 import { useUndoLastSync } from "./useUndoLastSync";
 import PeriodStartSheet from "./PeriodStartSheet";
+import { capacityFor } from "../services/Capacity";
+import type { CapacityContext, CapacityResult } from "../services/Capacity";
+import { sanitizePayRules } from "../services/PayCalendar";
+import { fmtDM } from "../services/NotificationTexts";
+import {
+    capacityBasisText, capacityChipText, capacityLevelLabel, capacityPct, capacityTone, dueInText,
+} from "../services/NotifUi";
+import type { CapacityTone } from "../services/NotifUi";
 
 type SyncDialogState = Omit<GlassDialogProps, "visible" | "onClose">;
 
@@ -502,6 +510,109 @@ const ni = StyleSheet.create({
 });
 
 // ─────────────────────────────────────────────────────────────
+// SEMÁFORO DE CAPACIDAD DE PAGO (chip + detalle en vidrio, no Alert nativo)
+// ─────────────────────────────────────────────────────────────
+const TONE_COLOR: Record<CapacityTone, string> = { green: C.success, amber: C.warning, red: C.danger };
+
+function CapacityChip({ cap, onPress }: { cap: CapacityResult; onPress: () => void }) {
+    const color = TONE_COLOR[capacityTone(cap.level)];
+    const text = capacityChipText(cap.ratio);
+    return (
+        <GlassCard radius={16} blur={false} leftAccentColor={color} style={s.glassOuter} contentStyle={cs.chipContent}>
+            <TouchableOpacity
+                onPress={onPress}
+                activeOpacity={0.75}
+                style={cs.chipRow}
+                accessibilityRole="button"
+                accessibilityLabel={`${text}. ${capacityLevelLabel(cap.level)}. Toca para ver el detalle`}
+            >
+                <View style={[cs.dot, { backgroundColor: color }]} />
+                <View style={cs.chipTextWrap}>
+                    <Text style={cs.chipTitle}>{text}</Text>
+                    <Text style={cs.chipSub} numberOfLines={2}>
+                        {`${cap.cardName} · vence el ${fmtDM(cap.due)} (${dueInText(cap.daysToDue)}) · ${capacityLevelLabel(cap.level)}`}
+                    </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={C.textMuted} />
+            </TouchableOpacity>
+        </GlassCard>
+    );
+}
+
+function CapacityDetailModal({ cap, onClose }: { cap: CapacityResult; onClose: () => void }) {
+    const color = TONE_COLOR[capacityTone(cap.level)];
+    const p = cap.parts;
+    const gap = cap.resources - cap.committed;
+    const row = (label: string, value: string, strong = false) => (
+        <View style={cs.row}>
+            <Text style={[cs.rowLabel, strong && cs.rowStrong]}>{label}</Text>
+            <Text style={[cs.rowValue, strong && cs.rowStrong]}>{value}</Text>
+        </View>
+    );
+    return (
+        <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+            <View style={ni.overlay}>
+                <GlassCard radius={20} style={ni.card} contentStyle={ni.content} blur={false}>
+                    <View style={[ni.iconWrap, { borderColor: color + "66", backgroundColor: color + "22" }]}>
+                        <Ionicons name="speedometer-outline" size={22} color={color} />
+                    </View>
+                    <Text style={ni.title}>{`Capacidad de pago: ${capacityPct(cap.ratio)}%`}</Text>
+                    <Text style={ni.body}>
+                        {`${capacityLevelLabel(cap.level)}. El pago de ${cap.cardName} vence el ${fmtDM(cap.due)} (${dueInText(cap.daysToDue)}). Es la tarjeta con el pago más próximo.`}
+                    </Text>
+
+                    <Text style={cs.group}>LO QUE TENDRÁS</Text>
+                    {cap.basis === "balances" ? (
+                        <>
+                            {row("Saldos de tus cuentas", formatMoney(p.balances, "Q"))}
+                            {row("Ingresos esperados antes del pago", formatMoney(p.expectedIncome, "Q"))}
+                        </>
+                    ) : (
+                        row("Ingreso declarado que te queda del período", formatMoney(p.declared, "Q"))
+                    )}
+                    {row("Total", formatMoney(cap.resources, "Q"), true)}
+
+                    <Text style={cs.group}>LO QUE DEBES HASTA ESA FECHA</Text>
+                    {row(p.statementIsEstimated ? "Estado de la tarjeta (estimado)" : "Estado de la tarjeta", formatMoney(p.statementTotal, "Q"))}
+                    {p.fixed > 0 && row("Gastos fijos por pagar", formatMoney(p.fixed, "Q"))}
+                    {p.otherDebts > 0 && row("Otras tarjetas y préstamos", formatMoney(p.otherDebts, "Q"))}
+                    {row("Total comprometido", formatMoney(cap.committed, "Q"), true)}
+
+                    <Text style={[cs.result, { color }]}>
+                        {gap >= 0
+                            ? `Te quedarían ${formatMoney(gap, "Q")} libres.`
+                            : `Te faltarían ${formatMoney(Math.abs(gap), "Q")}.`}
+                    </Text>
+                    <Text style={ni.footnote}>
+                        {capacityBasisText(cap.basis)}
+                        {p.installmentsIncluded > 0 ? ` Las cuotas de visacuotas de este ciclo (${formatMoney(p.installmentsIncluded, "Q")}) ya van dentro del estado: no se suman dos veces.` : ""}
+                    </Text>
+
+                    <TouchableOpacity style={ni.btn} onPress={onClose} accessibilityRole="button">
+                        <Text style={ni.btnTxt}>Entendido</Text>
+                    </TouchableOpacity>
+                </GlassCard>
+            </View>
+        </Modal>
+    );
+}
+
+const cs = StyleSheet.create({
+    chipContent: { paddingVertical: 12, paddingHorizontal: 14 },
+    chipRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 44 },
+    dot: { width: 12, height: 12, borderRadius: 6 },
+    chipTextWrap: { flex: 1, flexShrink: 1 },
+    chipTitle: { color: C.textPrimary, fontSize: 13, fontWeight: "800" },
+    chipSub: { color: C.textSub, fontSize: 11, marginTop: 2, lineHeight: 15 },
+    group: { color: C.textMuted, fontSize: 11, fontWeight: "900", letterSpacing: 1, marginTop: 12, marginBottom: 4 },
+    row: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10, paddingVertical: 3 },
+    rowLabel: { color: C.textSub, fontSize: 13, flex: 1, flexShrink: 1 },
+    rowValue: { color: C.text, fontSize: 13, fontWeight: "700", flexShrink: 0 },
+    rowStrong: { color: C.textPrimary, fontWeight: "900" },
+    result: { fontSize: 14, fontWeight: "900", marginTop: 12 },
+});
+
+// ─────────────────────────────────────────────────────────────
 // DASHBOARD PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 interface Props {
@@ -570,6 +681,7 @@ export default function DashboardScreen({
     const budgetRef = useTutorialRef('dash_budget');
     const fixedRef = useTutorialRef('dash_fixed');
     const recentRef = useTutorialRef('dash_recent');
+    const capacityRef = useTutorialRef('dash_capacity');
     const tutScroll = useTutorialScroll('dashboard');
 
     // ── PERÍODO FINANCIERO REAL ───────────────────────────────
@@ -586,6 +698,40 @@ export default function DashboardScreen({
     const [inboxCount, setInboxCount] = useState(0);
     const [showPeriodSheet, setShowPeriodSheet] = useState(false);
     const [showPeriodNotice, setShowPeriodNotice] = useState(false);
+    const [incomeSources, setIncomeSources] = useState<IncomeSource[]>([]);
+    const [showCapacity, setShowCapacity] = useState(false);
+
+    // Semáforo de capacidad de pago: la tarjeta con el pago más próximo. Las fuentes de ingreso no llegan por props.
+    useEffect(() => {
+        let cancelled = false;
+        StorageService.getIncomeSources().then(l => { if (!cancelled) setIncomeSources(l); }).catch(() => { });
+        return () => { cancelled = true; };
+    }, [transactions.length, accounts]);
+    const capacity: CapacityResult | null = useMemo(() => {
+        try {
+            const cards = accounts.filter(a => a.isActive && a.type === "credit" && !!a.cutoffDay && !!a.paymentDueDay);
+            if (cards.length === 0) return null;
+            const ctx: CapacityContext = {
+                now: new Date(),
+                accounts, txs: transactions, insts: creditInstallments, fixed: fixedExpenses, sources: incomeSources,
+                exchangeRate: settings.exchangeRate, monthlyIncome: settings.monthlyIncome,
+                payRules: sanitizePayRules(settings.payRules), cycle: fixedCycleConfig(settings),
+                periodAt: d => {
+                    const fp = getCurrentFinancialPeriod(settings, d);
+                    return { start: fp.start, end: fp.end, nextStart: fp.nextStart };
+                },
+            };
+            let best: CapacityResult | null = null;
+            for (const c of cards) {
+                const r = capacityFor(c, ctx);
+                if (r && (!best || r.due.getTime() < best.due.getTime())) best = r;
+            }
+            return best;
+        } catch (e) {
+            console.warn("[Dashboard] capacidad de pago:", e);
+            return null;
+        }
+    }, [accounts, transactions, creditInstallments, fixedExpenses, incomeSources, settings]);
 
     // Aviso único: el período ahora puede empezar antes (fin de semana, feriado o sueldo adelantado).
     // Solo mensual/quincenal y solo si el inicio efectivo del período actual difiere del nominal.
@@ -1094,6 +1240,13 @@ export default function DashboardScreen({
                 </GlassCard>
             </View>
 
+            {/* SEMÁFORO DE CAPACIDAD DE PAGO (solo con tarjetas con corte y pago) */}
+            {capacity && (
+                <View ref={capacityRef} collapsable={false}>
+                    <CapacityChip cap={capacity} onPress={() => setShowCapacity(true)} />
+                </View>
+            )}
+
             {/* WIDGET CUENTAS */}
             <View ref={accountsRef} collapsable={false}>
                 <AccountsWidget
@@ -1162,6 +1315,7 @@ export default function DashboardScreen({
             </View>
             </ScrollView>
             <NetWorthInfoModal visible={showNetWorthInfo} onClose={() => setShowNetWorthInfo(false)} />
+            {showCapacity && capacity && <CapacityDetailModal cap={capacity} onClose={() => setShowCapacity(false)} />}
             {dialog && <GlassDialog visible onClose={closeDialog} {...dialog} />}
             {showPeriodSheet && (
                 <PeriodStartSheet

@@ -8,6 +8,9 @@ import * as LocalAuthentication from "expo-local-authentication";
 import { Account, Currency, CustomCategory, FixedExpense, PaymentCycle, StorageService, Transaction, UserSettings, getCurrentFinancialPeriod, parseAmount } from "../services/storage";
 import { PeriodStartSheet, payDayText } from "./PeriodStartSheet";
 import SmsPendingSheet from "./SmsPendingSheet";
+import NotificationSettingsSheet from "./NotificationSettingsSheet";
+import { sanitizeNotifPrefs } from "../services/NotifPrefs";
+import { prefsSummary } from "../services/NotifUi";
 import { ExchangeRateService, RateResult } from "../services/ExchangeRateService";
 import { TutorialService } from "../services/TutorialService";
 import { buildSmsSampleReport } from "../services/SmsDiagnostics";
@@ -184,6 +187,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
     const [saved, setSaved] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
     const [showPeriod, setShowPeriod] = useState(false);
+    const [showNotif, setShowNotif] = useState(false);
     // Ciclo y día(s) de pago: se guardan con su propio botón (StorageService.updatePaymentSchedule), no con «Guardar Cambios».
     const [cycle, setCycle] = useState<PaymentCycle>(settings.paymentCycle);
     const [payDay1, setPayDay1] = useState(String(settings.paymentCycle === "biweekly" ? (settings.paymentDays?.[0] ?? 15) : settings.paymentDay));
@@ -935,6 +939,18 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     )}
                 </Section>
 
+                {/* NOTIFICACIONES */}
+                <Section tutId="settings_notifications" onLayoutY={trackY("notifications")} icon="notifications-outline" title="Notificaciones" description="Elige qué avisos recibir, a qué hora y cuántos por día.">
+                    <Text style={s.switchLabel}>{prefsSummary(sanitizeNotifPrefs(settings.notif))}</Text>
+                    <GlassButton
+                        kind="secondary"
+                        icon="notifications-outline"
+                        label="Configurar notificaciones"
+                        style={s.ghostBtn}
+                        onPress={() => setShowNotif(true)}
+                    />
+                </Section>
+
                 {/* CATEGORÍAS CUSTOM */}
                 <Section tutId="settings_categories" icon="pricetag-outline" title="Mis Categorías" description="Creá categorías personalizadas para clasificar mejor tus gastos e ingresos.">
                     {customCats.length === 0 ? (
@@ -1012,6 +1028,13 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     settings={settings}
                     onClose={() => setShowPeriod(false)}
                     onChanged={upd => { if (upd) onSave(upd); setPeriodTick(n => n + 1); }}
+                />
+            )}
+            {showNotif && (
+                <NotificationSettingsSheet
+                    settings={settings}
+                    onClose={() => setShowNotif(false)}
+                    onChanged={upd => { onSave(upd); }}
                 />
             )}
             {showNewCat && (
