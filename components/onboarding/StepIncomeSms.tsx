@@ -65,7 +65,7 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
     const analyze = (body: string, receivedAt?: number) => {
         setError(null);
         const t = body.trim();
-        if (!t) { setError("Pegá primero el texto del SMS."); return; }
+        if (!t) { setError("Pega primero el texto del SMS."); return; }
         const r = learnPatternFromSms(t, receivedAt);
         if (!r.ok) { setAnalysis(null); setError(patternFailText(r.reason)); return; }
         Keyboard.dismiss();
@@ -102,12 +102,12 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
             const list = await SmsService.listRecentIncomeSms(30);
             if (!mounted.current) return;
             if (list.length === 0) {
-                setError("No encontré SMS de depósitos en tu bandeja. Pegá el texto del SMS en el cuadro.");
+                setError("No encontré SMS de depósitos en tu bandeja. Pega el texto del SMS en el cuadro.");
                 return;
             }
             setCandidates(list.slice(0, MAX_CANDIDATES));
         } catch {
-            if (mounted.current) setError("No pude leer tus SMS. Pegá el texto del SMS en el cuadro.");
+            if (mounted.current) setError("No pude leer tus SMS. Pega el texto del SMS en el cuadro.");
         } finally {
             if (mounted.current) setLoadingSms(false);
         }
@@ -118,7 +118,7 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
             <StepHeader
                 icon="chatbubble-ellipses-outline"
                 title="El SMS de tu pago"
-                subtitle="Pegá el SMS con el que te llega tu pago (sueldo, quincena, ventas…). La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, y así reconoce tu pago sola."
+                subtitle="Pega el SMS con el que te llega tu pago (sueldo, quincena, ventas…). La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, y así reconoce tu pago sola."
             />
 
             {confirmed && analysis ? (
@@ -150,7 +150,7 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
                             style={s.input}
                             value={text}
                             onChangeText={v => { setText(v); setError(null); }}
-                            placeholder="Pegá aquí el texto del SMS…"
+                            placeholder="Pega aquí el texto del SMS…"
                             placeholderTextColor={C.textMuted}
                             multiline
                             textAlignVertical="top"
@@ -184,7 +184,7 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
 
                     {candidates.length > 0 && (
                         <>
-                            <Text style={ps.hint}>Estos son tus últimos depósitos. Tocá el de tu pago más reciente.</Text>
+                            <Text style={ps.hint}>Estos son tus últimos depósitos. Toca el de tu pago más reciente.</Text>
                             <View style={{ height: 8 }} />
                             {candidates.map((c, i) => (
                                 <TouchableOpacity
@@ -208,7 +208,7 @@ export default function StepIncomeSms({ draft, onChange, onSkip }: StepProps & {
                     )}
 
                     <Text style={ps.hint}>
-                        No guardamos ningún número de cuenta. Si no lo tenés a mano, podés hacerlo después: te queda en Inicio, en «Guía y primeros pasos».
+                        No guardamos ningún número de cuenta. Si no lo tienes a mano, puedes hacerlo después: te queda en Inicio, en «Guía y primeros pasos».
                     </Text>
                     <GlassButton
                         kind="ghost"

@@ -80,7 +80,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
     const closeForm = () => { setOpen(false); setError(null); };
 
     const add = () => {
-        if (!bankKey) { setError("Elegí un banco o «Efectivo»."); return; }
+        if (!bankKey) { setError("Elige un banco o «Efectivo»."); return; }
         const finalKind: DraftAccountKind = isCash ? "cash" : kind;
         const bank = ONBOARDING_BANKS.find(b => b.code === bankKey);
         const acc: DraftAccount = {
@@ -94,7 +94,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
             ...(finalKind === "credit" ? { cutoffDay: cutoffDay.trim(), paymentDueDay: paymentDueDay.trim() } : {}),
         };
         const v = validateAccount(acc, parseAmount);
-        if (!v.ok) { setError(v.error ?? "Revisá los datos de la cuenta."); return; }
+        if (!v.ok) { setError(v.error ?? "Revisa los datos de la cuenta."); return; }
         onChange({ accounts: [...draft.accounts, acc] });
         closeForm();
     };
@@ -119,7 +119,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
                 <GlassCard radius={14} blur={false}>
                     <View style={ps.emptyBox}>
                         <Ionicons name="wallet-outline" size={22} color={C.textSub} />
-                        <Text style={ps.emptyTxt}>Todavía no agregaste cuentas. Podés hacerlo ahora o más tarde desde Cuentas.</Text>
+                        <Text style={ps.emptyTxt}>Todavía no agregaste cuentas. Puedes hacerlo ahora o más tarde desde Cuentas.</Text>
                     </View>
                 </GlassCard>
             )}
@@ -164,7 +164,7 @@ export default function StepAccounts({ draft, onChange, onFormOpenChange }: Step
 
             {Platform.OS === "android" && !draft.sms.optOut && draft.accounts.length > 0 && !open && (
                 <Text style={ps.hint}>
-                    Si tenés una sola cuenta de un banco, le asignamos sus SMS automáticamente; con varias, las asignás al revisar.
+                    Si tienes una sola cuenta de un banco, le asignamos sus SMS automáticamente; con varias, las asignas al revisar.
                 </Text>
             )}
 

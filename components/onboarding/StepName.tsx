@@ -12,9 +12,9 @@ export default function StepName({ draft, onChange }: StepProps) {
             <StepHeader
                 icon="person-outline"
                 title="¡Bienvenido a BudgetMaster!"
-                subtitle="Soy tu CFO personal. Con 4 datos rápidos armo tu presupuesto; lo demás lo podés configurar cuando quieras. Todo queda guardado solo en tu teléfono."
+                subtitle="Soy tu CFO personal. Con 4 datos rápidos armo tu presupuesto; lo demás lo puedes configurar cuando quieras. Todo queda guardado solo en tu teléfono."
             />
-            <Text style={ps.label}>¿Cómo te llamás?</Text>
+            <Text style={ps.label}>¿Cómo te llamas?</Text>
             <StyledInput
                 value={draft.name}
                 onChangeText={name => onChange({ name })}

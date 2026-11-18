@@ -251,7 +251,7 @@ function SavingsGoalModal({ onSave, onClose, existing, defaultCurrency }: {
                     </TouchableOpacity>
                 )}
             </TouchableOpacity>
-            <Text style={md.hint}>Si no elegís una fecha, se usan 6 meses desde hoy.</Text>
+            <Text style={md.hint}>Si no eliges una fecha, se usan 6 meses desde hoy.</Text>
             {showDatePicker && Platform.OS === "android" && (
                 <DateTimePicker
                     value={pickerValue}
@@ -678,7 +678,7 @@ function FixedExpensesTab({
                 <View ref={debtRef} collapsable={false} style={{ marginTop: 20 }}>
                     <Text style={s.sectionTitle}>DEUDA PROGRAMADA</Text>
                     {debts.length === 0 ? (
-                        <Text style={s.sectionHint}>No tenés tarjetas ni préstamos por pagar en este período.</Text>
+                        <Text style={s.sectionHint}>No tienes tarjetas ni préstamos por pagar en este período.</Text>
                     ) : (
                         <>
                             <Text style={s.sectionHint}>
@@ -1353,7 +1353,7 @@ function IncomeTab({
             setNotice({ variant: "success", text: `Listo: tu ingreso declarado ahora es ${formatMoney(suggestion.suggested, "Q")}.` });
         } catch (e) {
             console.warn("[Ingresos] actualizar declarado:", e);
-            setNotice({ variant: "error", text: "No se pudo actualizar tu ingreso. Probá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudo actualizar tu ingreso. Prueba de nuevo." });
         } finally {
             setUpdating(false);
         }
@@ -1389,7 +1389,7 @@ function IncomeTab({
                         <View style={s.empty}>
                             <Ionicons name="cash-outline" size={48} color={C.textMuted} />
                             <Text style={s.emptyTitle}>Sin fuentes de ingreso</Text>
-                            <Text style={s.emptyDesc}>Todavía no tenés fuentes de ingreso. Creá la primera con el botón + y enseñale a la app de dónde y cuándo te pagan.</Text>
+                            <Text style={s.emptyDesc}>Todavía no tienes fuentes de ingreso. Crea la primera con el botón + y enséñale a la app de dónde y cuándo te pagan.</Text>
                         </View>
                     ) : (
                         items.map(({ source, status, view, schedule }) => {
@@ -1531,7 +1531,7 @@ export default function BudgetScreen({
         <View style={s.screen}>
             <ScreenHeader
                 title="Presupuesto"
-                subtitle="Planificá · Controlá · Crecé"
+                subtitle="Planifica · Controla · Crece"
                 right={<HelpButton tutorialId="tutorial_presupuesto" />}
                 headerRef={headerRef}
             />

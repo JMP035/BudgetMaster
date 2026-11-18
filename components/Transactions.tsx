@@ -232,7 +232,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
             onFixedChanged(res.transactions, res.fixedExpenses);
         } catch (e) {
             console.warn("[Transactions] desvincular gasto fijo:", e);
-            await dialog.alert({ title: "No se pudo desvincular", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
+            await dialog.alert({ title: "No se pudo desvincular", message: "No se modificó nada. Prueba de nuevo.", variant: "error" });
         } finally {
             setSaving(false);
         }
@@ -252,7 +252,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
             onClose();
         } catch (e) {
             console.warn("[Transactions] vincular fuente de ingreso:", e);
-            await dialog.alert({ title: "No se pudo vincular", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
+            await dialog.alert({ title: "No se pudo vincular", message: "No se modificó nada. Prueba de nuevo.", variant: "error" });
         } finally {
             setIncomeBusy(false);
         }
@@ -267,7 +267,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
             onClose();
         } catch (e) {
             console.warn("[Transactions] quitar vínculo de fuente de ingreso:", e);
-            await dialog.alert({ title: "No se pudo quitar el vínculo", message: "No se modificó nada. Probá de nuevo.", variant: "error" });
+            await dialog.alert({ title: "No se pudo quitar el vínculo", message: "No se modificó nada. Prueba de nuevo.", variant: "error" });
         } finally {
             setIncomeBusy(false);
         }
@@ -552,11 +552,11 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                             {choosingSource && (
                                 incomeSources.length === 0 ? (
                                     <Text style={m.hint}>
-                                        Todavía no tenés fuentes de ingreso. Creá una en Presupuesto → Ingresos.
+                                        Todavía no tienes fuentes de ingreso. Crea una en Presupuesto → Ingresos.
                                     </Text>
                                 ) : (
                                     <>
-                                        <Text style={m.hint}>Elegí a qué fuente pertenece este depósito. Tomará su categoría y, si la fuente mueve tu período, el período empieza ese día.</Text>
+                                        <Text style={m.hint}>Elige a qué fuente pertenece este depósito. Tomará su categoría y, si la fuente mueve tu período, el período empieza ese día.</Text>
                                         <View style={[m.accWrap, { marginTop: 10 }]}>
                                             {incomeSources.map(src => (
                                                 <TouchableOpacity
@@ -666,7 +666,7 @@ function DetailModal({ tx, settings, smsOn, transactions, accounts, fixedExpense
                                     onPress={handleReportSms}
                                 />
                             </GlassButtonGroup>
-                            <Text style={m.hint}>Mantené presionado el texto para copiarlo.</Text>
+                            <Text style={m.hint}>Mantén presionado el texto para copiarlo.</Text>
                         </>
                     )}
                 </View>

@@ -33,7 +33,7 @@ export function NewCategorySheet({ initialType, existing, onSaved, onClose }: Pr
 
     const handleSave = async () => {
         if (busy) return;
-        if (!label.trim()) { setError("Ingresá un nombre para la categoría."); return; }
+        if (!label.trim()) { setError("Ingresa un nombre para la categoría."); return; }
         const cat: CustomCategory = {
             id: existing?.id ?? `custom_${Date.now()}`,
             label: label.trim(),
@@ -47,7 +47,7 @@ export function NewCategorySheet({ initialType, existing, onSaved, onClose }: Pr
             else await StorageService.addCustomCategory(cat);
         } catch {
             setBusy(false);
-            setError("No se pudo guardar la categoría. Probá de nuevo.");
+            setError("No se pudo guardar la categoría. Prueba de nuevo.");
             return;
         }
         onSaved(cat);

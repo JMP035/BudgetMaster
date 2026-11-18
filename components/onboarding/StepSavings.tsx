@@ -23,7 +23,7 @@ export default function StepSavings({ draft, onChange }: StepProps) {
             <StepHeader
                 icon="trending-up-outline"
                 iconColor={C.accent}
-                title="¿Cuánto querés ahorrar al mes?"
+                title="¿Cuánto quieres ahorrar al mes?"
                 subtitle="Lo recomendado es al menos el 20 % de tu ingreso."
             />
 

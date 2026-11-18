@@ -172,7 +172,7 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
             onChanged();
         } catch (e) {
             console.warn("setTransactionsAccount error:", e);
-            setNotice({ variant: "error", text: "No se pudo guardar. No se modificó nada. Probá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudo guardar. No se modificó nada. Prueba de nuevo." });
         } finally {
             setBusy(null);
         }
@@ -210,15 +210,15 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
             } else if (res.error === "conflict") {
                 setNotice({
                     variant: "warning",
-                    text: `Otra cuenta ya recibe los SMS de ${name}. Si tenés dos tarjetas ${name}, la app no puede distinguirlas por SMS: elegí una como principal y asigná las demás a mano.`,
+                    text: `Otra cuenta ya recibe los SMS de ${name}. Si tienes dos tarjetas ${name}, la app no puede distinguirlas por SMS: elige una como principal y asigna las demás a mano.`,
                     canRelax: true,
                 });
             } else {
-                setNotice({ variant: "error", text: "No se encontró esa cuenta. Cerrá esta ventana y probá de nuevo." });
+                setNotice({ variant: "error", text: "No se encontró esa cuenta. Cierra esta ventana y prueba de nuevo." });
             }
         } catch (e) {
             console.warn("assignUnassignedGroup error:", e);
-            setNotice({ variant: "error", text: "No se pudo asignar. No se modificó nada. Probá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudo asignar. No se modificó nada. Prueba de nuevo." });
         } finally {
             setBusy(null);
         }
@@ -359,7 +359,7 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
                             <Text style={s.rememberTitle}>Recordar para los próximos SMS</Text>
                             <Text style={s.rememberSub}>
                                 Solo aplica al asignar todo un grupo: los SMS nuevos de ese banco o tarjeta irán solos a la cuenta
-                                que elijas. Si asignás de a uno o por selección, no se crea ninguna regla.
+                                que elijas. Si asignas de a uno o por selección, no se crea ninguna regla.
                             </Text>
                         </View>
                     </Pressable>
@@ -383,7 +383,7 @@ export function UnassignedAccountsModal({ visible, transactions, accounts, onClo
                                 </Text>
                                 {cands.length === 0 ? (
                                     <Text style={s.hint}>
-                                        No tenés cuentas activas. Creá una en la pantalla de cuentas para poder asignar estos movimientos.
+                                        No tienes cuentas activas. Crea una en la pantalla de cuentas para poder asignar estos movimientos.
                                     </Text>
                                 ) : (
                                     <>

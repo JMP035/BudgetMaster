@@ -16,7 +16,7 @@ export default function StepSecurity({ draft, onChange }: StepProps) {
         setBusy(true);
         setCancelled(false);
         try {
-            const res = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirmá para activar el bloqueo" });
+            const res = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirma para activar el bloqueo" });
             if (!mounted.current) return;
             if (res.success) onChange({ biometricEnabled: true });
             else setCancelled(true);
@@ -32,7 +32,7 @@ export default function StepSecurity({ draft, onChange }: StepProps) {
             <StepHeader
                 icon="finger-print-outline"
                 title="Seguridad"
-                subtitle="Protegé tu información con huella o rostro al abrir la app."
+                subtitle="Protege tu información con huella o rostro al abrir la app."
             />
 
             {draft.biometricEnabled ? (
@@ -54,7 +54,7 @@ export default function StepSecurity({ draft, onChange }: StepProps) {
                         loading={busy}
                     />
                     {cancelled && (
-                        <InlineNotice variant="info" style={ps.notice} text="No se activó; podés hacerlo en Ajustes" />
+                        <InlineNotice variant="info" style={ps.notice} text="No se activó; puedes hacerlo en Ajustes" />
                     )}
                 </>
             )}

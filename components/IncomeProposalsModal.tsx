@@ -70,7 +70,7 @@ export function IncomeProposalsModal({ visible, proposals, transactions, onClose
             finish(key);
         } catch (e) {
             console.warn("linkIncome error:", e);
-            setError("No se pudo vincular el ingreso. No se modificó nada. Probá de nuevo.");
+            setError("No se pudo vincular el ingreso. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -85,7 +85,7 @@ export function IncomeProposalsModal({ visible, proposals, transactions, onClose
             finish(key);
         } catch (e) {
             console.warn("addDupIgnored (ingreso) error:", e);
-            setError("No se pudo guardar tu respuesta. Probá de nuevo.");
+            setError("No se pudo guardar tu respuesta. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -106,7 +106,7 @@ export function IncomeProposalsModal({ visible, proposals, transactions, onClose
                         {items.length === 1 ? "Este ingreso se parece" : `Estos ${items.length} ingresos se parecen`} a una de tus fuentes de ingreso.
                     </Text>
                     <Text style={s.legend}>
-                        Si lo confirmás, la fuente pasa a «Recibido», el ingreso toma su categoría y, si la fuente mueve tu período, el período empieza ese día.
+                        Si lo confirmas, la fuente pasa a «Recibido», el ingreso toma su categoría y, si la fuente mueve tu período, el período empieza ese día.
                     </Text>
                     {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
                     {items.map(({ key, p, tx }) => {

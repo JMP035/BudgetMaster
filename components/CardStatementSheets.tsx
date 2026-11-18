@@ -40,7 +40,7 @@ export function StatementAmountSheet({ card, statement, onSave, onClose }: {
         for (const [cur, text] of [["Q", q], ["USD", usd]] as Array<[Cur, string]>) {
             if (!text.trim()) continue;
             const n = parseAmount(text);
-            if (isNaN(n) || n < 0) { setError(`Revisá el monto en ${cur}.`); return; }
+            if (isNaN(n) || n < 0) { setError(`Revisa el monto en ${cur}.`); return; }
             out[cur] = n;
         }
         onSave(out);
@@ -61,7 +61,7 @@ export function StatementAmountSheet({ card, statement, onSave, onClose }: {
         >
             <Text style={st.sub}>{card.name} · estado al {formatShortDay(statement.cut)}</Text>
             <Text style={st.hint}>
-                Escribí lo que dice tu estado de cuenta (el banco lo manda por correo, no por SMS). Cada moneda se paga por separado. Si dejás un campo vacío, la app usa su estimado: los cargos de esa tarjeta en ese ciclo.
+                Escribe lo que dice tu estado de cuenta (el banco lo manda por correo, no por SMS). Cada moneda se paga por separado. Si dejas un campo vacío, la app usa su estimado: los cargos de esa tarjeta en ese ciclo.
             </Text>
             {CURS.map(cur => (
                 <View key={cur}>
@@ -121,10 +121,10 @@ export function CardPaymentSheet({ card, statement, fromChoices, initialFromId, 
         for (const [cur, text] of [["Q", q], ["USD", usd]] as Array<[Cur, string]>) {
             if (!text.trim()) continue;
             const n = parseAmount(text);
-            if (isNaN(n) || n < 0) { setError(`Revisá el monto en ${cur}.`); return; }
+            if (isNaN(n) || n < 0) { setError(`Revisa el monto en ${cur}.`); return; }
             if (n > 0) amounts[cur] = n;
         }
-        if (amounts.Q === undefined && amounts.USD === undefined) { setError("Ingresá cuánto pagaste."); return; }
+        if (amounts.Q === undefined && amounts.USD === undefined) { setError("Ingresa cuánto pagaste."); return; }
         onSave({ amounts, ...(fromId ? { fromAccountId: fromId } : {}), date });
         onClose();
     };
@@ -154,7 +154,7 @@ export function CardPaymentSheet({ card, statement, fromChoices, initialFromId, 
         >
             <Text style={st.sub}>{card.name} · estado al {formatShortDay(statement.cut)}</Text>
             <Text style={st.hint}>
-                Pagar la tarjeta no es un gasto nuevo: es una transferencia de tu cuenta a la tarjeta, así que no suma a tus gastos del período. Podés pagar solo una parte; lo que falte sigue pendiente.
+                Pagar la tarjeta no es un gasto nuevo: es una transferencia de tu cuenta a la tarjeta, así que no suma a tus gastos del período. Puedes pagar solo una parte; lo que falte sigue pendiente.
             </Text>
             {CURS.map(cur => (
                 <View key={cur}>

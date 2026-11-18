@@ -298,7 +298,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
         } catch {
             committing.current = false;
             setBusy(null);
-            setCommitError("No pudimos guardar tu configuración. Probá de nuevo.");
+            setCommitError("No pudimos guardar tu configuración. Prueba de nuevo.");
         }
     };
 
@@ -375,7 +375,7 @@ export default function OnboardingScreen({ onComplete }: Props) {
                     <InlineNotice
                         variant="warning"
                         style={s.topNotice}
-                        text="Tenés un formulario sin guardar. Tocá «Agregar» para guardarlo o «Cancelar» para descartarlo; si tocás Seguir otra vez, se descarta."
+                        text="Tienes un formulario sin guardar. Toca «Agregar» para guardarlo o «Cancelar» para descartarlo; si tocas Seguir otra vez, se descarta."
                     />
                 )}
 

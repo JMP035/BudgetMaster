@@ -135,7 +135,7 @@ export default function GettingStartedCard({
       variant: "info",
       icon: "eye-off-outline",
       title: "¿Ocultar la guía?",
-      message: "La podés volver a abrir en Ajustes → Academia.",
+      message: "La puedes volver a abrir en Ajustes → Academia.",
       confirmLabel: "Ocultar",
       destructive: false,
     });

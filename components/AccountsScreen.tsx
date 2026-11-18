@@ -457,7 +457,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
       )}
       {type === 'credit' && payFromChoices.length > 0 && (
         <View>
-          <Text style={md.lbl}>CUENTA CON LA QUE PAGÁS (Opcional)</Text>
+          <Text style={md.lbl}>CUENTA CON LA QUE PAGAS (Opcional)</Text>
           <View style={md.linkWrap}>
             <TouchableOpacity
               style={[md.bankChip, payFromId === null && md.bankChipActive]}
@@ -481,7 +481,7 @@ export function AccountModal({ onSave, onClose, existing, defaultType, defaultCu
             ))}
           </View>
           <Text style={md.hint}>
-            De ahí sale el dinero cuando pagás esta tarjeta.{smsOn ? ' Si el banco te manda el SMS del pago, la app lo empareja sola con esa salida: no cuenta como un gasto nuevo.' : ''}
+            De ahí sale el dinero cuando pagas esta tarjeta.{smsOn ? ' Si el banco te manda el SMS del pago, la app lo empareja sola con esa salida: no cuenta como un gasto nuevo.' : ''}
           </Text>
         </View>
       )}
@@ -1368,7 +1368,7 @@ export default function AccountsScreen({
                             </Text>
                             {stmt.status !== 'paid' && stmt.due && (
                               <Text style={[s.accExtra, stmt.status === 'overdue' && { color: C.danger }]}>
-                                {stmt.status === 'overdue' ? 'Venció el ' : 'Pagá antes del '}{formatShortDay(stmt.due)}
+                                {stmt.status === 'overdue' ? 'Venció el ' : 'Paga antes del '}{formatShortDay(stmt.due)}
                               </Text>
                             )}
                             {(stmt.paid.Q > 0 || stmt.paid.USD > 0) && (

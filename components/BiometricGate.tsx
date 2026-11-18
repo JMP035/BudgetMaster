@@ -189,7 +189,7 @@ export default function BiometricGate({ children }: Props) {
             await attemptAuth();
 
         } catch {
-            setError("No se pudo verificar la configuración de seguridad. Tocá Reintentar.");
+            setError("No se pudo verificar la configuración de seguridad. Toca Reintentar.");
             setAuthState("error");
         }
     };
@@ -202,7 +202,7 @@ export default function BiometricGate({ children }: Props) {
         try {
             setError("");
             const result = await LocalAuthentication.authenticateAsync({
-                promptMessage: "Verificá tu identidad para acceder a BudgetMaster",
+                promptMessage: "Verifica tu identidad para acceder a BudgetMaster",
                 cancelLabel: "Cancelar",
                 fallbackLabel: "Usar PIN",
                 disableDeviceFallback: false,
@@ -222,10 +222,10 @@ export default function BiometricGate({ children }: Props) {
             } else {
                 setAttempts(prev => prev + 1);
                 if (result.error === "user_cancel" || result.error === "system_cancel") {
-                    setError("Autenticación cancelada. Tocá el botón para intentar de nuevo.");
+                    setError("Autenticación cancelada. Toca el botón para intentar de nuevo.");
                 } else {
                     shake();
-                    setError("No se pudo verificar tu identidad. Intentá de nuevo.");
+                    setError("No se pudo verificar tu identidad. Intenta de nuevo.");
                 }
             }
         } catch {
@@ -320,7 +320,7 @@ export default function BiometricGate({ children }: Props) {
                 </View>
 
                 <Text style={s.biometricLabel}>{iconLabel}</Text>
-                <Text style={s.instruction}>Tocá el sensor para acceder</Text>
+                <Text style={s.instruction}>Toca el sensor para acceder</Text>
 
                 {/* ERROR */}
                 {error ? <InlineNotice variant="error" text={error} style={s.notice} /> : null}
@@ -336,7 +336,7 @@ export default function BiometricGate({ children }: Props) {
 
                 {attempts >= 3 && (
                     <Text style={s.hint}>
-                        ¿Problemas? Usá PIN o patrón del dispositivo cuando se solicite.
+                        ¿Problemas? Usa PIN o patrón del dispositivo cuando se solicite.
                     </Text>
                 )}
               </GlassCard>

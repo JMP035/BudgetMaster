@@ -415,7 +415,7 @@ function TutorialMenu({ onSelect, onClose, completed, tutorials }: MenuProps) {
                             <Ionicons name="close" size={20} color={C.textSub} />
                         </TouchableOpacity>
                     </View>
-                    <Text style={mn.subtitle}>Elegí un tutorial. También podés abrir el de cada módulo con el botón ? de su encabezado.</Text>
+                    <Text style={mn.subtitle}>Elige un tutorial. También puedes abrir el de cada módulo con el botón ? de su encabezado.</Text>
                     <ScrollView showsVerticalScrollIndicator={false}>
                         {tutorials.map(tut => {
                             const done = completed.includes(tut.id);

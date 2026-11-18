@@ -34,7 +34,7 @@ export function IncomePatternPreview({ pattern, preview, onConfirm, onDiscard, b
 
     const confirmEdited = () => {
         const n = parseAmount(amount);
-        if (isNaN(n) || n <= 0) { setError("Escribí un monto válido (mayor a 0)."); return; }
+        if (isNaN(n) || n <= 0) { setError("Escribe un monto válido (mayor a 0)."); return; }
         setError(null);
         onConfirm(applyPatternCorrection(pattern, { originText: origin, amount: n }));
     };

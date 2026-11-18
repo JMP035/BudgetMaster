@@ -25,7 +25,7 @@ export function HelpButton({ tutorialId, size = 36, style }: HelpButtonProps) {
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Ver el tutorial de este módulo"
-            accessibilityHint="Mantené presionado para ver todos los tutoriales"
+            accessibilityHint="Mantén presionado para ver todos los tutoriales"
             style={[s.btn, { width: size, height: size, borderRadius: size / 2 }, style]}
         >
             <GlassBackground radius={size / 2} blur={false} />

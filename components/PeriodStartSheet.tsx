@@ -34,9 +34,9 @@ export function payDayText(s: Pick<UserSettings, "paymentCycle" | "paymentDay" |
         const days = [...(s.paymentDays ?? [])].sort((a, b) => a - b);
         return days.length >= 2
             ? `Tus días de pago: el ${days[0]} y el ${days[1]} de cada mes`
-            : "Cobrás dos veces al mes";
+            : "Cobras dos veces al mes";
     }
-    if (s.paymentCycle === "weekly") return `Cobrás cada ${WEEKDAY_NAMES[normalizeWeekday(s.paymentWeekday)]}`;
+    if (s.paymentCycle === "weekly") return `Cobras cada ${WEEKDAY_NAMES[normalizeWeekday(s.paymentWeekday)]}`;
     return "Tus ingresos son irregulares";
 }
 
@@ -44,7 +44,7 @@ export function payDayText(s: Pick<UserSettings, "paymentCycle" | "paymentDay" |
 function originOf(p: FinancialPeriod): { icon: keyof typeof Ionicons.glyphMap; text: string } {
     switch (p.startSource) {
         case "manual":
-            return { icon: "hand-left-outline", text: "Fijado por vos" };
+            return { icon: "hand-left-outline", text: "Fijado por ti" };
         case "salary":
             return { icon: "cash-outline", text: `Empezó con tu sueldo del ${dayLabel(p.start)}` };
         case "expected":
@@ -121,7 +121,7 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
             onChanged?.();
         } catch (e) {
             console.warn("[PeriodStart] guardar:", e);
-            setNotice({ variant: "error", text: "No se pudo guardar. Intentá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudo guardar. Intenta de nuevo." });
         } finally {
             setBusy(false);
         }
@@ -137,7 +137,7 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
             onChanged?.();
         } catch (e) {
             console.warn("[PeriodStart] automático:", e);
-            setNotice({ variant: "error", text: "No se pudo volver a automático. Intentá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudo volver a automático. Intenta de nuevo." });
         } finally {
             setBusy(false);
         }
@@ -160,14 +160,14 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
             onChanged?.(upd);
         } catch (e) {
             console.warn("[PeriodStart] reglas:", e);
-            setNotice({ variant: "error", text: "No se pudieron guardar las reglas. Intentá de nuevo." });
+            setNotice({ variant: "error", text: "No se pudieron guardar las reglas. Intenta de nuevo." });
         } finally {
             setBusy(false);
         }
     };
 
     const fixedStartText = cur.paymentCycle === "weekly"
-        ? `Tu ciclo es semanal: tu período empieza cada ${WEEKDAY_NAMES[normalizeWeekday(cur.paymentWeekday)]}. Cambialo en Ajustes → Ciclo de pago.`
+        ? `Tu ciclo es semanal: tu período empieza cada ${WEEKDAY_NAMES[normalizeWeekday(cur.paymentWeekday)]}. Cámbialo en Ajustes → Ciclo de pago.`
         : "Tus ingresos son irregulares: el período es el mes calendario, así que su inicio es fijo y no hay nada que ajustar aquí.";
 
     return (
@@ -192,9 +192,9 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
             ) : (
                 <>
                     {/* ELEGIR OTRO INICIO */}
-                    <Text style={s.sectionLabel}>ELEGÍ OTRO INICIO</Text>
+                    <Text style={s.sectionLabel}>ELIGE OTRO INICIO</Text>
                     <Text style={s.hint}>
-                        Tu día de pago es el {nominal.getDate()}, pero a veces te pagan antes o después. Tocá la fecha en que de verdad te llegó el sueldo (no se ofrecen fechas futuras).
+                        Tu día de pago es el {nominal.getDate()}, pero a veces te pagan antes o después. Toca la fecha en que de verdad te llegó el sueldo (no se ofrecen fechas futuras).
                     </Text>
                     <View style={s.chips}>
                         {chips.map(d => {
@@ -235,7 +235,7 @@ export function PeriodStartSheet({ settings, onClose, onChanged }: Props) {
                         />
                     </View>
                     <Text style={s.hint}>
-                        Lo que fijás a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.
+                        Lo que fijas a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.
                     </Text>
 
                     {/* REGLAS */}

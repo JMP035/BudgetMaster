@@ -412,7 +412,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
         : debt.level === "moderate" ? "Entre 20 % y 40 %: conviene no sumar cuotas nuevas."
             : "Tus cuotas están bajo control.";
     const debtSubtitle = debt.ratioPct === null
-        ? "Agregá tu ingreso para ver el ratio."
+        ? "Agrega tu ingreso para ver el ratio."
         : `${formatMoney(debt.totalQ, "Q", { decimals: 0, sign: "never" })}/mes en cuotas${debt.activeCount > 0 ? ` (${debt.activeCount})` : ""} frente a tu ingreso de ${formatMoney(debt.incomeQ, "Q", { decimals: 0, sign: "never" })}/mes (${debtBasisTxt}). ${debtLevelTxt}`;
     const confirmClearLegacy = async () => {
         if (!onClearLegacyDebt) return;
@@ -556,7 +556,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
                         </View>
                         <AnimBar pct={Math.max(0, Math.min(savingsRate, 100))} color={savingsColor} />
                         <Text style={[s.savingsHint, { color: savingsRate >= 20 ? C.income : C.warning }]}>
-                            {savingsRate >= 20 ? "Excelente: superás el 20% recomendado" : savingsRate >= 0 ? "Bajo: apuntá al 20% mínimo" : "Negativo: gastás más de lo que ingresás"}
+                            {savingsRate >= 20 ? "Excelente: superas el 20% recomendado" : savingsRate >= 0 ? "Bajo: apunta al 20% mínimo" : "Negativo: gastas más de lo que ingresas"}
                         </Text>
                     </GlassCard>
                 </View>
@@ -651,7 +651,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
                 <StatCard tutRef={velocityRef} icon="speedometer-outline" title="Velocidad de Gasto" value={velocityDiff === 0 ? "Sin cambio" : ""}
                     money={velocityDiff !== 0 ? { amount: velocityDiff, sign: "always", decimals: 0 } : undefined}
                     color={velocityDiff > 0 ? C.danger : velocityDiff < 0 ? C.income : C.textSub}
-                    subtitle={velocityDiff > 0 ? `Gastás ${q0(velocityDiff)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastás ${q0(velocityDiff)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
+                    subtitle={velocityDiff > 0 ? `Gastas ${q0(velocityDiff)} más que el período anterior (${velocityPct.toFixed(0)}% más rápido).` : velocityDiff < 0 ? `Gastas ${q0(velocityDiff)} menos que el período anterior. ¡Buen trabajo!` : "Sin datos para comparar."}
                 />
             )}
 

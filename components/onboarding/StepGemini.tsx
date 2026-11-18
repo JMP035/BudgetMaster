@@ -10,9 +10,9 @@ import { ps, StepHeader, StepProps, StyledInput } from "./OnbPrimitives";
 const AI_STUDIO_URL = "https://aistudio.google.com/apikey";
 
 const STEPS = [
-    "Abrí aistudio.google.com/apikey con tu cuenta de Google.",
-    "Tocá Create API key.",
-    "Copiala y pegala acá.",
+    "Abre aistudio.google.com/apikey con tu cuenta de Google.",
+    "Toca Create API key.",
+    "Cópiala y pégala aquí.",
 ];
 
 /** Asesor IA (opcional): clave gratuita de Google Gemini. Vacío es válido. */
@@ -29,7 +29,7 @@ export default function StepGemini({ draft, onChange }: StepProps) {
             <StepHeader
                 icon="sparkles-outline"
                 title="Asesor IA"
-                subtitle="El Asesor ya funciona sin configurar nada, con respuestas locales basadas en tus datos. Si agregás una clave gratuita de Google Gemini, responde en lenguaje natural. Al usarla, un resumen de tus finanzas se envía a Google para generar la respuesta."
+                subtitle="El Asesor ya funciona sin configurar nada, con respuestas locales basadas en tus datos. Si agregas una clave gratuita de Google Gemini, responde en lenguaje natural. Al usarla, un resumen de tus finanzas se envía a Google para generar la respuesta."
             />
 
             <GlassCard radius={14} blur={false} contentStyle={ps.cardContent}>

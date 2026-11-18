@@ -117,7 +117,7 @@ export function TransferPairsModal({ visible, pairs, transactions, onClose, onCh
             finish(key);
         } catch (e) {
             console.warn("linkTransferPair error:", e);
-            setError("No se pudo marcar la transferencia. No se modificó nada. Probá de nuevo.");
+            setError("No se pudo marcar la transferencia. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -132,7 +132,7 @@ export function TransferPairsModal({ visible, pairs, transactions, onClose, onCh
             finish(key);
         } catch (e) {
             console.warn("dismissTransferPair error:", e);
-            setError("No se pudo guardar tu respuesta. Probá de nuevo.");
+            setError("No se pudo guardar tu respuesta. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }

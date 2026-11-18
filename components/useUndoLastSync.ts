@@ -75,7 +75,7 @@ export function useUndoLastSync(onChanged?: () => void) {
                 message: `Se quitaron ${r.removedTx} movimiento${r.removedTx === 1 ? "" : "s"} y ${r.removedInst} visacuota${r.removedInst === 1 ? "" : "s"}.${r.keptEdited > 0 ? ` Se conservaron ${r.keptEdited} que editaste.` : ""}`,
             });
         } catch (e) {
-            await dialog.alert({ variant: "error", title: "No se pudo deshacer", message: "Intentá de nuevo." });
+            await dialog.alert({ variant: "error", title: "No se pudo deshacer", message: "Intenta de nuevo." });
             console.warn("[useUndoLastSync]", e);
         }
         await reload();

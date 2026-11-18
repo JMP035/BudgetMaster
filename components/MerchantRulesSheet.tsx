@@ -43,7 +43,7 @@ export function MerchantRulesSheet({ onClose, onChanged, customCategories }: Pro
         <GlassSheet title="Comercios aprendidos" icon="school-outline" onClose={onClose}>
             {rules === null ? null : rules.length === 0 ? (
                 <Text style={s.empty}>
-                    Todavía no le enseñaste ningún comercio. Cambiá la categoría de un movimiento de SMS y activá «Recordar».
+                    Todavía no le enseñaste ningún comercio. Cambia la categoría de un movimiento de SMS y activa «Recordar».
                 </Text>
             ) : (
                 <View style={s.list}>

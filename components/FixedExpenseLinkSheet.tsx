@@ -186,7 +186,7 @@ export default function FixedExpenseLinkSheet({
             if (manual) {
                 const ok = await dialog.confirm({
                     title: "Unir con tu registro manual",
-                    message: `Ya marcaste «${fe.name}» como pagado a mano el ${fmtDay(manual.date)}. Se queda el pago del banco (${formatMoney(tx.amount, tx.currency)}, ${fmtDay(tx.date)}) y se borra el registro manual para no contarlo dos veces. Podés separarlos después desde el detalle.`,
+                    message: `Ya marcaste «${fe.name}» como pagado a mano el ${fmtDay(manual.date)}. Se queda el pago del banco (${formatMoney(tx.amount, tx.currency)}, ${fmtDay(tx.date)}) y se borra el registro manual para no contarlo dos veces. Puedes separarlos después desde el detalle.`,
                     confirmLabel: "Sí, unir",
                     cancelLabel: "Cancelar",
                     destructive: false,
@@ -229,7 +229,7 @@ export default function FixedExpenseLinkSheet({
             afterLink(res.fixedExpenses.find(e => e.id === fe.id), res.transactions, res.outcome);
         } catch (e) {
             console.warn("[FixedExpenseLinkSheet] vincular:", e);
-            setError("No se pudo vincular el pago. No se modificó nada. Probá de nuevo.");
+            setError("No se pudo vincular el pago. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(false);
         }
@@ -248,7 +248,7 @@ export default function FixedExpenseLinkSheet({
             } catch (e) {
                 console.warn("[FixedExpenseLinkSheet] crear:", e);
                 await wait;
-                setError("No se pudo crear el gasto fijo. Probá de nuevo.");
+                setError("No se pudo crear el gasto fijo. Prueba de nuevo.");
                 setStage("pick");
             } finally {
                 savingRef.current = false;
@@ -271,7 +271,7 @@ export default function FixedExpenseLinkSheet({
             setStage("done");
         } catch (e) {
             console.warn("[FixedExpenseLinkSheet] historial:", e);
-            setError("No se pudieron unir los cobros. No se modificó nada. Probá de nuevo.");
+            setError("No se pudieron unir los cobros. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(false);
         }
@@ -389,7 +389,7 @@ export default function FixedExpenseLinkSheet({
         <GlassSheet onClose={onClose} title="¿Qué gasto fijo es?" icon="calendar-outline">
             {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
             <Text style={s.intro}>
-                {`Pago de «${merchantLabel}» por ${formatMoney(tx.amount, tx.currency)} (${fmtDay(tx.date)}). Elegí a cuál de tus gastos fijos corresponde.`}
+                {`Pago de «${merchantLabel}» por ${formatMoney(tx.amount, tx.currency)} (${fmtDay(tx.date)}). Elige a cuál de tus gastos fijos corresponde.`}
             </Text>
             {!learnKey && (
                 <InlineNotice
@@ -399,7 +399,7 @@ export default function FixedExpenseLinkSheet({
                 />
             )}
             {ranked.length === 0 && (
-                <InlineNotice variant="info" text="Todavía no tenés gastos fijos activos. Podés crear uno con este pago." style={s.notice} />
+                <InlineNotice variant="info" text="Todavía no tienes gastos fijos activos. Puedes crear uno con este pago." style={s.notice} />
             )}
             {ranked.map(({ expense, score, reasons }) => {
                 const suggested = score >= SUGGEST_SCORE;

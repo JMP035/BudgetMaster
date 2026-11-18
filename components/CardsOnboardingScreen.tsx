@@ -40,10 +40,10 @@ export default function CardsOnboardingScreen({ settings, onComplete }: Props) {
                     <View style={s.iconWrap}>
                         <Ionicons name="card-outline" size={32} color={C.primaryLight} />
                     </View>
-                    <Text style={s.title}>¿Usás tarjetas de crédito?</Text>
+                    <Text style={s.title}>¿Usas tarjetas de crédito?</Text>
                     <Text style={s.subtitle}>
-                        Registrá tus tarjetas para llevar el control de sus visacuotas y fechas de corte y pago.{"\n\n"}
-                        Esto es completamente opcional — podés agregarlas ahora o más tarde desde la sección de Cuentas.
+                        Registra tus tarjetas para llevar el control de sus visacuotas y fechas de corte y pago.{"\n\n"}
+                        Esto es completamente opcional — puedes agregarlas ahora o más tarde desde la sección de Cuentas.
                     </Text>
                 </View>
 

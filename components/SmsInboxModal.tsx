@@ -123,7 +123,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         if (items.length === 0) return;
         const ok = await dialog.confirm({
             title: "Enviar ejemplos",
-            message: `Se armará un texto con estos ${items.length} mensajes con números de cuenta y tarjeta, tu nombre y enlaces personales ocultos. Los montos y comercios se mantienen porque son lo que necesitamos para enseñarle a la app. Vos elegís con quién compartirlo.`,
+            message: `Se armará un texto con estos ${items.length} mensajes con números de cuenta y tarjeta, tu nombre y enlaces personales ocultos. Los montos y comercios se mantienen porque son lo que necesitamos para enseñarle a la app. Tú eliges con quién compartirlo.`,
             confirmLabel: "Continuar",
             cancelLabel: "Cancelar",
             variant: "info",
@@ -167,11 +167,11 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
         if (!registering || saving) return;
         const amount = parseAmount(amountText);
         if (!isFinite(amount) || amount <= 0) {
-            setError("Ingresá un monto válido mayor a 0.");
+            setError("Ingresa un monto válido mayor a 0.");
             return;
         }
         if (!description.trim()) {
-            setError("Escribí una descripción para el movimiento.");
+            setError("Escribe una descripción para el movimiento.");
             return;
         }
         setError("");
@@ -202,7 +202,7 @@ export function SmsInboxModal({ visible, settings, onClose, onChanged }: SmsInbo
             await reload();
             onChanged();
         } catch (e) {
-            setError("No se pudo guardar el movimiento. Intentá de nuevo.");
+            setError("No se pudo guardar el movimiento. Intenta de nuevo.");
             console.warn("Register inbox item error:", e instanceof Error ? e.message : "desconocido");
         } finally {
             setSaving(false);

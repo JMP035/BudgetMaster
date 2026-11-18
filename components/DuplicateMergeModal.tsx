@@ -107,7 +107,7 @@ export function DuplicateMergeModal({ visible, pairs, transactions, onClose, onC
         if (pair.ambiguous) {
             const ok = await dialog.confirm({
                 title: "Unir de todos modos",
-                message: "Este movimiento tiene más de una coincidencia posible. Si no es el correcto, podés separarlos después desde el detalle del movimiento.",
+                message: "Este movimiento tiene más de una coincidencia posible. Si no es el correcto, puedes separarlos después desde el detalle del movimiento.",
                 confirmLabel: "Unir",
                 destructive: false,
                 variant: "info",
@@ -123,7 +123,7 @@ export function DuplicateMergeModal({ visible, pairs, transactions, onClose, onC
             finish(key);
         } catch (e) {
             console.warn("mergeDuplicate error:", e);
-            setError("No se pudieron unir los movimientos. No se modificó nada. Probá de nuevo.");
+            setError("No se pudieron unir los movimientos. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -138,7 +138,7 @@ export function DuplicateMergeModal({ visible, pairs, transactions, onClose, onC
             finish(key);
         } catch (e) {
             console.warn("addDupIgnored error:", e);
-            setError("No se pudo guardar tu respuesta. Probá de nuevo.");
+            setError("No se pudo guardar tu respuesta. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }

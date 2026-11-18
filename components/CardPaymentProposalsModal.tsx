@@ -62,7 +62,7 @@ export function CardPaymentProposalsModal({ visible, proposals, transactions, ac
             finish(key);
         } catch (e) {
             console.warn("confirmCardPaymentProposal error:", e);
-            setError("No se pudo registrar el pago. No se modificó nada. Probá de nuevo.");
+            setError("No se pudo registrar el pago. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -77,7 +77,7 @@ export function CardPaymentProposalsModal({ visible, proposals, transactions, ac
             finish(key);
         } catch (e) {
             console.warn("dismissCardPaymentProposal error:", e);
-            setError("No se pudo guardar tu respuesta. Probá de nuevo.");
+            setError("No se pudo guardar tu respuesta. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -98,7 +98,7 @@ export function CardPaymentProposalsModal({ visible, proposals, transactions, ac
                         {items.length === 1 ? "Una salida de tu cuenta se parece" : `${items.length} salidas de tu cuenta se parecen`} a lo que falta pagar de tu tarjeta.
                     </Text>
                     <Text style={s.legend}>
-                        Pagar la tarjeta no es un gasto nuevo: si confirmás, deja de contar como gasto y rebaja lo que falta del estado.
+                        Pagar la tarjeta no es un gasto nuevo: si confirmas, deja de contar como gasto y rebaja lo que falta del estado.
                     </Text>
                     {!!error && <InlineNotice variant="error" text={error} style={s.notice} />}
                     {items.map(({ key, p, card, tx }) => {

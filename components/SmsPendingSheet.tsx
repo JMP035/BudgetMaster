@@ -321,7 +321,7 @@ export default function SmsPendingSheet({
                     ) : (
                         <>
                             <Text style={s.intro}>
-                                {total === 1 ? "Tenés 1 cosa por revisar." : `Tenés ${total} cosas por revisar.`} Tocá una fila para resolverla.
+                                {total === 1 ? "Tienes 1 cosa por revisar." : `Tienes ${total} cosas por revisar.`} Toca una fila para resolverla.
                             </Text>
                             {liveReview.length > 0 && (
                                 <PendingRow

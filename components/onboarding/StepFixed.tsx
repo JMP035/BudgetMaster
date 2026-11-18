@@ -54,7 +54,7 @@ export default function StepFixed({ draft, onChange, onFormOpenChange }: StepPro
     const add = () => {
         const f = candidate();
         const v = validateFixed(f, draft.fixed, parseAmount);
-        if (!v.ok) { setError(v.error ?? "Revisá los datos del gasto."); return; }
+        if (!v.ok) { setError(v.error ?? "Revisa los datos del gasto."); return; }
         onChange({ fixed: [...draft.fixed, f] });
         closeForm();
     };
@@ -73,7 +73,7 @@ export default function StepFixed({ draft, onChange, onFormOpenChange }: StepPro
             <StepHeader
                 icon="repeat-outline"
                 title="Gastos fijos"
-                subtitle="Lo que pagás todos los meses: renta, servicios, suscripciones. Los recordamos por vos."
+                subtitle="Lo que pagas todos los meses: renta, servicios, suscripciones. Los recordamos por ti."
             />
 
             <Text style={[ps.label, { marginTop: 0 }]}>Sugerencias</Text>

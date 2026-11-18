@@ -117,7 +117,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
         setSampleError(null);
         setPending(null);
         const text = body.trim();
-        if (!text) { setSampleError("Pegá primero el texto del SMS."); return; }
+        if (!text) { setSampleError("Pega primero el texto del SMS."); return; }
         const r = learnPatternFromSms(text, receivedAt);
         if (!r.ok) { setSampleError(patternFailText(r.reason)); return; }
         setPending({ pattern: r.pattern, preview: r.preview });
@@ -130,14 +130,14 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
         try {
             const list = await SmsService.listRecentIncomeSms(30);
             if (list.length === 0) {
-                setSampleError("No encontré SMS de depósitos en tu bandeja. Pegá el texto del SMS en el cuadro.");
+                setSampleError("No encontré SMS de depósitos en tu bandeja. Pega el texto del SMS en el cuadro.");
                 return;
             }
             setCandidates(list);
             goPhase("pick");
         } catch (e) {
             console.warn("[IncomeSource] elegir SMS:", e);
-            setSampleError("No pude leer tus SMS. Pegá el texto del SMS en el cuadro.");
+            setSampleError("No pude leer tus SMS. Pega el texto del SMS en el cuadro.");
         } finally {
             setLoadingSms(false);
         }
@@ -189,7 +189,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
             onClose();
         } catch (e) {
             console.warn("[IncomeSource] guardar:", e);
-            setError("No se pudo guardar la fuente. Probá de nuevo.");
+            setError("No se pudo guardar la fuente. Prueba de nuevo.");
             setSaving(false);
         }
     };
@@ -209,7 +209,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
             onClose();
         } catch (e) {
             console.warn("[IncomeSource] eliminar:", e);
-            setError("No se pudo eliminar la fuente. Probá de nuevo.");
+            setError("No se pudo eliminar la fuente. Prueba de nuevo.");
         }
     };
 
@@ -227,8 +227,8 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
 
     if (phase === "pick") {
         return (
-            <GlassSheet onClose={() => goPhase("form")} title="Elegí el SMS de tu pago" icon="chatbubble-ellipses-outline">
-                <Text style={s.hint}>Estos son tus últimos depósitos. Tocá el de tu pago más reciente para que la app aprenda cómo llega.</Text>
+            <GlassSheet onClose={() => goPhase("form")} title="Elige el SMS de tu pago" icon="chatbubble-ellipses-outline">
+                <Text style={s.hint}>Estos son tus últimos depósitos. Toca el de tu pago más reciente para que la app aprenda cómo llega.</Text>
                 <View style={{ height: 8 }} />
                 {candidates.map((c, i) => (
                     <TouchableOpacity
@@ -427,7 +427,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
                 })}
             </View>
             {destAccounts.length === 0 && (
-                <Text style={s.hint}>Todavía no tenés una cuenta bancaria. Creala en Cuentas para elegirla aquí.</Text>
+                <Text style={s.hint}>Todavía no tienes una cuenta bancaria. Créala en Cuentas para elegirla aquí.</Text>
             )}
 
             <Text style={s.lbl}>TIPO DE INGRESO</Text>
@@ -512,14 +512,14 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
             ) : (
                 <>
                     <Text style={s.hint}>
-                        Pegá el SMS que te mandó el banco cuando te pagaron
+                        Pega el SMS que te mandó el banco cuando te pagaron
                         {canPickSms ? " o elegilo de tus mensajes" : ""}. La app aprende de qué banco y cuenta llega, quién lo envía y cuánto, y así reconoce tu pago solo.
                     </Text>
                     <TextInput
                         style={[s.input, s.multiline]}
                         value={sampleText}
                         onChangeText={v => { setSampleText(v); setSampleError(null); }}
-                        placeholder="Pegá aquí el texto del SMS…"
+                        placeholder="Pega aquí el texto del SMS…"
                         placeholderTextColor={C.textMuted}
                         multiline
                         textAlignVertical="top"
@@ -544,7 +544,7 @@ export function IncomeSourceModal({ existing, settings, accounts, onSaved, onClo
                         )}
                     </View>
                     <Text style={s.hint}>
-                        Sin SMS de ejemplo podés guardar la fuente igual, pero la app no detectará tu pago sola: tendrías que vincular cada depósito a mano desde Movimientos.
+                        Sin SMS de ejemplo puedes guardar la fuente igual, pero la app no detectará tu pago sola: tendrías que vincular cada depósito a mano desde Movimientos.
                     </Text>
                 </>
             )}

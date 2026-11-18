@@ -27,14 +27,14 @@ export function buildSummary(draft: StepProps["draft"]): string {
     return parts.join(" · ");
 }
 
-/** Cierre «¿Querés un recorrido guiado?». Los botones viven en el pie de OnboardingScreen. */
+/** Cierre «¿Quieres un recorrido guiado?». Los botones viven en el pie de OnboardingScreen. */
 export default function FinishStep({ draft }: Pick<StepProps, "draft">) {
     return (
         <>
             <StepHeader
                 icon="compass-outline"
-                title="¿Querés un recorrido guiado?"
-                subtitle={'Te muestro en 1 minuto dónde está cada cosa. Si tenés dudas después, lo encontrás en Inicio → Guía y primeros pasos, o en el "?" de cada módulo.'}
+                title="¿Quieres un recorrido guiado?"
+                subtitle={'Te muestro en 1 minuto dónde está cada cosa. Si tienes dudas después, lo encuentras en Inicio → Guía y primeros pasos, o en el "?" de cada módulo.'}
             />
             <GlassCard radius={16} blur={false} topAccentColor={C.primary} contentStyle={ps.cardContent}>
                 <Text style={s.label}>TU CONFIGURACIÓN</Text>

@@ -369,7 +369,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         setSyncingFull(true);
         try {
             if (!(await SmsService.hasReadSmsPermission())) {
-                setSyncNotice("Primero sincronizá desde Inicio para dar el permiso.");
+                setSyncNotice("Primero sincroniza desde Inicio para dar el permiso.");
                 return;
             }
             const r = await SmsService.syncBankSms({ mode: "full" });
@@ -383,7 +383,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
             await undo.reload();
         } catch (e) {
             console.warn("[Settings] sync full:", e);
-            await dialog.alert({ variant: "error", title: "No se pudo sincronizar", message: "Intentá de nuevo." });
+            await dialog.alert({ variant: "error", title: "No se pudo sincronizar", message: "Intenta de nuevo." });
         } finally {
             setSyncingFull(false);
         }
@@ -409,12 +409,12 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         const a = parseInt(payDay1, 10);
         const b = parseInt(payDay2, 10);
         if (cycle === "monthly" && !inRange(a)) {
-            setSchedNotice({ variant: "error", text: "Escribí el día del mes en que te pagan (de 1 a 31)." });
+            setSchedNotice({ variant: "error", text: "Escribe el día del mes en que te pagan (de 1 a 31)." });
             return;
         }
         if (cycle === "biweekly") {
             if (!inRange(a) || !inRange(b)) {
-                setSchedNotice({ variant: "error", text: "Escribí los dos días del mes en que te pagan (de 1 a 31)." });
+                setSchedNotice({ variant: "error", text: "Escribe los dos días del mes en que te pagan (de 1 a 31)." });
                 return;
             }
             if (a === b) {
@@ -435,7 +435,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
             setSchedNotice({ variant: "success", text: `Listo. ${payDayText(upd)}. Tu período se recalculó con el nuevo día.` });
         } catch (e) {
             console.warn("[Settings] ciclo de pago:", e);
-            setSchedNotice({ variant: "error", text: "No se pudo guardar el día de pago. Probá de nuevo." });
+            setSchedNotice({ variant: "error", text: "No se pudo guardar el día de pago. Prueba de nuevo." });
         } finally {
             setSchedBusy(false);
         }
@@ -451,7 +451,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         if (isNaN(bQ) || bQ <= 0) { setFormError("El presupuesto en quetzales debe ser mayor a 0."); return; }
         if (isNaN(rateNum) || rateNum <= 0) { setFormError("El tipo de cambio debe ser un número mayor a 0."); return; }
         if (usdMode === 'manual' && (isNaN(bUSDManual) || bUSDManual <= 0)) {
-            setFormError("El monto fijo en dólares debe ser mayor a 0, o volvé al cálculo automático.");
+            setFormError("El monto fijo en dólares debe ser mayor a 0, o vuelve al cálculo automático.");
             return;
         }
         setFormError(null);
@@ -524,7 +524,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
         if (sharingSms) return;
         const ok = await dialog.confirm({
             title: "Compartir muestra de tus SMS",
-            message: "Vamos a armar un texto con hasta 4 ejemplos por tipo de tus SMS bancarios importados (y los sin clasificar). Ocultamos números de cuenta y tarjeta, tu nombre al inicio y los enlaces personales. Los montos y nombres de comercios sí van, porque son lo que hace falta para mejorar la lectura (por ejemplo, la comisión de BANRURAL). Nada se envía solo: elegís la app y la persona, y podés revisarlo antes.",
+            message: "Vamos a armar un texto con hasta 4 ejemplos por tipo de tus SMS bancarios importados (y los sin clasificar). Ocultamos números de cuenta y tarjeta, tu nombre al inicio y los enlaces personales. Los montos y nombres de comercios sí van, porque son lo que hace falta para mejorar la lectura (por ejemplo, la comisión de BANRURAL). Nada se envía solo: eliges la app y la persona, y puedes revisarlo antes.",
             confirmLabel: "Armar y compartir",
             icon: "paper-plane-outline",
         });
@@ -601,13 +601,13 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
 
                 <ScreenHeader
                     title="Configuración"
-                    subtitle="Personalizá tu experiencia financiera"
+                    subtitle="Personaliza tu experiencia financiera"
                     right={<HelpButton tutorialId="tutorial_ajustes" />}
                     headerRef={headerRef}
                 />
 
                 {/* PERFIL */}
-                <Section tutId="settings_profile" onLayoutY={trackY("profile")} icon="person-circle-outline" title="Tu Perfil" description="¿Cómo querés que te llamemos en la app?">
+                <Section tutId="settings_profile" onLayoutY={trackY("profile")} icon="person-circle-outline" title="Tu Perfil" description="¿Cómo quieres que te llamemos en la app?">
                     <View style={s.inputRow}>
                         <Ionicons name="person-outline" size={18} color={C.primary} style={{ marginRight: 10 }} />
                         <TextInput style={s.input} value={name} onChangeText={onText(setName)} placeholder="Tu nombre..." placeholderTextColor={C.textMuted} returnKeyType="done" {...focusProps("profile")} />
@@ -713,8 +713,8 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                             </View>
                             <Text style={s.hint}>
                                 {isNaN(autoUSD)
-                                    ? "Ingresá el presupuesto en quetzales y un tipo de cambio válido para ver el equivalente en dólares."
-                                    : `Calculado automáticamente: Q ${bQNum.toFixed(2)} ÷ Q ${rateNum.toFixed(5)} por dólar. Se recalcula cuando cambiás el monto en quetzales o el tipo de cambio. Es solo una referencia: las alertas y el score usan el presupuesto en quetzales.`}
+                                    ? "Ingresa el presupuesto en quetzales y un tipo de cambio válido para ver el equivalente en dólares."
+                                    : `Calculado automáticamente: Q ${bQNum.toFixed(2)} ÷ Q ${rateNum.toFixed(5)} por dólar. Se recalcula cuando cambias el monto en quetzales o el tipo de cambio. Es solo una referencia: las alertas y el score usan el presupuesto en quetzales.`}
                             </Text>
                             <GlassButton
                                 kind="ghost"
@@ -746,7 +746,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* INGRESOS Y PERÍODO */}
-                <Section tutId="settings_period" onLayoutY={trackY("period")} icon="calendar-outline" title="Ingresos y período" description="Tu período empieza el día que cae tu sueldo. Acá ves cuándo empezó y podés cambiar las reglas.">
+                <Section tutId="settings_period" onLayoutY={trackY("period")} icon="calendar-outline" title="Ingresos y período" description="Tu período empieza el día que cae tu sueldo. Aquí ves cuándo empezó y puedes cambiar las reglas.">
                     <Text style={s.switchLabel}>{payDayText(settings)}</Text>
                     <Text style={s.hint}>Período actual: {getCurrentFinancialPeriod(settings).label}</Text>
                     <GlassButton
@@ -834,7 +834,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                                     <>
                                         <InlineNotice
                                             variant="info"
-                                            text={`Tu fuente «${mismatch.name}» dice que cobrás el ${day}.`}
+                                            text={`Tu fuente «${mismatch.name}» dice que cobras el ${day}.`}
                                             style={{ marginTop: 10 }}
                                         />
                                         <GlassButton
@@ -870,7 +870,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* MONEDA PRINCIPAL */}
-                <Section tutId="settings_currency" icon="cash-outline" title="Moneda Principal" description="La moneda que usás en tu día a día.">
+                <Section tutId="settings_currency" icon="cash-outline" title="Moneda Principal" description="La moneda que usas en tu día a día.">
                     <GlassSegmented
                         options={[
                             { value: "Q" as Currency, label: "Q" },
@@ -890,7 +890,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     onLayoutY={trackY("rate")}
                     icon="swap-horizontal-outline"
                     title="Tipo de Cambio USD → Q"
-                    description="Se actualiza automáticamente desde el Banco de Guatemala. También podés editarlo manualmente."
+                    description="Se actualiza automáticamente desde el Banco de Guatemala. También puedes editarlo manualmente."
                 >
                     <View style={s.rateRow}>
                         <View style={[s.inputRow, { flex: 1 }]}>
@@ -943,7 +943,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* AHORROS EXTERNOS */}
-                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero fuera de tus cuentas registradas. Solo se usa si no tenés cuentas creadas.">
+                <Section tutId="settings_savings" onLayoutY={trackY("savings")} icon="business-outline" title="Ahorros Externos" description="Dinero fuera de tus cuentas registradas. Solo se usa si no tienes cuentas creadas.">
                     <Text style={s.subLabel}>EN QUETZALES (Q)</Text>
                     <View style={s.inputRow}>
                         <Text style={s.currSymbol}>Q</Text>
@@ -958,7 +958,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
 
                 {/* BIOMETRÍA */}
                 {biometricAvailable && (
-                    <Section tutId="settings_biometric" onLayoutY={trackY("biometric")} icon="finger-print-outline" title="Seguridad Biométrica" description="Protegé tu información financiera con huella digital o Face ID al abrir la app.">
+                    <Section tutId="settings_biometric" onLayoutY={trackY("biometric")} icon="finger-print-outline" title="Seguridad Biométrica" description="Protege tu información financiera con huella digital o Face ID al abrir la app.">
                         <View style={s.switchRow}>
                             <View style={{ flex: 1 }}>
                                 <View style={s.switchLabelRow}>
@@ -981,7 +981,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 )}
 
                 {/* GEMINI IA */}
-                <Section tutId="settings_gemini" onLayoutY={trackY("gemini")} icon="sparkles-outline" title="Inteligencia Artificial (Gemini)" description="Ingresá tu API Key de Google Gemini para activar el Asesor IA avanzado con respuestas en lenguaje natural. Obtené tu clave gratuita en: aistudio.google.com">
+                <Section tutId="settings_gemini" onLayoutY={trackY("gemini")} icon="sparkles-outline" title="Inteligencia Artificial (Gemini)" description="Ingresa tu API Key de Google Gemini para activar el Asesor IA avanzado con respuestas en lenguaje natural. Obtén tu clave gratuita en: aistudio.google.com">
                     <View style={s.inputRow}>
                         <Ionicons name="key-outline" size={18} color={C.primary} style={{ marginRight: 10 }} />
                         <TextInput style={s.input} value={apiKey} onChangeText={onText(setApiKey)} placeholder="AIzaSy..." placeholderTextColor={C.textMuted} secureTextEntry returnKeyType="done" {...focusProps("gemini")} />
@@ -1007,9 +1007,9 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 </Section>
 
                 {/* CATEGORÍAS CUSTOM */}
-                <Section tutId="settings_categories" icon="pricetag-outline" title="Mis Categorías" description="Creá categorías personalizadas para clasificar mejor tus gastos e ingresos.">
+                <Section tutId="settings_categories" icon="pricetag-outline" title="Mis Categorías" description="Crea categorías personalizadas para clasificar mejor tus gastos e ingresos.">
                     {customCats.length === 0 ? (
-                        <Text style={[s.hint, { marginBottom: 12 }]}>Aún no tenés categorías personalizadas.</Text>
+                        <Text style={[s.hint, { marginBottom: 12 }]}>Aún no tienes categorías personalizadas.</Text>
                     ) : (
                         <View style={s.catList}>
                             {customCats.map(cat => (
@@ -1049,7 +1049,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                     <GlassButton kind="secondary" icon="compass-outline" label="Guía y primeros pasos" style={{ marginBottom: 10 }} onPress={handleOpenGuide} />
                     <GlassButton kind="secondary" icon="play-circle-outline" label="Ver tutoriales" style={{ marginBottom: 10 }} onPress={openTutorialMenu} />
                     <GlassButton kind="secondary" icon="refresh-outline" label="Reiniciar todos los tutoriales" onPress={handleResetTutorials} />
-                    <Text style={s.hint}>Abrí Ver tutoriales para elegir cualquier tutorial, o tocá el botón ? en el encabezado de cada módulo.</Text>
+                    <Text style={s.hint}>Abre Ver tutoriales para elegir cualquier tutorial, o toca el botón ? en el encabezado de cada módulo.</Text>
                 </Section>
 
                 {/* GUARDAR */}

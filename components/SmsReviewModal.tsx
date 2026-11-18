@@ -277,7 +277,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                         <View style={s.headerText}>
                             <Text style={s.title} accessibilityRole="header">Revisar movimientos importados</Text>
                             <Text style={s.subtitle}>
-                                {shown.length} movimiento{shown.length === 1 ? "" : "s"} para revisar. Tocá «Dejar así» en los que quieras conservar tal como están; con «Aplicar» se corrigen los demás.
+                                {shown.length} movimiento{shown.length === 1 ? "" : "s"} para revisar. Toca «Dejar así» en los que quieras conservar tal como están; con «Aplicar» se corrigen los demás.
                             </Text>
                             <Text style={s.note}>Lo que dejes así no se vuelve a sugerir.</Text>
                         </View>
@@ -352,7 +352,7 @@ export default function SmsReviewModal({ visible, items, onClose, onApplied, cus
                     variant="error"
                     icon="warning-outline"
                     title="No se pudieron aplicar los cambios"
-                    message="Ocurrió un problema al guardar. No se modificó nada. Intentá de nuevo."
+                    message="Ocurrió un problema al guardar. No se modificó nada. Intenta de nuevo."
                 />
             </View>
         </Modal>

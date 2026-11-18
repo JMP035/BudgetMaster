@@ -99,7 +99,7 @@ export default function AddScreen({ onAdd, settings, accounts = [] }: Props) {
                     { icon: "repeat-outline", label: "Cuotas", value: inst.totalInstallments },
                     { icon: "calendar-outline", label: "Pago mensual", value: formatMoney(inst.monthlyPayment, inst.currency) },
                 ],
-                footnote: "Registrala desde Cuentas → Visacuotas.",
+                footnote: "Regístrala desde Cuentas → Visacuotas.",
             });
             setShowSmsInput(false);
             setSmsText("");

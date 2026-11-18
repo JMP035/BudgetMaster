@@ -55,10 +55,10 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
     const closeForm = () => { setOpen(false); setError(null); };
 
     const add = () => {
-        if (!name.trim()) { setError("Escribí el nombre de la deuda."); return; }
-        if (num(monthly) <= 0) { setError("Ingresá una cuota mensual mayor a 0."); return; }
+        if (!name.trim()) { setError("Escribe el nombre de la deuda."); return; }
+        if (num(monthly) <= 0) { setError("Ingresa una cuota mensual mayor a 0."); return; }
         if (total.trim() && (!Number.isFinite(parseAmount(total)) || parseAmount(total) < 0)) {
-            setError("Ingresá un total válido."); return;
+            setError("Ingresa un total válido."); return;
         }
         const debt: DraftDebt = {
             id: newDraftId("debt"),
@@ -86,8 +86,8 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
             <StepHeader
                 icon="alert-circle-outline"
                 iconColor={C.danger}
-                title="¿Tenés deudas activas?"
-                subtitle="Registrá cada deuda por separado: tarjetas de crédito, préstamos, visacuotas. Así puedo ayudarte a eliminarlas con un plan."
+                title="¿Tienes deudas activas?"
+                subtitle="Registra cada deuda por separado: tarjetas de crédito, préstamos, visacuotas. Así puedo ayudarte a eliminarlas con un plan."
             />
 
             {draft.debts.length === 0 && !open && (

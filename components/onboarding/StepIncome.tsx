@@ -25,7 +25,7 @@ export default function StepIncome({ draft, onChange, rate }: StepProps & { rate
             <StepHeader
                 icon="cash-outline"
                 iconColor={C.income}
-                title="¿Cuánto ganás al mes?"
+                title="¿Cuánto ganas al mes?"
                 subtitle="Esta es la base de todo análisis. Un aproximado es suficiente."
             />
 
@@ -61,7 +61,7 @@ export default function StepIncome({ draft, onChange, rate }: StepProps & { rate
                 <InlineNotice
                     variant="info"
                     style={ps.notice}
-                    text={`Sin conexión: usamos el último tipo de cambio conocido (${formatNumber(rate.rate, 2)}). Después lo podés ajustar.`}
+                    text={`Sin conexión: usamos el último tipo de cambio conocido (${formatNumber(rate.rate, 2)}). Después lo puedes ajustar.`}
                 />
             )}
 

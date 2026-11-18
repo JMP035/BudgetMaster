@@ -166,12 +166,12 @@ function ScoreWidget({ result, periodLabel, onInfo }: { result: ScoreResult; per
                 <Animated.View style={{ height: "100%", width: w, backgroundColor: color, borderRadius: 4 }} />
             </View>
             <Text style={s.scoreHint}>
-                {score >= 80 ? "Disciplina financiera ejemplar. Seguí así." :
+                {score >= 80 ? "Disciplina financiera ejemplar. Sigue así." :
                     score >= 60 ? "Vas bien. Pequeños ajustes te llevan al siguiente nivel." :
                         score >= 40 ? "Hay oportunidades de mejora importantes." :
                             "Situación crítica. Revisa tu presupuesto urgente."}
             </Text>
-            <Text style={s.scoreSource}>{`Se calcula con lo que registrás en tu período actual (${periodLabel}), no con tu ingreso declarado.`}</Text>
+            <Text style={s.scoreSource}>{`Se calcula con lo que registras en tu período actual (${periodLabel}), no con tu ingreso declarado.`}</Text>
             {savingsPending && <Text style={s.scoreSource}>Tu ingreso de este período aún no aparece: el ahorro todavía no suma.</Text>}
         </GlassCard>
     );
@@ -325,7 +325,7 @@ function AccountsWidget({ accounts, installments, settings, onPress }: {
                 <View style={[s.widgetAlert, { backgroundColor: C.warning + "11", borderColor: C.warning + "33" }]}>
                     <Ionicons name="card-outline" size={13} color={C.warning} />
                     <Text style={[s.widgetAlertTxt, { color: C.warning }]}>
-                        {`Este mes debés ${formatMoney(monthlyInst, "Q", { decimals: 0 })} en visacuotas`}
+                        {`Este mes debes ${formatMoney(monthlyInst, "Q", { decimals: 0 })} en visacuotas`}
                     </Text>
                 </View>
             )}
@@ -492,7 +492,7 @@ function ScoreInfoModal({ visible, result, periodLabel, onClose }: { visible: bo
                         {score >= 60 ? <GradientText text={String(score)} style={si.scoreValue} /> : <Text style={[si.scoreValue, { color }]}>{score}</Text>}
                         <Text style={si.scoreMax}>/100</Text>
                     </View>
-                    <Text style={ni.body}>{`Empieza en 50 y se ajusta con lo que registrás en tu período actual (${periodLabel}), no con el mes calendario.`}</Text>
+                    <Text style={ni.body}>{`Empieza en 50 y se ajusta con lo que registras en tu período actual (${periodLabel}), no con el mes calendario.`}</Text>
 
                     {result.factors.map(f => (
                         <View key={f.id} style={si.factor}>
@@ -540,7 +540,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                         <Ionicons name="business-outline" size={22} color={C.primaryLight} />
                     </View>
                     <Text style={ni.title}>Patrimonio Total</Text>
-                    <Text style={ni.body}>El Patrimonio Total muestra lo que tenés en tus cuentas de activos que llevan saldo. Si ninguna lo lleva, es un estimado con tus ingresos y gastos.</Text>
+                    <Text style={ni.body}>El Patrimonio Total muestra lo que tienes en tus cuentas de activos que llevan saldo. Si ninguna lo lleva, es un estimado con tus ingresos y gastos.</Text>
 
                     <View style={ni.row}>
                         <Ionicons name="checkmark-circle" size={15} color={C.income} />
@@ -559,7 +559,7 @@ function NetWorthInfoModal({ visible, onClose }: { visible: boolean; onClose: ()
                     <Text style={ni.bullet}>• Pendiente de visacuotas</Text>
 
                     <Text style={ni.footnote}>
-                        Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tenés con lo que debés.
+                        Los compromisos de crédito (tarjetas y visacuotas) se muestran por separado, debajo del patrimonio, para no mezclar lo que tienes con lo que debes.
                     </Text>
 
                     <TouchableOpacity style={ni.btn} onPress={onClose}>
@@ -866,7 +866,7 @@ export default function DashboardScreen({
         variant: "warning",
         icon: "construct-outline",
         title: "Función no disponible",
-        message: "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización.",
+        message: "Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instala la app compilada (APK) para usar la sincronización.",
     });
 
     const showSmsPermissionDenied = () => setDialog({
@@ -874,7 +874,7 @@ export default function DashboardScreen({
         icon: "chatbubble-ellipses-outline",
         title: "Permiso de SMS necesario",
         message: "Sin este permiso BudgetMaster no puede detectar tus movimientos bancarios. Todo se procesa en tu teléfono y solo se leen mensajes de bancos.",
-        footnote: "También podés pegar un SMS en Agregar → Leer SMS.",
+        footnote: "También puedes pegar un SMS en Agregar → Leer SMS.",
         actions: [
             { label: "Reintentar", kind: "primary", onPress: () => afterDialogClosed(() => { void handleSmsSync(); }) },
             { label: "Abrir ajustes", kind: "secondary", onPress: openSystemSettings },
@@ -991,7 +991,7 @@ export default function DashboardScreen({
                     variant: "error",
                     icon: "warning-outline",
                     title: "No se pudo sincronizar",
-                    message: "No se pudieron leer los SMS. Intentá de nuevo.",
+                    message: "No se pudieron leer los SMS. Intenta de nuevo.",
                     footnote: `Detalle técnico: ${msg}`,
                 });
             }
@@ -1112,7 +1112,7 @@ export default function DashboardScreen({
                         onPress={() => setShowPeriodSheet(true)}
                         activeOpacity={0.7}
                         accessibilityRole="button"
-                        accessibilityLabel={`Período ${period.label}. Tocá para ver cuándo empieza`}
+                        accessibilityLabel={`Período ${period.label}. Toca para ver cuándo empieza`}
                     >
                         <Text style={s.greeting} numberOfLines={1}>Hola, {settings.userName}</Text>
                         <View style={s.monthRow}>
@@ -1142,7 +1142,7 @@ export default function DashboardScreen({
                                 disabled={syncing}
                                 accessibilityRole="button"
                                 accessibilityLabel="Sincronizar SMS"
-                                accessibilityHint="Mantené presionado para volver a leer los últimos 3 meses"
+                                accessibilityHint="Mantén presionado para volver a leer los últimos 3 meses"
                             >
                                 <View pointerEvents="none" style={s.syncGlass}>
                                     <View style={s.syncOrbOuter} />

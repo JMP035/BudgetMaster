@@ -81,12 +81,12 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
             <StepHeader
                 icon="chatbubble-ellipses-outline"
                 title="SMS de tu banco"
-                subtitle="BudgetMaster puede leer los SMS de tu banco para registrar compras, débitos y abonos solo. Es opcional, se procesa en tu teléfono y solo mira mensajes de bancos. Podés apagarlo cuando quieras en Ajustes."
+                subtitle="BudgetMaster puede leer los SMS de tu banco para registrar compras, débitos y abonos solo. Es opcional, se procesa en tu teléfono y solo mira mensajes de bancos. Puedes apagarlo cuando quieras en Ajustes."
             />
 
             {draft.sms.optOut ? (
                 <>
-                    <InlineNotice variant="info" text="Dejamos los SMS apagados. Los podés activar cuando quieras en Ajustes." />
+                    <InlineNotice variant="info" text="Dejamos los SMS apagados. Los puedes activar cuando quieras en Ajustes." />
                     <TouchableOpacity
                         onPress={() => setOptOut(false)}
                         accessibilityRole="button"
@@ -101,7 +101,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                         <InlineNotice
                             variant="warning"
                             icon="construct-outline"
-                            text="Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instalá la app compilada (APK) para usar la sincronización."
+                            text="Esta versión de la app no incluye el lector de SMS (por ejemplo, en Expo Go). Instala la app compilada (APK) para usar la sincronización."
                         />
                     )}
 
@@ -118,7 +118,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                                 actionLabel="Reintentar"
                                 onAction={() => { void request(); }}
                             />
-                            <Text style={ps.hint}>También podés pegar un SMS en Agregar → Leer SMS.</Text>
+                            <Text style={ps.hint}>También puedes pegar un SMS en Agregar → Leer SMS.</Text>
                             <GlassButton
                                 label="Abrir ajustes"
                                 icon="settings-outline"
@@ -164,7 +164,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                         <>
                             <ToggleRow
                                 label="Sincronizar al abrir la app"
-                                description="Revisa los mensajes nuevos cada vez que abrís BudgetMaster."
+                                description="Revisa los mensajes nuevos cada vez que abres BudgetMaster."
                                 value={draft.sms.autoSync}
                                 onValueChange={autoSync => onChange(d => ({ sms: { ...d.sms, autoSync } }))}
                             />
@@ -182,7 +182,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                         <InlineNotice
                             variant="warning"
                             style={ps.notice}
-                            text={'Sin cuentas, los movimientos quedan "sin cuenta" y los asignás después'}
+                            text={'Sin cuentas, los movimientos quedan "sin cuenta" y los asignas después'}
                             actionLabel="Crear cuentas"
                             onAction={onCreateAccounts}
                         />

@@ -176,7 +176,7 @@ export function FixedExpenseMatchModal({
             onChanged();
         } catch (e) {
             console.warn("markFixedPaidBySms error:", e);
-            setError("No se pudo marcar el gasto como pagado. No se modificó nada. Probá de nuevo.");
+            setError("No se pudo marcar el gasto como pagado. No se modificó nada. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -196,7 +196,7 @@ export function FixedExpenseMatchModal({
             onChanged();
         } catch (e) {
             console.warn("addDupIgnored (fx) error:", e);
-            setError("No se pudo guardar tu respuesta. Probá de nuevo.");
+            setError("No se pudo guardar tu respuesta. Prueba de nuevo.");
         } finally {
             setBusy(null);
         }
@@ -244,7 +244,7 @@ export function FixedExpenseMatchModal({
             ) : (
                 <>
                     <Text style={s.legend}>
-                        Estos pagos del banco se parecen a tus gastos fijos. Si confirmás uno, la app aprende el comercio
+                        Estos pagos del banco se parecen a tus gastos fijos. Si confirmas uno, la app aprende el comercio
                         y la próxima vez lo marca sola.
                     </Text>
 
@@ -255,7 +255,7 @@ export function FixedExpenseMatchModal({
                             <GlassCard key={expense.id} radius={16} blur={false} style={s.card} contentStyle={s.cardContent}>
                                 {multi && (
                                     <Text style={s.pickTitle}>
-                                        Hay {items.length} pagos que podrían ser tu gasto fijo {feLabel}. Elegí el correcto.
+                                        Hay {items.length} pagos que podrían ser tu gasto fijo {feLabel}. Elige el correcto.
                                     </Text>
                                 )}
                                 {items.map(({ match, tx }, idx) => {
