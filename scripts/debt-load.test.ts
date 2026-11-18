@@ -2,7 +2,7 @@ process.env.TZ = 'America/Guatemala';
 // Pruebas de la carga de deuda mensual (services/DebtLoad.ts). Sin dependencias:
 //   npm run test:debt-load   →   sucrase-node scripts/debt-load.test.ts
 
-import { debtLevelOf, debtSummaryText, legacyDeclaredDebtQ, monthlyDebtLoad } from '../services/DebtLoad';
+import { debtLevelOf, debtSummaryText, isLiveInstallment, legacyDeclaredDebtQ, monthlyDebtLoad } from '../services/DebtLoad';
 import type { CreditInstallment, IncomeSource, UserSettings } from '../services/storage';
 
 let failures = 0;
@@ -149,6 +149,20 @@ console.log('Texto');
   check('resumen con base fuentes', debtSummaryText(ls) === 'Q1,000.00 al mes (10.0% del ingreso de tus fuentes)', debtSummaryText(ls));
   const ln = load([inst('a', { monthlyPayment: 1000 })], settings());
   check('resumen sin ingreso', debtSummaryText(ln).indexOf('sin ingreso') >= 0, debtSummaryText(ln));
+}
+
+// ── isLiveInstallment: única definición de «cuota viva» (también la usa el asesor local) ──
+{
+  const base = { id: 'x', accountId: 'a', name: 'X', totalAmount: 1200, monthlyPayment: 100, totalInstallments: 12,
+    paidInstallments: 3, startDate: '2026-01-01', currency: 'Q', category: 'other', isActive: true } as CreditInstallment;
+  check('viva: activa y con cuotas por cargar', isLiveInstallment(base));
+  check('no viva: inactiva (pausada)', !isLiveInstallment({ ...base, isActive: false }));
+  check('no viva: ya pagó todas', !isLiveInstallment({ ...base, paidInstallments: 12 }));
+  // El total del asesor local y la deuda viva deben coincidir aunque haya una cuota pausada.
+  const insts = [base, { ...base, id: 'y', monthlyPayment: 250, isActive: false }];
+  const advisorTotal = insts.filter(isLiveInstallment).reduce((s, c) => s + c.monthlyPayment, 0);
+  const load = monthlyDebtLoad({ installments: insts, settings: { monthlyIncome: 1000, exchangeRate: 7.8, activeDebts: 0 }, sources: [], txs: [] });
+  check('asesor y deuda viva dan el mismo total con una cuota pausada', advisorTotal === load.totalQ && load.totalQ === 100, `${advisorTotal} vs ${load.totalQ}`);
 }
 
 console.log(failures === 0 ? `OK  ${checks} comprobaciones` : `${failures} FALLAS de ${checks}`);

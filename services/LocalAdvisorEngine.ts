@@ -9,7 +9,7 @@ import { isBalanceTracked } from './Balances';
 import { categoryLabelOf, EXPENSE_CATEGORIES } from '../categories';
 import { QuoteTone, randomQuote, dailyQuote } from './FinancialQuotes';
 import { fixedCycleConfig, fixedDueInfo } from './FixedCycle';
-import { DebtLoad, monthlyDebtLoad } from './DebtLoad';
+import { DebtLoad, isLiveInstallment, monthlyDebtLoad } from './DebtLoad';
 
 const MONTHS_SHORT_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 
@@ -241,11 +241,11 @@ export function computeLocalMetrics(
     const fixedTotalQ = fixedActive.reduce((s, f) => s + convertAmount(f.amount, f.currency, 'Q', settings.exchangeRate), 0);
     const fixedPendingQ = fixedPendingList.reduce((s, f) => s + convertAmount(f.amount, f.currency, 'Q', settings.exchangeRate), 0);
 
-    const installTotal = creditInstallments
-        .filter(c => (c.totalInstallments - c.paidInstallments) > 0)
+    // «Cuota viva» = activa y con cuotas por cargar (misma definición que DebtLoad): una cuota pausada o terminada no cuenta.
+    const activeInstallments = creditInstallments.filter(isLiveInstallment);
+    const installTotal = activeInstallments
         .reduce((s, c) => s + convertAmount(c.monthlyPayment, c.currency, 'Q', settings.exchangeRate), 0);
     const { installmentsPendingQ } = calcCreditCommitments(creditInstallments, settings.exchangeRate);
-    const activeInstallments = creditInstallments.filter(c => (c.totalInstallments - c.paidInstallments) > 0);
     const debt = monthlyDebtLoad({ installments: creditInstallments, settings, sources: incomeSources, txs: transactions });
 
     const activeAccountsAll = accounts.filter(a => a.isActive);

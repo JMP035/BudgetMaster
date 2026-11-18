@@ -50,8 +50,8 @@ function toQ(amount: number, currency: string, rate: number): number {
   return currency === 'USD' ? amount * rate : amount;
 }
 
-/** Cuota que todavía se está pagando. */
-function isLive(i: CreditInstallment): boolean {
+/** Cuota que todavía se está pagando: activa y con cuotas por cargar. Única definición de «cuota viva» (Stats, asesor, notificaciones). */
+export function isLiveInstallment(i: CreditInstallment): boolean {
   return !!i.isActive && i.paidInstallments < i.totalInstallments;
 }
 
@@ -88,7 +88,7 @@ export function monthlyDebtLoad(i: {
   let loansQ = 0;
   let count = 0;
   for (const inst of i.installments) {
-    if (!isLive(inst)) continue;
+    if (!isLiveInstallment(inst)) continue;
     const q = toQ(inst.monthlyPayment, inst.currency, rate);
     if (inst.accountId) cardQ += q;
     else loansQ += q;
