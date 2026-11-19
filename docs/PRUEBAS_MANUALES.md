@@ -3,7 +3,7 @@
 Para: quien prueba la app en su teléfono Android (sin conocimientos técnicos).
 Objetivo: comprobar, función por función, que todo sirve antes de escribir el manual de usuario.
 
-Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-111** (112 en total). Las pruebas T-77 a T-111 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas) y las del bloque G2 de la auditoría final (el «+ gasto» del widget con la app abierta, el widget con la foto al día, borrar todos los datos, los avisos de presupuesto, el permiso de notificaciones y la advertencia de la huella en el widget).
+Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-122** (123 en total). Las pruebas T-77 a T-111 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas) y las del bloque G2 de la auditoría final (el «+ gasto» del widget con la app abierta, el widget con la foto al día, borrar todos los datos, los avisos de presupuesto, el permiso de notificaciones y la advertencia de la huella en el widget) y las del bloque de Estadísticas y gastos fijos con cuenta (T-112 a T-122: cuadros tocables y vista de ahorro explicada, aviso de transferencias sin clasificar con su interruptor, selector Q/$, «Revisar» con las preguntas «¿A qué cuenta fue?», «PENDIENTE» en una línea, y el gasto fijo con cuenta o tarjeta con su emparejamiento por SMS).
 
 Cómo usarlo: sigue cada prueba en orden. Marca **✅ pasó**, **❌ falló** o **⚠️ raro** y anota qué viste.
 Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Cómo reportar un problema" al final).
@@ -362,7 +362,7 @@ Al final hay una tabla resumen. Mientras pruebas, anota el código de la prueba 
 ## 14. Estadísticas
 
 **T-55 — Pantalla de estadísticas**
-- Cambia entre Per. Actual / Per. Anterior / Este Año / Todo. Esperado: pastel por categoría (tocable), tasa de ahorro, flujo proyectado, comparativa de 6 meses, ahorro acumulado, gasto promedio diario (con tu presupuesto diario ideal = presupuesto **del período** ÷ días del período), días sin gastar, gasto por banco (si hay gastos con banco), **Ratio Deuda / Ingreso** (solo si hay cuotas activas), velocidad de gasto (solo en Per. Actual) y proyección de ahorro, sin errores ni valores absurdos.
+- Cambia entre Per. Actual / Per. Anterior / Este Año / Todo. Esperado: cuadros de ingresos, gastos y ahorro tocables con el pastel por categoría (tocable) o la vista de ahorro con la tasa de ahorro (ver T-112 a T-116), flujo proyectado, comparativa de 6 meses, ahorro acumulado, gasto promedio diario (con tu presupuesto diario ideal = presupuesto **del período** ÷ días del período), días sin gastar, gasto por banco (si hay gastos con banco), **Ratio Deuda / Ingreso** (solo si hay cuotas activas), velocidad de gasto (solo en Per. Actual) y proyección de ahorro, sin errores ni valores absurdos.
 - El ratio no cambia al cambiar el filtro de período.
 
 ---
@@ -458,7 +458,7 @@ Recorre cada uno desde la guía del Inicio (Centro de ayuda): **Tu período**, *
 
 ---
 
-## 20. Correcciones recientes (T-77 a T-111)
+## 20. Correcciones recientes (T-77 a T-122)
 
 Estas pruebas comprueban lo corregido en los últimos cambios. Varias cambian tu ciclo o tu presupuesto **temporalmente**: al terminar, vuelve a poner tu configuración real (anótala antes, ver la sección 0).
 
@@ -783,6 +783,80 @@ Esta prueba solo se puede comprobar en el teléfono. Pon el widget en la pantall
 1. Activa la seguridad biométrica y pon el widget. Toca el **ojo** del widget. Esperado: muestra los montos **sin pedir la huella** (es así a propósito).
 2. Lee la sección **Widget** y **Limitaciones conocidas** del manual y el paso 3 del tutorial «Widget». Esperado: todos dicen «Cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget».
 
+### Estadísticas y gastos fijos con cuenta
+
+Estas pruebas usan la pestaña **Estadísticas** y **Presupuesto → Gastos Fijos**. Las que dicen «Android con SMS» necesitan el permiso de SMS y al menos dos cuentas que no sean tarjeta (por ejemplo Banrural y BAC).
+
+**T-112 — Cuadros tocables y vistas de la gráfica**
+1. Abre **Estadísticas** con **Per. Actual** y varios gastos e ingresos registrados. Esperado: arriba, tres cuadros (INGRESOS, GASTOS, AHORRO) y debajo la pista «Toca un cuadro para cambiar la gráfica.». El cuadro de GASTOS aparece resaltado (borde bronce más marcado).
+2. Toca **INGRESOS**. Esperado: el cuadro de ingresos queda resaltado y la tarjeta de abajo se llama «Ingresos por categoría — …», con el pastel de tus ingresos.
+3. Toca **GASTOS**. Esperado: «Gastos por categoría — …». Toca una porción o una fila de la leyenda: el centro y el detalle muestran su monto y porcentaje.
+4. Toca **AHORRO**. Esperado: la tarjeta «Tu ahorro explicado» (ver T-113). Vuelve a tocar GASTOS: la porción que habías elegido ya no está elegida.
+5. Cambia a **Per. Anterior**. Esperado: la vista se mantiene y se reinicia la porción elegida. Si ese período no tiene gastos, la tarjeta dice «No hay gastos en quetzales en este período.» y **no desaparece**.
+
+**T-113 — Vista AHORRO: ahorro negativo y sin ingresos**
+1. Elige un período donde gastaste más de lo que ingresó y toca **AHORRO**. Esperado: filas Ingresos y Gastos, la línea «Ahorro = Ingresos − Gastos» con el monto en rojo, la tasa de ahorro negativa, el comentario «Negativo: gastas más de lo que ingresas» y la frase «Gastaste Q … más de lo que entró: Q … de ingresos contra Q … de gastos.».
+2. Elige un período con gastos pero **sin ingresos**. Esperado: la tasa dice «—», el comentario es «Sin ingresos registrados en este período: no se puede calcular la tasa.» y la frase «Todavía no registras ingresos en quetzales en este período, así que tu ahorro es igual a tus gastos, en negativo.».
+3. Elige un período donde ahorraste el 20 % o más. Esperado: «Excelente: superas el 20% recomendado» y la frase «Te quedó Q …: entró Q … y gastaste Q ….».
+4. En todos los casos, «LO QUE MÁS PESA» lista hasta tres categorías de gasto con su monto y porcentaje, y una frase dice «Lo que más pesó fue …».
+
+**T-114 — Aviso de transferencias sin clasificar en el período actual y en el anterior (Android con SMS)**
+Preparación: ten en el **período anterior** una transferencia que vino de un SMS del banco, sin su otra mitad, y otra parecida en el período actual. Si no las tienes, pega un SMS de transferencia de otro banco de tu lista de datos de ejemplo.
+1. En **Estadísticas → Per. Actual**. Esperado: una tarjeta con el aviso «Q … en transferencias sin clasificar: puede que sea dinero entre tus cuentas. Por ahora se cuentan como gasto o ingreso.» y el interruptor «Sin transferencias».
+2. Cambia a **Per. Anterior**. Esperado: el aviso también aparece, con el monto de ese período.
+3. Toca **«Aclarar en el Centro de revisión»**. Esperado: se abre el Centro de revisión **sin filtro**: «¿A qué cuenta fue?» muestra también la transferencia del período anterior. Elige una cuenta. Esperado: al volver, el aviso baja o desaparece (esa transferencia ya no cuenta como gasto o ingreso).
+4. Registra a mano un gasto con categoría **Transferencia**. Esperado: el aviso dice «1 la registraste a mano: si fue dinero entre tus cuentas, cambia su categoría en Movimientos o regístralo con «Transferir» en Cuentas.» y esa transferencia no genera botón.
+5. Apaga los SMS en Ajustes. Esperado: para las transferencias que vinieron de SMS, el aviso dice «Activa los SMS en Ajustes para aclararlas en el Centro de revisión.» y el botón no aparece. Con una sola cuenta que no sea tarjeta dice «Para aclararlas necesitas al menos dos cuentas que no sean tarjeta.».
+6. Si ya respondiste «A otra persona» o «Ingreso externo» a esa pregunta, el aviso dice «Ya respondiste estas preguntas antes («A otra persona» o «Ingreso externo»); si fue dinero entre tus cuentas, cambia su categoría en Movimientos.».
+
+**T-115 — Interruptor «Sin transferencias»**
+1. Con el aviso de T-114 visible, anota los totales de INGRESOS y GASTOS y activa **«Sin transferencias»**. Esperado: los totales bajan o suben según esas transferencias, el pastel y la vista AHORRO cambian, y el aviso dice «… No se cuentan en esta pantalla.».
+2. Mira las tarjetas de más abajo (comparativa de 6 meses, gasto promedio diario, gasto por banco). Esperado: también dejan de contar esas transferencias.
+3. Desactiva el interruptor. Esperado: todo vuelve a como estaba. El interruptor **no borra nada**: abre Movimientos y comprueba que los movimientos siguen ahí.
+4. En la vista AHORRO, con el interruptor activo, la última frase dice «No se cuentan Q … en transferencias sin clasificar (interruptor «Sin transferencias»).».
+
+**T-116 — Selector Q / $**
+1. En un período **sin** movimientos en dólares. Esperado: **no** aparece el selector de moneda.
+2. Registra un gasto y un ingreso en dólares dentro del período y vuelve a Estadísticas. Esperado: aparece el selector **«Quetzales (Q)» / «Dólares ($)»** debajo del período.
+3. Toca **Dólares ($)**. Esperado: los cuadros, la gráfica, el ahorro y el aviso muestran solo los dólares, con «$»; el centro del pastel dice «$ …»; debajo aparece «Las tarjetas de más abajo siguen en quetzales.». No se convierte nada.
+4. Con la moneda en dólares, cambia a un período sin dólares. Esperado: el selector desaparece y la pantalla vuelve sola a quetzales.
+
+**T-117 — «Revisar (N)» cuenta «¿A qué cuenta fue?» y «Revisar también lo de antes» (Android con SMS)**
+1. Ten una transferencia de SMS sin su otra mitad (más de 36 horas) y nada más por revisar. Sincroniza. Esperado: el diálogo del resultado ofrece **«Revisar (N)»** con la pregunta contada en N.
+2. Abre el Centro desde ese botón y mira el final de la hoja. Esperado: el botón **«Revisar también lo de antes»** y la pista «Incluye movimientos de sincronizaciones anteriores, también del período anterior.».
+3. Tócalo. Esperado: el Centro se recalcula con todo lo guardado (también «Gastos fijos por confirmar», «Movimientos dudosos», etc. de sincronizaciones anteriores) y el botón desaparece.
+4. Cierra y abre el Centro desde **Ajustes → «Revisar pendientes»**. Esperado: ya muestra todo y **no** trae el botón. Si lo abres otra vez desde una sincronización, vuelve a traerlo.
+
+**T-118 — «PENDIENTE» en una línea y el botón flotante sin tapar montos**
+1. En un teléfono angosto (360 dp) o con la letra grande del sistema, abre **Presupuesto → Gastos Fijos**. Esperado: las etiquetas PAGADOS, CUBIERTO, PENDIENTE y PRÓX. PAGO quedan en **una sola línea** (si hace falta, la letra se achica un poco); «PENDIENTE» no se parte.
+2. Repite en **Categorías** (PLANIFICADO, GASTADO, DISPONIBLE o EXCESO).
+3. Baja hasta el final de la lista de **Gastos Fijos**, de **Metas** y de **Ingresos**. Esperado: el botón **+** flotante no tapa el monto de la última fila; sobra espacio debajo.
+
+**T-119 — Gasto fijo con cuenta o tarjeta**
+1. Ten una tarjeta con su corte y pago, y una cuenta con saldo **automático**. Crea un gasto fijo de Q 300 con **AUTO** activado. Esperado: el formulario trae «CUENTA O TARJETA (Opcional)» con «Sin cuenta» y tus cuentas (cada una con su punto de color y su ícono de tarjeta o billetera).
+2. Elige la tarjeta. Esperado: la pista «Al marcarlo pagado con AUTO, el cargo entra al «Ciclo abierto» de esta tarjeta.». Guarda. Esperado: la fila muestra un chip con el nombre de la tarjeta junto al día de pago.
+3. Márcalo pagado. Esperado: en **Cuentas**, el «Ciclo abierto» de esa tarjeta suma Q 300 y en Movimientos el gasto trae esa tarjeta como cuenta.
+4. Edita otro gasto fijo y elígele la cuenta con saldo automático. Esperado: la pista «Esta cuenta lleva su saldo automático: el pago lo resta solo.» y, al marcarlo pagado, el saldo de la cuenta baja.
+5. Con una cuenta sin saldo automático, la pista dice «Este gasto no cambia el saldo guardado de la cuenta: aquí la cuenta organiza tus pagos.». Con SMS activos y una cuenta elegida, aparece también «Si el SMS del banco viene de esta cuenta, la app lo reconoce con más seguridad.».
+6. Crea una visacuota de Q 500 en la tarjeta y luego un gasto fijo de Q 500 con esa tarjeta. Esperado: un aviso amarillo «Esta tarjeta ya carga la visacuota «…» de Q 500.00 cada corte. Si este gasto fijo es esa cuota, no lo agregues: se contaría dos veces.»; aun así se puede guardar.
+7. Elimina la cuenta de un gasto fijo que la usaba. Esperado: el gasto fijo sigue ahí, sin chip y sin cuenta.
+
+**T-120 — SMS con el mismo nombre en cualquier día del mismo período (Android con SMS)**
+1. Crea un gasto fijo «EEGSA» de Q 687.20 con vencimiento el día 28. Pega (o recibe) un SMS de EEGSA por Q 687.20 con fecha del **día 3** del mismo período. Esperado: el gasto se marca **pagado solo** (antes solo lo proponía, por estar lejos del vencimiento).
+2. Repite con un SMS de EEGSA con fecha del **período anterior**. Esperado: **no** se marca ni se propone: solo cuentan los SMS del período actual.
+3. Con un monto distinto hasta un 10 %, el nombre igual: se marca solo si el resto coincide; con una diferencia mayor la app no lo marca sola: lo propone en «Gastos fijos por confirmar».
+4. Si cobras por quincena, por semana o con ingresos irregulares, «el período» de los gastos fijos es el **mes**: un SMS de cualquier día de ese mes cuenta.
+
+**T-121 — SMS de otra cuenta o con dos candidatos: queda como propuesta (Android con SMS)**
+1. Crea el gasto fijo «EEGSA» con la cuenta **BAC**. Recibe o pega un SMS de EEGSA que venga de una cuenta **distinta** (por ejemplo, otra tarjeta). Esperado: **no** se marca solo; aparece en **Centro de revisión → Gastos fijos por confirmar**, con la razón «otra cuenta o tarjeta».
+2. Con el mismo gasto fijo, recibe **dos** SMS de EEGSA por el mismo monto en el mismo período. Esperado: ninguno se marca solo; los dos quedan como propuesta y tú eliges cuál es.
+3. Con un gasto fijo **sin** cuenta y un SMS con cuenta, o con cuenta y un SMS sin ella, el emparejamiento funciona como siempre (sin penalización).
+
+**T-122 — Marcado a mano y luego llega el SMS; tutorial «Gasto fijo con cuenta o tarjeta»**
+1. Crea el gasto «EEGSA» con la tarjeta BAC y márcalo pagado a mano con AUTO. Después recibe el SMS de EEGSA de esa misma tarjeta. Esperado: queda **una sola fila** en Movimientos (el SMS se une a tu registro, no se cuenta dos veces) y el gasto conserva su cuenta. Si el SMS venía de otra cuenta, el Centro te propone unirlos y, si los unes, se queda la cuenta de tu registro; al separarlos vuelve la del SMS.
+2. Abre **Inicio → Ayuda → «Gasto fijo con cuenta»**. Con **al menos una cuenta o tarjeta**: el paso 1 te muestra Cuentas, el paso 2 el botón + de Gastos Fijos y el paso 3 la lista de gastos fijos.
+3. Repite **sin ninguna cuenta ni tarjeta** (en una instalación nueva). Esperado: el paso 1 dice «Para este paso necesitas una cuenta o tarjeta…» y ofrece crearla en ese momento; no se queda señalando una pantalla vacía.
+
 ---
 
 ## 21. Resumen de resultados
@@ -836,6 +910,17 @@ Esta prueba solo se puede comprobar en el teléfono. Pon el widget en la pantall
 | T-109 (avisos de presupuesto: ciclo irregular y montos con formato) | | |
 | T-110 (permiso de notificaciones al terminar la configuración inicial) | | |
 | T-111 (la huella no protege el widget) | | |
+| T-112 (cuadros tocables y vistas de la gráfica) | | |
+| T-113 (vista AHORRO: ahorro negativo y sin ingresos) | | |
+| T-114 (aviso de transferencias sin clasificar, período actual y anterior) | | |
+| T-115 (interruptor «Sin transferencias») | | |
+| T-116 (selector Q / $) | | |
+| T-117 («Revisar (N)» cuenta «¿A qué cuenta fue?» y «Revisar también lo de antes») | | |
+| T-118 («PENDIENTE» en una línea y el botón flotante sin tapar montos) | | |
+| T-119 (gasto fijo con cuenta o tarjeta, chip y aviso de visacuota) | | |
+| T-120 (SMS con el mismo nombre en cualquier día del mismo período) | | |
+| T-121 (SMS de otra cuenta o con dos candidatos: propuesta) | | |
+| T-122 (marcado a mano y luego el SMS; tutorial «Gasto fijo con cuenta o tarjeta») | | |
 
 ## Cómo reportar un problema
 

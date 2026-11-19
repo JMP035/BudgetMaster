@@ -18,10 +18,10 @@ Personas comunes en Guatemala, **sin conocimientos técnicos ni financieros**: e
 
 ## Fuentes de verdad (en este orden)
 1. `MANUAL_USUARIO.md` (en la raíz del repositorio) — borrador técnico, 17 secciones, ya en «tú» y verificado contra el código el 18 de noviembre de 2026. Es el contenido más completo.
-2. `docs/PRUEBAS_MANUALES.md` — instructivo de **112 pruebas manuales** (P-01 y T-01 a T-111); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
+2. `docs/PRUEBAS_MANUALES.md` — instructivo de **123 pruebas manuales** (P-01 y T-01 a T-122); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
 3. Los resultados que el dueño de la app aporte tras probar (aciertos, fallos, capturas).
 
-Además existen **37 pruebas automáticas** (`npm run test:*`) con **5,190 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
+Además existen **38 pruebas automáticas** (`npm run test:*`) con **5,313 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
 
 **Regla:** no inventar funciones ni describir pantallas que no estén en esas fuentes. Si algo no está claro, preguntar. Si algo aún no se ha probado en un teléfono (por ejemplo, el widget), marcarlo como pendiente de verificación en vez de afirmarlo.
 
@@ -41,6 +41,8 @@ Además existen **37 pruebas automáticas** (`npm run test:*`) con **5,190 compr
 - **Tarjetas de crédito:** día de corte y de pago por tarjeta (se piden al agregarla, incluso en la configuración inicial); sin esos días la tarjeta muestra «Sin corte ni pago · Configurar», la guía del Inicio trae «Configurar corte y pago de tus tarjetas» y llega un aviso único. Estado de cuenta en quetzales y dólares por separado (estimado, o el monto real que escribe el usuario); pago de tarjeta como transferencia (no es un gasto nuevo); **visacuotas** que se cargan como un gasto por cuota en cada corte.
 - **Saldos opcionales** por cuenta (sin seguimiento, manual, automático) y **transferencias** entre cuentas propias (ejemplo: sueldo en Banrural → transferir a BAC → pagar la tarjeta desde BAC).
 - Presupuesto: gastos fijos, límites por categoría, metas de ahorro, deuda programada, ingresos.
+- **Gastos fijos con cuenta o tarjeta (opcional):** cada gasto fijo puede decir de qué cuenta o tarjeta sale; la fila muestra un chip y, con AUTO, el movimiento queda en esa cuenta (en una tarjeta, entra a su «Ciclo abierto»). Si el SMS del banco trae el mismo nombre en **cualquier día del mismo período** (con quincenal, semanal o irregular, el período de los gastos fijos es el mes), el gasto se marca solo; si el SMS viene de otra cuenta, o hay dos candidatos, se pregunta en el Centro de revisión; si ya estaba marcado a mano, el SMS se une al registro. El formulario avisa si la tarjeta ya carga una visacuota del mismo monto, para no contarla dos veces.
+- **Estadísticas:** los tres cuadros (ingresos, gastos, ahorro) son tocables y cambian la gráfica; la vista de ahorro explica la cuenta y trae la tasa de ahorro. Quetzales y dólares van por separado (selector Q/$ cuando hay dólares en el período; nada se convierte). Las **transferencias sin clasificar** (categoría Transferencia que cuenta como gasto o ingreso) se avisan en cualquier período y un interruptor «Sin transferencias» las quita de la pantalla sin borrarlas; desde el aviso se abre el Centro de revisión para aclararlas.
 - **Notificaciones** útiles y poco insistentes: recordatorios de pagos, resumen diario, resumen semanal (el domingo, o el último día de la semana de quien cobra semanal), aviso de fin de período, horas silenciosas, aviso de capacidad de pago y un aviso único de configuración pendiente.
 - Asesor con IA: órdenes y consultas en lenguaje natural (funciona sin internet en «Modo local»; con clave de Gemini es más conversacional). Solo cuenta las cuotas de deuda vivas.
 - Widget de Android con botón de ojo para ocultar los montos y un botón «+ gasto». Los días al cobro se recalculan solos cada día; llegado el cobro el widget dice «Abre la app para actualizar». El ojo muestra los montos sin pedir la huella (advertencia obligatoria en el manual).
@@ -58,7 +60,8 @@ Además existen **37 pruebas automáticas** (`npm run test:*`) con **5,190 compr
 - **Visacuota:** compra en cuotas con tarjeta (o préstamo sin tarjeta); cada corte se carga una cuota.
 - **Fuente de ingreso:** de dónde y cuándo te pagan; sirve para que la app reconozca tu pago. Puede ser *base* (tu ingreso regular) o *extra* (aguinaldo, bono 14).
 - **Saldo de partida / Ajustar al saldo real:** el saldo desde el que la app empieza a sumar y restar, y cómo corregirlo si no coincide con el banco.
-- **Centro de revisión:** lista de cosas que la app no está segura de haber entendido (duplicados, transferencias, ¿es tu sueldo?, ¿a qué cuenta fue?…).
+- **Centro de revisión:** lista de cosas que la app no está segura de haber entendido (duplicados, transferencias, ¿es tu sueldo?, ¿a qué cuenta fue?…). Abierto desde el aviso de una sincronización muestra solo lo que trajo esa sincronización (con «Revisar también lo de antes» o desde Ajustes → «Revisar pendientes» muestra todo).
+- **Transferencias sin clasificar:** movimientos con categoría Transferencia (un gasto o un ingreso «transfer_in») que cuentan como gasto o ingreso porque nadie dijo a qué cuenta fue. Estadísticas los avisa y se pueden aclarar con «¿A qué cuenta fue?».
 
 ## Limitaciones que el manual debe decir con honestidad
 - Lectura de SMS, sincronización automática, widget y varias detecciones son **solo Android**. En iPhone se registra a mano o se pega un SMS (botón «Pegar SMS», siempre visible).
@@ -66,6 +69,8 @@ Además existen **37 pruebas automáticas** (`npm run test:*`) con **5,190 compr
 - **Sin copia de seguridad en la nube:** si se borra la app, se pierden los datos.
 - **Irregular = mes calendario:** sin día de pago y sin contador de días al pago (el widget pequeño dice «N días en el período», los que quedan del mes).
 - **Semanal sin feriados ni anclas:** la semana arranca siempre el día elegido; no hay inicio editable ni aviso de fin de período (el resumen semanal lo reemplaza).
+- **«¿A qué cuenta fue?» solo pregunta por transferencias que vienen de un SMS** y solo con al menos 2 cuentas que no sean tarjeta; las transferencias registradas a mano se corrigen cambiando su categoría en Movimientos o con «Transferir» en Cuentas.
+- **Estadísticas no convierte dólares:** el selector Q/$ muestra cada moneda por separado, y las tarjetas de más abajo (proyección, 6 meses, bancos…) siguen en quetzales.
 - **Euros y libras 1:1:** solo hay tipo de cambio Q↔USD; el EUR y la libra se toman 1:1 con el quetzal.
 - La lectura de SMS depende de permisos de Android y de políticas de Google Play (para una versión pública puede cambiar).
 
