@@ -802,7 +802,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'wid_3', position: 'center', icon: 'eye-off-outline',
                 title: '3. El ojo: ocultar o ver los montos',
-                description: 'Por defecto los montos salen ocultos (••••) para que nadie los vea de reojo. Toca el ojo del widget para verlos y tócalo otra vez para ocultarlos. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.',
+                description: 'Por defecto los montos salen ocultos (••••) para que nadie los vea de reojo. Toca el ojo del widget para verlos y tócalo otra vez para ocultarlos. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre. Ojo: Cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget. Si no quieres que nadie los vea, deja el ojo cerrado o quita el widget.',
             },
             {
                 id: 'wid_4', position: 'center', icon: 'add-outline',
