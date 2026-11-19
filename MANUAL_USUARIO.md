@@ -170,6 +170,8 @@ Las transacciones importadas llevan la etiqueta **SMS** y guardan el mensaje ori
 
 El Centro de revisión agrupa, cuando aplica: «Movimientos dudosos», «Posibles duplicados», «Gastos fijos por confirmar», «Transferencias entre tus cuentas», «¿A qué cuenta fue?», «¿Es tu Sueldo?», «¿Es el pago de tu tarjeta?», «Compras sin cuenta» y «Sin clasificar».
 
+**Alcance del Centro de revisión.** Si lo abres desde el aviso de una sincronización («Revisar (N)» o el aviso del Inicio), casi todas sus secciones muestran **solo lo que trajo esa sincronización**. Para ver todo lo guardado, incluidos los movimientos del período anterior, toca **«Revisar también lo de antes»** al final de la hoja, o abre el Centro desde **Ajustes → «Revisar pendientes»**, que siempre muestra todo. «Revisar (N)» cuenta también las preguntas «¿A qué cuenta fue?». Estadísticas también abre el Centro sin filtro con **«Aclarar en el Centro de revisión»** (ver [8](#8-estadísticas)).
+
 En **Ajustes → Sincronización de SMS** también encuentras «Revisar pendientes», «Deshacer última sincronización», «Comercios aprendidos», «Mensajes sin clasificar» y «Compartir muestra de mis SMS».
 
 ---
@@ -344,7 +346,7 @@ Análisis completo con filtros: **Per. Actual · Per. Anterior · Este Año · T
 - **Gráfica de pastel por categoría** — toca una porción (o la leyenda) para ver su detalle. El centro muestra el total. Si no hay movimientos en esa moneda y período, la tarjeta te lo dice.
 - **Vista AHORRO** — muestra ingresos, gastos y «Ahorro = Ingresos − Gastos», las tres categorías que más pesan y frases simples que explican por qué tu ahorro sale positivo o negativo. Aquí está la **tasa de ahorro**: (ingresos − gastos) / ingresos; meta recomendada: ≥ 20 %. Sin ingresos en el período no se puede calcular y se muestra «—».
 - **Quetzales o dólares** — si el período tiene movimientos en dólares aparece un selector **Q / $**: los cuadros, la gráfica, el ahorro y el aviso de transferencias se calculan solo con esa moneda, sin convertir. Las tarjetas de más abajo siguen en quetzales.
-- **Transferencias sin clasificar y «Sin transferencias»** — un movimiento con categoría Transferencia que cuenta como gasto o ingreso (porque no se aclaró a qué cuenta fue) puede ser dinero entre tus cuentas. Estadísticas te avisa con el monto, en cualquier período (también en el anterior). El interruptor **«Sin transferencias»** los quita de los totales y gráficas de esta pantalla mientras tanto; no borra nada.
+- **Transferencias sin clasificar y «Sin transferencias»** — un movimiento con categoría Transferencia que cuenta como gasto o ingreso (porque no se aclaró a qué cuenta fue) puede ser dinero entre tus cuentas. Estadísticas te avisa con el monto, en cualquier período (también en el anterior). Con los SMS activos y al menos dos cuentas que no sean tarjeta, el botón **«Aclarar en el Centro de revisión»** abre el Centro sin filtro para elegir a qué cuenta fue; las que registraste a mano se corrigen cambiando su categoría en Movimientos o con «Transferir» en Cuentas. El interruptor **«Sin transferencias»** los quita de los totales y gráficas de esta pantalla mientras tanto; no borra nada.
 - **Flujo de caja proyectado** — a tu ritmo diario actual, cuánto gastarás al final del período y si te sobrará o faltará.
 - **Comparativa de 6 meses** — barras de gastos e ingresos mes a mes, con la diferencia vs. el período anterior.
 - **Ahorro acumulado** y **proyección a 6 y 12 meses** según tu ritmo de ahorro (se basa en tus movimientos registrados, no en el saldo de tus cuentas).
@@ -574,6 +576,14 @@ Toca la casilla otra vez para desmarcarlo. Si tenía AUTO activado, la transacci
 
 **¿Cómo respaldo mis datos?**
 Los datos viven solo en el almacenamiento del teléfono. Si desinstalas la app o usas «Borrar Todos los Datos», se pierden. Aún no hay exportación integrada ni copia en la nube.
+
+**¿Por qué una transferencia del período anterior no me aparece para aclararla?**
+Las preguntas «¿A qué cuenta fue?» no caducan, pero solo salen si se cumple todo esto. Revisa estas cinco causas:
+1. **La registraste a mano.** Solo se preguntan las transferencias que vienen de un SMS. Si la anotaste tú, cambia su categoría en Movimientos o regístrala con «Transferir» en Cuentas.
+2. **Ya la descartaste.** Si respondiste «A otra persona» o «Ingreso externo», la pregunta no vuelve. Si en realidad fue dinero entre tus cuentas, cambia su categoría en Movimientos.
+3. **Tienes menos de dos cuentas que no sean tarjeta.** Sin dos cuentas no hay a dónde mover el dinero. Crea la segunda en Cuentas.
+4. **Abriste el Centro desde una sincronización.** Ahí solo ves lo que trajo esa sincronización. Toca «Revisar también lo de antes», o usa Ajustes → «Revisar pendientes», o el botón «Aclarar en el Centro de revisión» del aviso de Estadísticas.
+5. **Los SMS están apagados.** El Centro de revisión solo existe con los SMS activados (Ajustes). Sin ellos, cambia la categoría del movimiento a mano.
 
 **El contador de días hasta el pago está mal.**
 Revisa en Ajustes → Ingresos y período tu ciclo y día(s) de pago. Para quincenal deben ser dos días distintos (por ejemplo 15 y 30); para semanal, el día de la semana en que te pagan. Con ingresos irregulares el contador no aparece.

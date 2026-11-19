@@ -385,6 +385,11 @@ export const TUTORIALS: Tutorial[] = [
                 title: 'Clasificación automática',
                 description: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría: Restaurantes para comida preparada, Supermercado para la despensa y Comida para el resto. Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía), así que los próximos depósitos del mismo origen llegan ya clasificados. Si ya creaste una fuente de ingreso, un depósito que se le parece se vincula solo; si la app no está segura, el centro de revisión te pregunta «¿Es tu sueldo?» y tú confirmas con Sí o No.',
             },
+            {
+                id: 'sms_6', position: 'center', icon: 'shield-checkmark-outline',
+                title: 'Centro de revisión',
+                description: 'Si lo abres desde el aviso de una sincronización, ves lo que trajo esa sincronización; toca «Revisar también lo de antes» o usa Ajustes → «Revisar pendientes» para ver todo, también lo del período anterior. «Revisar» cuenta también las preguntas «¿A qué cuenta fue?».',
+            },
         ],
     },
 
@@ -487,7 +492,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_transfers', elementId: 'stats_transfers', screen: 'stats', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
                 title: 'Transferencias sin clasificar',
-                description: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior.',
+                description: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior. Con «Aclarar en el Centro de revisión» eliges a qué cuenta fue y deja de contar.',
+                noSmsDescription: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior. Si fue dinero entre tus cuentas, cambia su categoría en Movimientos o regístralo con «Transferir» en Cuentas.',
                 emptyHint: 'Aparece cuando hay movimientos con categoría Transferencia que cuentan como gasto o ingreso en el período elegido.',
             },
             {
@@ -821,7 +827,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sal_5', elementId: 'accounts_transfer_btn', screen: 'accounts', position: 'bottom', icon: 'help-circle-outline', padding: 8,
                 title: '5. ¿A qué cuenta fue?',
-                description: 'Si el banco manda solo uno de los dos SMS de una transferencia, el Centro de revisión te pregunta «¿A qué cuenta fue?» con tus cuentas como opciones (o «A otra persona» / «Ingreso externo» si no es tuya). Elegida la cuenta, deja de contar como gasto o ingreso. Solo pregunta si tienes dos cuentas que no sean tarjeta. Si el SMS nunca llega, regístrala tú con «Transferir».',
+                description: 'Si el banco manda solo uno de los dos SMS de una transferencia, el Centro de revisión te pregunta «¿A qué cuenta fue?» con tus cuentas como opciones (o «A otra persona» / «Ingreso externo» si no es tuya). Elegida la cuenta, deja de contar como gasto o ingreso. Solo pregunta si tienes dos cuentas que no sean tarjeta. Las preguntas no caducan: también salen las del período anterior. Si el SMS nunca llega, regístrala tú con «Transferir».',
                 noSmsDescription: 'Sin SMS, cada transferencia la registras tú con «Transferir»: eliges origen, destino, monto y fecha, y la app mueve los saldos de las cuentas que los llevan.',
                 emptyHint: 'Necesitas al menos dos cuentas que no sean tarjeta de crédito para transferir. Crea la segunda con el botón +.',
             },

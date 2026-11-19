@@ -646,6 +646,9 @@ function AppContent() {
               creditInstallments={creditInstallments}
               incomeSources={incomeSources}
               onClearLegacyDebt={clearLegacyDebt}
+              accounts={accountsView}
+              fixedExpenses={fixedExpenses}
+              onDataChanged={() => { void loadData(); }}
             />
           )}
           {tab === "settings" && !showAI && (

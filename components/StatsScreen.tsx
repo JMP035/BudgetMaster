@@ -1,11 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
     Animated, Easing, ScrollView,
     StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
-import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysLeftInPeriod, hasPayDate } from "../services/storage";
+import { Account, CreditInstallment, FixedExpense, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysLeftInPeriod, hasPayDate } from "../services/storage";
+import { isSmsFeatureOn } from "../services/features";
+import { findUnpairedTransfers, movableAccounts } from "../services/TransferQuestions";
 import { monthlyDebtLoad } from "../services/DebtLoad";
 import { periodBudgetLimit } from "../services/PeriodBudget";
 import { categoryLabelOf, getCat } from "../categories";
@@ -23,6 +25,7 @@ import { useGlassDialog } from "./GlassDialogProvider";
 import { GradientText } from "./GradientText";
 import { HelpButton } from "./HelpButton";
 import { InlineNotice } from "./InlineNotice";
+import SmsPendingSheet from "./SmsPendingSheet";
 import Money from "./Money";
 import { ScreenHeader } from "./ScreenHeader";
 import { SignMode, formatMoney } from "../services/format";
@@ -333,9 +336,20 @@ interface Props {
     incomeSources?: IncomeSource[];
     /** «Ya no la tengo»: borra la deuda declarada en el onboarding viejo. */
     onClearLegacyDebt?: () => void | Promise<void>;
+    /** Cuentas (con saldos derivados): para saber si se pueden aclarar las transferencias en el Centro de revisión. */
+    accounts?: Account[];
+    /** Gastos fijos: el Centro de revisión los necesita para sus propuestas. */
+    fixedExpenses?: FixedExpense[];
+    /** Se llama cuando el Centro de revisión cambió datos (recarga la app). */
+    onDataChanged?: () => void;
 }
 
-export default function StatsScreen({ transactions, settings, creditInstallments = [], incomeSources = [], onClearLegacyDebt }: Props) {
+const NO_ACCOUNTS: Account[] = [];
+
+export default function StatsScreen({
+    transactions, settings, creditInstallments = [], incomeSources = [], onClearLegacyDebt,
+    accounts = NO_ACCOUNTS, fixedExpenses = [], onDataChanged,
+}: Props) {
     const dialog = useGlassDialog();
     const [period, setPeriod] = useState<StatsPeriod>("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
@@ -343,6 +357,8 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     const [view, setView] = useState<StatsView>("expense");
     const [currency, setCurrency] = useState<StatsCurrency>("Q");
     const [excludeTransfers, setExcludeTransfers] = useState(false);
+    const [showReview, setShowReview] = useState(false);
+    const smsOn = isSmsFeatureOn(settings);
     useTutorialAction("stats:setView", arg => { setView(arg === "income" || arg === "savings" ? arg : "expense"); setSelectedSlice(null); setLegendExpanded(false); });
 
     const headerRef = useTutorialRef('stats_header');
@@ -383,6 +399,17 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     const cur: StatsCurrency = hasUSD ? currency : "Q";
     const summary = summarizeStats(inRange, { currency: cur, excludeUnclassified: excludeTransfers });
     const summaryQ = summarizeStats(inRange, { currency: "Q", excludeUnclassified: excludeTransfers });
+
+    // Transferencias de SMS sin clasificar que el Centro de revisión sí puede preguntar (sin mirar las ya descartadas:
+    // esta cuenta solo decide si se muestra el botón).
+    const askable = useMemo(
+        () => new Set(findUnpairedTransfers(transactions, accounts, new Set(), new Date()).map(u => u.txId)),
+        [transactions, accounts],
+    );
+    const reviewable = summary.unclassified.smsIds.filter(id => askable.has(id));
+    const movable = movableAccounts(accounts).length;
+    const manualN = summary.unclassified.manualIds.length;
+    const smsN = summary.unclassified.smsIds.length;
 
     // Las tarjetas de más abajo siguen en quetzales; «Sin transferencias» también las afecta.
     const base = excludeTransfers ? transactions.filter(t => !isUnclassifiedTransfer(t)) : transactions;
@@ -625,6 +652,29 @@ export default function StatsScreen({ transactions, settings, creditInstallments
                                 text={`${formatMoney(summary.unclassified.total, cur)} en transferencias sin clasificar: puede que sea dinero entre tus cuentas.${excludeTransfers ? " No se cuentan en esta pantalla." : " Por ahora se cuentan como gasto o ingreso."}`}
                             />
                         )}
+                        {manualN > 0 && (
+                            <Text style={s.transferNote}>
+                                {manualN === 1 ? "1 la registraste" : `${manualN} las registraste`} a mano: si fue dinero entre tus cuentas, cambia su categoría en Movimientos o regístralo con «Transferir» en Cuentas.
+                            </Text>
+                        )}
+                        {smsN > 0 && !smsOn && (
+                            <Text style={s.transferNote}>Activa los SMS en Ajustes para aclararlas en el Centro de revisión.</Text>
+                        )}
+                        {smsN > 0 && smsOn && movable < 2 && (
+                            <Text style={s.transferNote}>Para aclararlas necesitas al menos dos cuentas que no sean tarjeta.</Text>
+                        )}
+                        {smsN > 0 && smsOn && movable >= 2 && reviewable.length === 0 && (
+                            <Text style={s.transferNote}>Ya respondiste estas preguntas antes («A otra persona» o «Ingreso externo»); si fue dinero entre tus cuentas, cambia su categoría en Movimientos.</Text>
+                        )}
+                        {smsOn && reviewable.length > 0 && movable >= 2 && (
+                            <GlassButton
+                                kind="secondary"
+                                icon="shield-checkmark-outline"
+                                label="Aclarar en el Centro de revisión"
+                                onPress={() => setShowReview(true)}
+                                style={s.reviewBtn}
+                            />
+                        )}
                         <View style={s.switchRow}>
                             <View style={s.switchText}>
                                 <Text style={s.switchLabel}>Sin transferencias</Text>
@@ -812,6 +862,19 @@ export default function StatsScreen({ transactions, settings, creditInstallments
             />
 
             <View style={{ height: 120 }} />
+
+            {smsOn && (
+                <SmsPendingSheet
+                    visible={showReview}
+                    result={null}
+                    settings={settings}
+                    accounts={accounts}
+                    transactions={transactions}
+                    fixedExpenses={fixedExpenses}
+                    onClose={() => setShowReview(false)}
+                    onChanged={() => { onDataChanged?.(); }}
+                />
+            )}
         </ScrollView>
     );
 }
@@ -829,6 +892,8 @@ const s = StyleSheet.create({
     quickCardActive: { borderWidth: 1.5, borderColor: C.glassActiveBorder, borderRadius: 14 },
     quickHint: { color: C.textSub, fontSize: 11, marginTop: 8, marginBottom: 2, paddingHorizontal: 4 },
     emptyChart: { color: C.textSub, fontSize: 13, lineHeight: 19 },
+    transferNote: { color: C.textSub, fontSize: 12, lineHeight: 17, marginTop: 10 },
+    reviewBtn: { marginTop: 12 },
     switchRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12 },
     switchText: { flex: 1 },
     switchLabel: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },

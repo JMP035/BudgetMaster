@@ -50,6 +50,7 @@ export function countPending(r: SyncResult): number {
         + r.transferPairs.length
         + (r.incomeProposals?.length ?? 0)
         + (r.cardPaymentProposals?.length ?? 0)
+        + (r.transferQuestions?.length ?? 0)
         + r.unassignedCount
         + r.inbox.length;
 }
@@ -100,9 +101,12 @@ function PendingRow({ icon, title, hint, count, onPress }: RowProps) {
 }
 
 export default function SmsPendingSheet({
-    visible, result, settings, accounts, transactions, fixedExpenses, onClose, onChanged,
+    visible, result: syncResult, settings, accounts, transactions, fixedExpenses, onClose, onChanged,
 }: SmsPendingSheetProps) {
     const [view, setView] = useState<ViewState>("sheet");
+    // 'sync' = solo lo que trajo la sincronización que abrió la hoja; 'all' = todo lo guardado (también períodos anteriores).
+    const [scope, setScope] = useState<"sync" | "all">("sync");
+    const result = scope === "all" ? null : syncResult;
     const [dupIgnored, setDupIgnored] = useState<string[]>([]);
     const [keptIds, setKeptIds] = useState<string[]>([]);
     const [inboxCount, setInboxCount] = useState(0);
@@ -119,6 +123,7 @@ export default function SmsPendingSheet({
     useEffect(() => {
         if (!visible) { clearTimer(); return; }
         setView("sheet");
+        setScope("sync");
         setTick(t => t + 1);
         return clearTimer;
     }, [visible]);
@@ -308,6 +313,19 @@ export default function SmsPendingSheet({
 
     if (!visible) return null;
 
+    const canWiden = syncResult !== null && scope === "sync";
+    const widenBlock = canWiden ? (
+        <View style={s.widenWrap}>
+            <GlassButton
+                kind="ghost"
+                icon="time-outline"
+                label="Revisar también lo de antes"
+                onPress={() => { setScope("all"); setTick(t => t + 1); }}
+            />
+            <Text style={s.widenHint}>Incluye movimientos de sincronizaciones anteriores, también del período anterior.</Text>
+        </View>
+    ) : null;
+
     return (
         <>
             {view === "sheet" && (
@@ -406,6 +424,7 @@ export default function SmsPendingSheet({
                             )}
                         </>
                     )}
+                    {widenBlock}
                     <GlassButton label="Cerrar" kind="secondary" onPress={onClose} style={s.closeBtn} />
                 </GlassSheet>
             )}
@@ -495,4 +514,6 @@ const s = StyleSheet.create({
     emptyTitle: { color: C.text, fontSize: 16, fontWeight: "800" },
     emptyTxt: { color: C.textSub, fontSize: 13, textAlign: "center" },
     closeBtn: { marginTop: 6 },
+    widenWrap: { marginTop: 4, marginBottom: 6 },
+    widenHint: { color: C.textSub, fontSize: 12, lineHeight: 17, textAlign: "center", marginTop: 2 },
 });

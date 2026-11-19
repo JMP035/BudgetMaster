@@ -11,6 +11,8 @@ import type { CreditInstallment, SmsInboxItem, Transaction } from './storage';
 import type { FixedMatch } from './FixedExpenseMatcher';
 import type { DupPair } from './DuplicateDetector';
 import type { TransferPair } from './TransferPairs';
+import { findUnpairedTransfers } from './TransferQuestions';
+import type { UnpairedTransfer } from './TransferQuestions';
 import type { SmsBatchRecord } from './storage';
 import { assignAccountsToTransactions, collectLinkSeen, extractSmsLinkSignals, isPendingUnassigned, matchAccountForSms } from './AccountLinking';
 import { findFixedFusions, matchFixedExpenses } from './FixedExpenseMatcher';
@@ -81,6 +83,8 @@ export interface SyncResult {
   incomeProposals: IncomeProposal[];
   /** Salidas de la cuenta pagadora que podrían ser el pago de una tarjeta y que la persona debe confirmar. */
   cardPaymentProposals: CardPaymentProposal[];
+  /** «¿A qué cuenta fue?»: transferencias de SMS sin su otra mitad (de cualquier fecha; sin las ya respondidas). */
+  transferQuestions?: UnpairedTransfer[];
 }
 
 export type SmsSyncMode = 'auto' | 'manual' | 'full';
@@ -100,7 +104,7 @@ function emptySyncResult(mode: SmsSyncMode = 'manual'): SyncResult {
     transactions: [], installments: [], totalRead: 0, totalMatched: 0, totalSkipped: 0, totalIgnored: 0,
     stats: emptySmsStats(), reviewItems: [], diagnostics: [], inbox: [],
     batchId: null, mode, fixedAutoMarked: [], fixedProposals: [], duplicates: [], unassignedCount: 0, transferPairs: [],
-    incomeProposals: [], cardPaymentProposals: [],
+    incomeProposals: [], cardPaymentProposals: [], transferQuestions: [],
   };
 }
 
@@ -550,6 +554,14 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     const reviewItems = reviewImportedSms(allTxs, new Set(kept), { merchantRules: rules, incomeRules });
 
+    // «¿A qué cuenta fue?»: con los movimientos ya guardados (también los de períodos anteriores).
+    let transferQuestions: UnpairedTransfer[] = [];
+    try {
+      transferQuestions = findUnpairedTransfers(allTxs, accounts, new Set(dupIgnoredList), now);
+    } catch (e) {
+      console.warn('SMS sync (¿a qué cuenta fue?) error:', e instanceof Error ? e.message : 'desconocido');
+    }
+
     // (g) Solo si todo terminó bien.
     await StorageService.saveSmsSyncState({ lastSyncAt: startedAt, ...(full ? { lastFullSyncAt: startedAt } : {}) });
 
@@ -588,6 +600,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
       transferPairs,
       incomeProposals,
       cardPaymentProposals,
+      transferQuestions,
     };
   } catch (e) {
     console.warn('SMS sync error:', e instanceof Error ? e.message : 'desconocido');
