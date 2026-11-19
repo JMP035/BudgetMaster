@@ -15,6 +15,7 @@ import { C } from "../theme";
 import { GlassBackground, GlassCard } from "./GlassCard";
 import { GlassButton } from "./GlassButton";
 import { InlineNotice } from "./InlineNotice";
+import { TutorialRichText } from "./TutorialRichText";
 
 const PADDING = 10;
 
@@ -239,7 +240,7 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
 
     const bodyContent = (
         <>
-            <Text style={card.desc}>{step.description}</Text>
+            <TutorialRichText lead={step.lead} text={step.description} />
             {missing ? (
                 <>
                     <InlineNotice variant="warning" text={requirementNoticeText(missing)} style={card.notice} />
@@ -936,7 +937,6 @@ const card = StyleSheet.create({
     iconSmall: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, backgroundColor: C.glassActive, borderColor: C.glassActiveBorder, alignItems: "center", justifyContent: "center" },
     titleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
     title: { color: C.textPrimary, fontSize: 17, fontWeight: "900", lineHeight: 22, flex: 1 },
-    desc: { color: C.text, fontSize: 14, lineHeight: 21, marginBottom: 10 },
     notice: { marginBottom: 14 },
     fulfillBtn: { marginBottom: 14 },
     counter: { color: C.textSub, fontSize: 11, letterSpacing: 1, marginLeft: "auto" },

@@ -15,6 +15,10 @@ export interface TutorialStep {
     id: string;
     elementId?: string;   // ID del elemento registrado en TutorialContext (measureInWindow)
     title: string;
+    // frase clave del paso: se pinta en negrita arriba del cuerpo (ver services/TutorialText.ts para el marcado de description)
+    lead?: string;
+    // lead alternativo (sin mención a SMS) cuando la sincronización SMS está desactivada
+    noSmsLead?: string;
     description: string;
     position: 'top' | 'bottom' | 'center';
     icon: string;

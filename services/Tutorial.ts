@@ -53,6 +53,7 @@ export const TutorialService = {
                     .filter(s => !s.requiresSms)
                     .map(s => ({
                         ...s,
+                        lead: s.noSmsLead ?? s.lead,
                         description: s.noSmsDescription ?? s.description,
                         emptyHint: s.noSmsEmptyHint ?? s.emptyHint,
                     })),
