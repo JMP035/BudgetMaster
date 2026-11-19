@@ -3,7 +3,7 @@
 Para: quien prueba la app en su teléfono Android (sin conocimientos técnicos).
 Objetivo: comprobar, función por función, que todo sirve antes de escribir el manual de usuario.
 
-Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-104** (105 en total). Las pruebas T-77 a T-104 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas).
+Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-111** (112 en total). Las pruebas T-77 a T-111 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas) y las del bloque G2 de la auditoría final (el «+ gasto» del widget con la app abierta, el widget con la foto al día, borrar todos los datos, los avisos de presupuesto, el permiso de notificaciones y la advertencia de la huella en el widget).
 
 Cómo usarlo: sigue cada prueba en orden. Marca **✅ pasó**, **❌ falló** o **⚠️ raro** y anota qué viste.
 Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Cómo reportar un problema" al final).
@@ -458,7 +458,7 @@ Recorre cada uno desde la guía del Inicio (Centro de ayuda): **Tu período**, *
 
 ---
 
-## 20. Correcciones recientes (T-77 a T-95)
+## 20. Correcciones recientes (T-77 a T-111)
 
 Estas pruebas comprueban lo corregido en los últimos cambios. Varias cambian tu ciclo o tu presupuesto **temporalmente**: al terminar, vuelve a poner tu configuración real (anótala antes, ver la sección 0).
 
@@ -742,6 +742,47 @@ Solo si tu teléfono tenía una visacuota o préstamo antiguo cuya fecha de inic
 3. **Deshacer última sincronización** → confirma. Esperado: el inicio del período **vuelve al día del primer depósito** (no a la fecha esperada por la regla) y lo que la app había aprendido de ese origen (la categoría con la que reconoce depósitos de ese remitente) vuelve a como estaba antes del lote; si no existía antes, se olvida.
 4. Con un lote donde el vínculo fue el primero de su ciclo: Deshacer quita el inicio automático y el período vuelve a la fecha esperada, como siempre.
 
+**T-105 — «+ gasto» del widget con la app abierta, en segundo plano y cerrada (solo Android, con el widget puesto)**
+Esta prueba solo se puede comprobar en el teléfono. Pon el widget en la pantalla de inicio y ten la configuración inicial terminada.
+1. Con la app **cerrada** (quítala de las recientes): toca **«+ gasto»**. Esperado: se abre la app, pasa la pantalla de bienvenida (y la huella, si la tienes activada) y queda en la pestaña **Agregar**.
+2. Con la app **abierta** en el Inicio: sal con el botón de inicio, toca **«+ gasto»** otra vez. Esperado: vuelves a la app **sin** pantalla de bienvenida ni huella nueva (si no se había bloqueado sola) y quedas en **Agregar**. Cámbiate a otra pestaña, sal y toca **«+ gasto»** de nuevo: otra vez cae en Agregar.
+3. Repite el paso 2 cinco veces. Esperado: el botón atrás cierra la app de una vez (no hay copias apiladas que te hagan volver a «otra app» cinco veces) y la app no se pone lenta ni repite avisos de sincronización de SMS.
+4. Con la huella activada y la app en segundo plano: toca **«+ gasto»**. Esperado: la huella se pide una sola vez y después Agregar.
+5. En un teléfono con la configuración inicial a medias (por ejemplo, borra los datos y toca **«+ gasto»** antes de terminarla). Esperado: se ignora el toque; al terminar la configuración y arrancar el recorrido **no** te salta a Agregar solo.
+
+**T-106 — El widget no se queda con las cifras de otro día (solo Android, con el widget puesto)**
+1. Abre la app (el widget toma su foto) y anota los **días al cobro** del widget pequeño.
+2. Sin abrir la app, espera a que cambie el día (o adelanta la fecha del teléfono un día) y mira el widget. Esperado: los **días al cobro bajan en 1** aunque no abras la app; el disponible por día en el mediano se reparte entre los días que quedan.
+3. Adelanta la fecha del teléfono hasta el **día de tu cobro** (o pasado). Esperado: el widget deja de mostrar cifras y dice **«Abre la app para actualizar»**.
+4. Abre la app. Esperado: el widget vuelve a mostrar las cifras del período nuevo.
+5. Con ciclo **irregular**: los días del widget dicen «N días en el período», bajan cada día y el día 1 del mes siguiente dice «Abre la app para actualizar».
+
+**T-107 — Borrar todos los datos reinicia los tutoriales y vacía el widget**
+1. Completa el recorrido inicial (o ábrelo y termínalo) y, en Android, ten el widget con cifras.
+2. **Ajustes → Zona de peligro → Borrar Todos los Datos**. Esperado: el diálogo lista también «Tus tutoriales completados (el recorrido inicial vuelve a empezar) y las cifras del widget».
+3. Confirma. Esperado: la app vuelve a la configuración inicial y el widget pasa enseguida a **«Abre BudgetMaster…»**, sin las cifras borradas (no tarda 30 minutos).
+4. Termina la configuración inicial pidiendo el recorrido. Esperado: el recorrido inicial **arranca solo** (antes no volvía a arrancar).
+
+**T-108 — La sincronización de SMS dice «como máximo cada 15 minutos» (solo Android con SMS activo)**
+1. Lee **Ajustes → SMS → Sincronizar al abrir la app** y la opción equivalente de la configuración inicial. Esperado: dicen «como máximo cada 15 minutos».
+2. Abre el tutorial de **Ajustes → SMS** y el manual. Esperado: dicen «al abrir la app (como máximo cada 15 minutos)», no «cada vez que abres la app».
+3. Abre la app, ciérrala y ábrela de nuevo antes de 15 minutos. Esperado: la segunda vez no sincroniza otra vez (no sale aviso de importación nuevo); pasados 15 minutos, sí.
+
+**T-109 — Avisos de presupuesto con ciclo irregular y montos con formato**
+1. Con ciclo **Mensual**: gasta hasta pasar tu presupuesto del período. Esperado: el aviso dice «Has gastado Q 5,200.00 — superaste tu límite de Q 4,800.00 en Q 400.00. Quedan N días hasta tu próximo ingreso.» (con miles y dos decimales, no «Q4800»).
+2. Cambia a ciclo **Irregular** y repite en otro período. Esperado: el aviso dice «Quedan N días del período.», **no** «hasta tu próximo ingreso» (no hay fecha de cobro).
+3. Los avisos de 50 % y 80 % y los de categoría también muestran los montos con formato de dinero. El aviso de una meta de ahorro a medio camino muestra «Te faltan Q 600.00» (o «$ 600.00» si la meta es en dólares).
+
+**T-110 — El permiso de notificaciones se pide al terminar la configuración inicial (solo Android 13 o más)**
+1. Instala la app desde cero (o borra todos los datos) y ábrela. Esperado: durante la pantalla de bienvenida y la configuración inicial **no** sale el diálogo del sistema de notificaciones.
+2. Termina la configuración inicial. Esperado: sale el diálogo de permiso de notificaciones **antes** de que arranque el recorrido; al aceptar, los avisos se programan al momento (**Ajustes → Notificaciones → Enviar aviso de prueba** llega y en los días siguientes llega el resumen diario).
+3. Si ya habías terminado la configuración antes y no habías aceptado el permiso: al abrir la app, apenas pasa la pantalla de bienvenida, sale el diálogo (no encima de la pantalla de bienvenida).
+4. «Enviar aviso de prueba» en Ajustes sigue pidiendo el permiso si no lo has dado.
+
+**T-111 — La huella no protege el widget (advertencia)**
+1. Activa la seguridad biométrica y pon el widget. Toca el **ojo** del widget. Esperado: muestra los montos **sin pedir la huella** (es así a propósito).
+2. Lee la sección **Widget** y **Limitaciones conocidas** del manual y el paso 3 del tutorial «Widget». Esperado: todos dicen «Cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget».
+
 ---
 
 ## 21. Resumen de resultados
@@ -788,6 +829,13 @@ Solo si tu teléfono tenía una visacuota o préstamo antiguo cuya fecha de inic
 | T-102 (capacidad con ingreso declarado y período corto) | | |
 | T-103 (visacuota con todos los cortes cumplidos queda terminada) | | |
 | T-104 (deshacer ingreso vinculado restaura período y lo aprendido) | | |
+| T-105 («+ gasto» del widget con la app abierta, en segundo plano y cerrada) | | |
+| T-106 (widget con las cifras al día y «Abre la app para actualizar») | | |
+| T-107 (borrar todos los datos: tutoriales y widget) | | |
+| T-108 (sincronización de SMS «como máximo cada 15 minutos») | | |
+| T-109 (avisos de presupuesto: ciclo irregular y montos con formato) | | |
+| T-110 (permiso de notificaciones al terminar la configuración inicial) | | |
+| T-111 (la huella no protege el widget) | | |
 
 ## Cómo reportar un problema
 
