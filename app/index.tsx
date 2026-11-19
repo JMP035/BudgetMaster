@@ -18,7 +18,7 @@ import { NotificationService } from "../services/NotificationService";
 import { isSmsFeatureOn } from "../services/features";
 import { withDerivedBalances } from "../services/Balances";
 import { buildWidgetSnapshot } from "../services/WidgetSnapshot";
-import { refreshWidgets } from "../services/WidgetBridge";
+import { clearWidgets, refreshWidgets } from "../services/WidgetBridge";
 import { maybeAutoSync } from "../services/SmsAutoSync";
 import { onSettingsChanged } from "../services/SettingsEvents";
 import { hasSomethingToShow } from "../services/SmsService";
@@ -405,6 +405,8 @@ function AppContent() {
   const hClearAll = async () => {
     await NotificationService.cancelAll();
     await StorageService.clearAllData();
+    // La foto del widget se borró con los datos: se repinta ya (estado vacío «Abre BudgetMaster…»), sin esperar a los ~30 min.
+    void clearWidgets();
     await loadData();
     setTab("dashboard");
   };

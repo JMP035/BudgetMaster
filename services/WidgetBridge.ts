@@ -4,6 +4,20 @@ import { Platform } from 'react-native';
 import { StorageService } from './storage';
 import type { WidgetSnapshot } from './WidgetSnapshot';
 
+/**
+ * Tras «Borrar todos los datos»: la foto ya no existe, así que repinta los widgets en su estado vacío («Abre BudgetMaster…»).
+ * (clearAllData ya borró la foto y la privacidad; aquí solo se pide el repintado. Sin build nativo es un no-op.)
+ */
+export async function clearWidgets(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    const render = require('../widgets/widget-render') as typeof import('../widgets/widget-render');
+    await render.redrawWidgets();
+  } catch (e) {
+    console.warn('[WidgetBridge] widget no disponible:', e);
+  }
+}
+
 /** Guarda la foto y le pide al sistema que repinte los widgets (pequeño y mediano). */
 export async function refreshWidgets(snapshot: WidgetSnapshot): Promise<void> {
   if (Platform.OS !== 'android') return;

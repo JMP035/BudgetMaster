@@ -889,7 +889,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_12', elementId: 'settings_danger', screen: 'settings', position: 'top', icon: 'warning-outline', padding: 8,
                 title: 'Zona de peligro',
-                description: 'Borra todos tus datos del teléfono de forma permanente. La app te pide confirmación antes de hacerlo.',
+                description: 'Borra todos tus datos del teléfono de forma permanente. La app te pide confirmación antes de hacerlo. También reinicia tus tutoriales (el recorrido inicial vuelve a arrancar solo cuando termines la configuración inicial) y vacía el widget de la pantalla de inicio, que dice «Abre BudgetMaster…» hasta que vuelvas a configurar la app.',
             },
         ],
     },
@@ -898,6 +898,7 @@ export const TUTORIALS: Tutorial[] = [
 // ─────────────────────────────────────────────────────────────
 // STORAGE
 // ─────────────────────────────────────────────────────────────
+// Debe ser igual a K.COMPLETED_TUTORIALS de services/storage.ts: «Borrar todos los datos» la limpia desde allí.
 const KEY = '@bm_completed_tutorials';
 
 export const TutorialService = {

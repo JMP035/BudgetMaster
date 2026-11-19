@@ -431,7 +431,7 @@ Las secciones, de arriba hacia abajo:
 - **Mis Categorías** — crea categorías personalizadas: nombre, si aplica a gastos/ingresos/ambos, color e ícono. Aparecen junto a las predefinidas al registrar transacciones. También puedes crearlas al vuelo con **+ Nueva categoría**, y para cambiar el nombre, color, ícono o tipo de una propia, tócala en esta lista.
 - **Academia BudgetMaster** — reiniciar los tutoriales («Reiniciar todos los tutoriales»).
 - **Guardar Cambios** — 💾 **los cambios de perfil, presupuesto, moneda, tipo de cambio, ahorros, biometría y Gemini no se aplican hasta tocar este botón.** El interruptor de SMS, el ciclo de pago, las reglas del período y las notificaciones se guardan con sus propios botones.
-- **⚠️ Zona de Peligro — Borrar Todos los Datos** — elimina TODO permanentemente (transacciones, cuentas, configuración) y vuelve al onboarding. Pide confirmación y **no se puede deshacer**.
+- **⚠️ Zona de Peligro — Borrar Todos los Datos** — elimina TODO permanentemente (transacciones, cuentas, configuración) y vuelve al onboarding. También **reinicia tus tutoriales** (el recorrido inicial vuelve a arrancar solo al terminar la configuración) y **vacía el widget** de la pantalla de inicio (dice «Abre BudgetMaster…» hasta que vuelvas a configurar la app). Pide confirmación y **no se puede deshacer**.
 
 ---
 

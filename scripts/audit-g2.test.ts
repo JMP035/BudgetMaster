@@ -130,12 +130,28 @@ function widgetFresh(): void {
   check('G2-2o: enmascarada conserva los días nuevos y borra los montos', !!masked && masked.daysToPay === 1 && masked.availablePeriod === 0 && masked.masked === true);
 }
 
+// ── G2-3: «Borrar todos los datos» reinicia los tutoriales y limpia la foto del widget ─────────────
+async function clearAll(): Promise<void> {
+  resetMemoryStorage();
+  const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+  await AsyncStorage.setItem('@bm_completed_tutorials', JSON.stringify(['tour_inicial', 'tutorial_widget']));
+  await StorageService.saveWidgetSnapshot(photoOn(d(2026, 11, 25, 9)));
+  await StorageService.saveWidgetPrivacy('shown');
+  check('G2-3a: antes de borrar hay tutoriales completados y foto', (await AsyncStorage.getItem('@bm_completed_tutorials')) !== null
+    && (await StorageService.getWidgetSnapshot()) !== null);
+  await StorageService.clearAllData();
+  check('G2-3b: borrar todo reinicia los tutoriales completados (el tour inicial vuelve a arrancar solo)',
+    (await AsyncStorage.getItem('@bm_completed_tutorials')) === null);
+  check('G2-3c: borrar todo limpia la foto del widget (estado vacío «Abre la app») y su privacidad',
+    (await StorageService.getWidgetSnapshot()) === null && (await StorageService.getWidgetPrivacy()) === 'hidden');
+}
+
 async function scenarios(): Promise<void> {
   resetMemoryStorage();
   quickAdd();
   await singleFlight();
   widgetFresh();
-  void StorageService;
+  await clearAll();
 }
 
 scenarios()

@@ -441,6 +441,9 @@ const K = {
   MIGRATIONS: '@bm_migrations',
   WIDGET_SNAPSHOT: '@bm_widget_snapshot',
   WIDGET_PRIVACY: '@bm_widget_privacy',
+  // Tutoriales completados: la clave la usa TutorialService (services/Tutorial.ts, que debe llevar el mismo texto). Está aquí
+  // para que «Borrar todos los datos» también reinicie el recorrido (si no, el tour inicial no volvería a arrancar solo).
+  COMPLETED_TUTORIALS: '@bm_completed_tutorials',
 };
 
 /** Privacidad del widget de Android: 'hidden' (por defecto) esconde los montos; 'shown' los muestra. */
@@ -2537,6 +2540,10 @@ export const StorageService = {
   },
 
   // ── Limpiar todo ──────────────────────────────────────────
+  /**
+   * Borra TODO lo guardado (incluye los tutoriales completados, la foto del widget y su privacidad). Quien la llama debe pedir
+   * después que se repinte el widget (clearWidgets en services/WidgetBridge.ts) para que no siga mostrando cifras borradas.
+   */
   async clearAllData(): Promise<void> {
     try { await AsyncStorage.multiRemove(Object.values(K)); } catch { }
     anchorsCache = [];

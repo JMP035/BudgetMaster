@@ -565,6 +565,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                 "Movimientos y cuentas",
                 "Presupuestos, gastos fijos y metas",
                 "Configuración y categorías personalizadas",
+                "Tus tutoriales completados (el recorrido inicial vuelve a empezar) y las cifras del widget",
             ],
             confirmLabel: "Sí, borrar todo",
         });
