@@ -18,7 +18,7 @@ Personas comunes en Guatemala, **sin conocimientos técnicos ni financieros**: e
 
 ## Fuentes de verdad (en este orden)
 1. `MANUAL_USUARIO.md` (en la raíz del repositorio) — borrador técnico, 17 secciones, ya en «tú» y verificado contra el código el 18 de noviembre de 2026. Es el contenido más completo.
-2. `docs/PRUEBAS_MANUALES.md` — instructivo de **123 pruebas manuales** (P-01 y T-01 a T-122); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
+2. `docs/PRUEBAS_MANUALES.md` — instructivo de **124 pruebas manuales** (P-01 y T-01 a T-123); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
 3. Los resultados que el dueño de la app aporte tras probar (aciertos, fallos, capturas).
 
 Además existen **38 pruebas automáticas** (`npm run test:*`) con **5,313 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.

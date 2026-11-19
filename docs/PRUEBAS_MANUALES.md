@@ -3,7 +3,7 @@
 Para: quien prueba la app en su teléfono Android (sin conocimientos técnicos).
 Objetivo: comprobar, función por función, que todo sirve antes de escribir el manual de usuario.
 
-Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-122** (123 en total). Las pruebas T-77 a T-111 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas) y las del bloque G2 de la auditoría final (el «+ gasto» del widget con la app abierta, el widget con la foto al día, borrar todos los datos, los avisos de presupuesto, el permiso de notificaciones y la advertencia de la huella en el widget) y las del bloque de Estadísticas y gastos fijos con cuenta (T-112 a T-122: cuadros tocables y vista de ahorro explicada, aviso de transferencias sin clasificar con su interruptor, selector Q/$, «Revisar» con las preguntas «¿A qué cuenta fue?», «PENDIENTE» en una línea, y el gasto fijo con cuenta o tarjeta con su emparejamiento por SMS).
+Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-123** (124 en total). Las pruebas T-77 a T-111 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas) y las del bloque G2 de la auditoría final (el «+ gasto» del widget con la app abierta, el widget con la foto al día, borrar todos los datos, los avisos de presupuesto, el permiso de notificaciones y la advertencia de la huella en el widget) y las del bloque de Estadísticas y gastos fijos con cuenta (T-112 a T-122: cuadros tocables y vista de ahorro explicada, aviso de transferencias sin clasificar con su interruptor, selector Q/$, «Revisar» con las preguntas «¿A qué cuenta fue?», «PENDIENTE» en una línea, y el gasto fijo con cuenta o tarjeta con su emparejamiento por SMS) y T-123 (el formato de los tutoriales: pasos cortos con frase clave, viñetas y resaltes).
 
 Cómo usarlo: sigue cada prueba en orden. Marca **✅ pasó**, **❌ falló** o **⚠️ raro** y anota qué viste.
 Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Cómo reportar un problema" al final).
@@ -458,7 +458,7 @@ Recorre cada uno desde la guía del Inicio (Centro de ayuda): **Tu período**, *
 
 ---
 
-## 20. Correcciones recientes (T-77 a T-122)
+## 20. Correcciones recientes (T-77 a T-123)
 
 Estas pruebas comprueban lo corregido en los últimos cambios. Varias cambian tu ciclo o tu presupuesto **temporalmente**: al terminar, vuelve a poner tu configuración real (anótala antes, ver la sección 0).
 
@@ -536,8 +536,8 @@ Antes: tu fuente base mensual en Q 5,000 y un tipo de cambio conocido (aquí Q 7
 - Esperado: un pendiente **«Configurar corte y pago de tus tarjetas»** con «Con el día de corte y el de pago recibes el recordatorio de pago y ves tu capacidad de pago.». Toca **Hacer**: abre Cuentas con la edición de esa tarjeta. Al guardar ambos días, el pendiente queda hecho y la insignia desaparece; ahora aparecen «Estado al {corte}» y «Ciclo abierto».
 4. Crea otra tarjeta sin fechas, cierra la app por completo y ábrela de nuevo; espera unos 30 minutos (con permiso de notificaciones).
 - Esperado: llega **un solo aviso** «💳 Configura el corte y pago de tu tarjeta» / «Tu tarjeta «…» no tiene día de corte o de pago. Agrégalos en Cuentas para recibir el recordatorio de pago y ver tu capacidad de pago.». Si además faltaban otras configuraciones (gastos fijos, metas…), el aviso es «Completa tu configuración» y nombra «el corte y pago de tus tarjetas». No se repite: si ya te llegó antes, no vuelve.
-5. Con una tarjeta sin fechas, abre el tutorial **Compra con tarjeta** (Inicio → Guía → Centro de ayuda) y avanza hasta el paso 3.
-- Esperado: el paso «3. El cargo aparece en «Ciclo abierto»» dice «Para este paso necesitas una tarjeta con su día de corte y de pago. El tutorial se cierra para que lo crees; ábrelo de nuevo después.» y ofrece **Crearlo ahora**, que abre la edición de la tarjeta sin fechas. Sin ninguna tarjeta, el paso 1 ofrece crearla.
+5. Con una tarjeta sin fechas, abre el tutorial **Compra con tarjeta** (Inicio → Guía → Centro de ayuda) y avanza hasta el paso 4.
+- Esperado: el paso «4. El cargo aparece en «Ciclo abierto»» dice «Para este paso necesitas una tarjeta con su día de corte y de pago. El tutorial se cierra para que lo crees; ábrelo de nuevo después.» y ofrece **Crearlo ahora**, que abre la edición de la tarjeta sin fechas. Sin ninguna tarjeta, el paso 1 ofrece crearla.
 
 **T-82 — Tarjeta agregada en el onboarding con corte 9 y pago 2**
 1. Con datos borrados, en el onboarding llega a «Cuentas y tarjetas» → **Agregar cuenta** → banco BAC Credomatic → tipo **Tarjeta de crédito** → moneda Q.
@@ -666,14 +666,14 @@ Anota tu patrimonio actual antes de empezar y al final restaura tus datos.
 5. Registra una visacuota. Esperado: el patrimonio **no baja**; la deuda aparece aparte en «Compromisos de crédito (aparte)».
 6. Toca el ícono ⓘ del patrimonio. Esperado: dice que suma lo de las cuentas que llevan saldo, que si ninguna lo lleva es un estimado (ahorros externos más ingresos menos gastos) y que NO incluye cuentas «Sin seguimiento», tarjetas, visacuotas ni ahorros externos mientras alguna cuenta lleve saldo.
 7. Ajustes → **Ahorros externos**. Esperado: la descripción dice «Solo cuenta en tu patrimonio cuando ninguna de tus cuentas lleva saldo.».
-8. Tutoriales: el paso «Patrimonio total» del tour del Inicio y el paso «Ahorros externos» de Ajustes dicen lo mismo.
+8. Tutoriales: los pasos «Patrimonio total» y «Cuando ninguna cuenta lleva saldo» del Inicio, y los pasos «Ahorros externos» y «Cómo cuentan en tu patrimonio» de Ajustes, dicen lo mismo.
 
 **T-95 — Voseo residual corregido**
 Cada frase debe estar en «tú»:
 1. Agregar → Pegar SMS → pega un texto que no sea del banco: el pie dice «Si es un movimiento real, **ingrésalo** manualmente.».
 2. Inicio → sincroniza un SMS que sea una compra en cuotas: el pie del resumen dice «**Revísalas** en Cuentas → Visacuotas.».
 3. Centro de revisión (con compras sin cuenta): la fila «Compras sin cuenta» dice «**Asígnalas** a una cuenta para organizarlas por cuenta».
-4. Tutorial «Movimientos» → «Clasifica bien tus movimientos» (con SMS activo): dice «**corrige** la categoría de un depósito».
+4. Tutorial «Movimientos» → pasos «Cómo clasifica la app», «Corrige y la app aprende» y «Tus depósitos por SMS» (este último solo con SMS activo): dice «**corrige** la categoría de un depósito».
 5. Presupuesto → Ingresos → una fuente → «SMS de ejemplo» (Android con SMS activo): dice «o **elígelo** de tus mensajes».
 - Esperado: las formas con «lo/la/las» llevan la tilde en la penúltima sílaba («ingrésalo», «revísalas», «asígnalas», «elígelo») y «corrige» no lleva tilde. Si la tilde cae en la última sílaba del verbo, es un ❌ de tono (ver T-90).
 
@@ -781,7 +781,7 @@ Esta prueba solo se puede comprobar en el teléfono. Pon el widget en la pantall
 
 **T-111 — La huella no protege el widget (advertencia)**
 1. Activa la seguridad biométrica y pon el widget. Toca el **ojo** del widget. Esperado: muestra los montos **sin pedir la huella** (es así a propósito).
-2. Lee la sección **Widget** y **Limitaciones conocidas** del manual y el paso 3 del tutorial «Widget». Esperado: todos dicen «Cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget».
+2. Lee la sección **Widget** y **Limitaciones conocidas** del manual y el paso «7. Seguridad del ojo» del tutorial «Widget». Esperado: todos dicen que cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos, y que la huella no protege el widget.
 
 ### Estadísticas y gastos fijos con cuenta
 
@@ -854,8 +854,23 @@ Preparación: ten en el **período anterior** una transferencia que vino de un S
 
 **T-122 — Marcado a mano y luego llega el SMS; tutorial «Gasto fijo con cuenta o tarjeta»**
 1. Crea el gasto «EEGSA» con la tarjeta BAC y márcalo pagado a mano con AUTO. Después recibe el SMS de EEGSA de esa misma tarjeta. Esperado: queda **una sola fila** en Movimientos (el SMS se une a tu registro, no se cuenta dos veces) y el gasto conserva su cuenta. Si el SMS venía de otra cuenta, el Centro te propone unirlos y, si los unes, se queda la cuenta de tu registro; al separarlos vuelve la del SMS.
-2. Abre **Inicio → Ayuda → «Gasto fijo con cuenta»**. Con **al menos una cuenta o tarjeta**: el paso 1 te muestra Cuentas, el paso 2 el botón + de Gastos Fijos y el paso 3 la lista de gastos fijos.
+2. Abre **Inicio → Ayuda → «Gasto fijo con cuenta»**. Con **al menos una cuenta o tarjeta**: el paso 1 te muestra Cuentas, el paso 2 el botón + de Gastos Fijos y el paso 3 la lista de gastos fijos (con SMS activos hay un paso 4, «Deja que el SMS lo detecte»).
 3. Repite **sin ninguna cuenta ni tarjeta** (en una instalación nueva). Esperado: el paso 1 dice «Para este paso necesitas una cuenta o tarjeta…» y ofrece crearla en ese momento; no se queda señalando una pantalla vacía.
+
+**T-123 — Formato de los tutoriales (Android)**
+Los tutoriales pasaron de 128 a 173 pasos: los pasos largos se repartieron en varios cortos, sin quitar información, y los textos tienen frase clave, viñetas y resaltes.
+1. Abre el tutorial de **Cuentas** (botón **?** de Cuentas) y avanza por «Tus cuentas y su saldo», «Tus tarjetas de crédito» y «Editar y otros detalles» (antes eran un solo paso largo).
+- Esperado: arriba, fijos, ves el progreso con el contador «n/N» a la derecha, el ícono pequeño y el título; debajo, la frase clave en **negrita**, viñetas con punto bronce y los nombres entre «…» en bronce. Abajo, siempre visibles, «Omitir» y «Siguiente».
+2. Recorre varios tutoriales (Inicio, Presupuesto, Ajustes, Widget, Saldos).
+- Esperado: con la letra normal del teléfono ningún paso necesita desplazarse y la tarjeta nunca pasa de la mitad de la pantalla cuando señala algo; los textos van alineados a la izquierda, sin huecos entre palabras.
+3. Pon la letra del teléfono en **grande** (Ajustes del teléfono → Pantalla → Tamaño de fuente) y abre un paso con viñetas.
+- Esperado: solo el texto se desplaza; el título y los botones siguen a la vista, con el aviso «Desliza para leer más» mientras falte texto, que desaparece al llegar al final.
+4. Abre el tutorial **Widget** (solo Android) hasta «7. Seguridad del ojo», y el de **Ajustes** hasta «Cuándo empieza mi período».
+- Esperado: el texto que empieza con «Ojo:» se ve como una nota con barra bronce a la izquierda.
+5. Apaga la lectura de SMS (Ajustes → Sincronización SMS) y abre el tutorial **Movimientos**.
+- Esperado: «Cómo clasifica la app» dice «Elige la categoría según el tipo de gasto:» y el paso «Tus depósitos por SMS» no aparece; el contador «n/N» se ajusta. Lo mismo en **Saldos** (sin «7. Cuándo pregunta») y en **Gasto fijo con cuenta** (sin «4. Deja que el SMS lo detecte»).
+6. Abre el tutorial **Registrar una compra con tarjeta**, **Cómo funcionan las visacuotas**, **Tu sueldo** y **Widget**.
+- Esperado: los títulos van numerados seguidos (1, 2, 3…) sin saltos, aunque un paso largo se haya repartido.
 
 ---
 
@@ -921,6 +936,7 @@ Preparación: ten en el **período anterior** una transferencia que vino de un S
 | T-120 (SMS con el mismo nombre en cualquier día del mismo período) | | |
 | T-121 (SMS de otra cuenta o con dos candidatos: propuesta) | | |
 | T-122 (marcado a mano y luego el SMS; tutorial «Gasto fijo con cuenta o tarjeta») | | |
+| T-123 (formato de los tutoriales: pasos cortos, frase clave, viñetas y resaltes) | | |
 
 ## Cómo reportar un problema
 

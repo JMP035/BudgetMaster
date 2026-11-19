@@ -109,6 +109,14 @@ for (const t of TUTORIALS) {
   if (off) checkSteps(`${t.id} (sin SMS)`, off, !NOT_CONVERTED.includes(t.id));
 }
 
+console.log('Tutoriales de proceso: títulos numerados seguidos');
+for (const t of TUTORIALS) {
+  if (!/^1\. /.test(t.steps[0].title)) continue;
+  t.steps.forEach((s, i) => check(`${t.id}: el paso ${s.id} se titula «${i + 1}. …»`, s.title.startsWith(`${i + 1}. `), s.title));
+  const off = smsOff(t);
+  if (off) off.steps.forEach((s, i) => check(`${t.id} (sin SMS): el paso ${s.id} se titula «${i + 1}. …»`, s.title.startsWith(`${i + 1}. `), s.title));
+}
+
 console.log('Campos opcionales coherentes');
 {
   const all: TutorialStep[] = TUTORIALS.flatMap(t => t.steps);
