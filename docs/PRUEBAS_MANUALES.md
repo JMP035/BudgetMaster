@@ -3,7 +3,7 @@
 Para: quien prueba la app en su teléfono Android (sin conocimientos técnicos).
 Objetivo: comprobar, función por función, que todo sirve antes de escribir el manual de usuario.
 
-Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-95** (96 en total). Las pruebas T-77 a T-95 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares y la regla exacta del patrimonio).
+Revisado contra el código de BudgetMaster 1.0.0 el 18 de noviembre de 2026. Contiene **P-01 y las pruebas T-01 a T-104** (105 en total). Las pruebas T-77 a T-104 comprueban las correcciones más recientes (score por período, deuda viva, tarjetas con corte y pago, ciclo semanal e irregular, presupuesto repartido por período, asesor local, tono «tú», «Pegar SMS» sin permiso, widget con ingresos irregulares, la regla exacta del patrimonio y las correcciones de la auditoría final: deudas del onboarding, reinicio de gastos fijos, deshacer sincronización, capacidad con ingreso declarado y visacuotas terminadas).
 
 Cómo usarlo: sigue cada prueba en orden. Marca **✅ pasó**, **❌ falló** o **⚠️ raro** y anota qué viste.
 Si algo falla, no sigas adivinando: anota los pasos y toma una captura (ver "Cómo reportar un problema" al final).
@@ -677,6 +677,71 @@ Cada frase debe estar en «tú»:
 5. Presupuesto → Ingresos → una fuente → «SMS de ejemplo» (Android con SMS activo): dice «o **elígelo** de tus mensajes».
 - Esperado: las formas con «lo/la/las» llevan la tilde en la penúltima sílaba («ingrésalo», «revísalas», «asígnalas», «elígelo») y «corrige» no lleva tilde. Si la tilde cae en la última sílaba del verbo, es un ❌ de tono (ver T-90).
 
+
+**T-96 — Deudas al configurar la app: ninguna cuota se carga el mismo día**
+Usa una instalación nueva (o «Borrar todos los datos» en un teléfono de prueba; anota antes tus datos). Anota la fecha de hoy.
+1. En la configuración llega al paso «¿Tienes deudas activas?». Esperado: arriba un aviso que dice «Cada cuota de un préstamo o visacuota se registrará como gasto en su día de pago, empezando por el próximo. La tarjeta de crédito no se convierte en cuota: sus compras ya cuentan como gasto cuando las registras.»
+2. Toca **Agregar deuda**. Con el tipo **Préstamo** aparece el campo **«Día de pago (opcional)»** y debajo «Del 1 al 31. Si lo dejas vacío usamos el día de hoy; la primera cuota se registra en el próximo día de pago.». Cambia a **Tarjeta**: el campo desaparece. Cambia a **Visacuota**, elige una de tus tarjetas en «¿De qué tarjeta?»: el campo también desaparece (manda el corte de la tarjeta).
+3. Con el tipo Préstamo escribe nombre «Préstamo prueba», cuota Q 1,000, total Q 12,000 y en el día de pago escribe **99** → **Agregar**. Esperado: «El día de pago debe estar entre 1 y 31.» y no se agrega. Déjalo vacío y agrégalo. Esperado: la fila muestra «Préstamo bancario» sin «paga el día».
+4. Agrega otro préstamo con día **25**. Esperado: la fila dice «Préstamo bancario · paga el día 25».
+5. Termina la configuración y abre Movimientos. Esperado: **ningún** gasto «Cuota 1/12 · Préstamo prueba» con fecha de hoy (ni de ninguna fecha pasada).
+6. Cuentas → **Visacuotas**. Esperado: «Préstamo prueba» muestra **Próxima cuota** = hoy + 1 mes (mismo día del mes siguiente; en un mes más corto, el último día) y el préstamo del día 25 muestra el próximo 25. El Presupuesto de este período **no** baja por ellos.
+7. (Opcional, cambiando la fecha del teléfono) Llega al día de pago. Esperado: al abrir la app aparece UNA cuota «Cuota 1/12 · …» como gasto fechada ese día.
+
+**T-97 — Deuda tipo «Tarjeta de crédito» declarada: sin cuota, sin doble conteo**
+1. En la configuración, paso de deudas: agrega **Visa BAC**, tipo **Tarjeta**, cuota Q 600; y un **Préstamo** de Q 1,000 al mes. Termina la configuración.
+2. Cuentas → Visacuotas. Esperado: solo aparece el préstamo; **no** hay ninguna visacuota «Visa BAC» ni gasto mensual de Q 600 en Movimientos en los meses siguientes.
+3. Estadísticas → «Ratio Deuda / Ingreso». Esperado: suma Q 1,000 (préstamo) + Q 600 (declarada) = Q 1,600 al mes, y avisa «Incluye Q 600… que declaraste al configurar la app; no se actualiza solo».
+4. Toca **Ya no la tengo** y confirma. Esperado: queda solo el préstamo (Q 1,000); el préstamo no se borra.
+5. Registra una compra con esa tarjeta en Cuentas. Esperado: cuenta como gasto una sola vez (la deuda declarada no la suma otra vez).
+
+**T-98 — Préstamo sin tarjeta: el SMS del débito es la cuota (solo Android con SMS activo)**
+1. Crea un préstamo «Sin tarjeta (préstamo)» de Q 1,000 al mes con día de pago **25** (o el que alcances a probar).
+2. Haz que llegue un SMS de gasto de **cualquier cuenta tuya** por **Q 1,000.00** con fecha hasta 3 días antes o después del día de pago (si no tienes uno, pega uno de prueba en «Pegar SMS» o sincroniza).
+3. Sincroniza y abre la app el día de pago. Esperado: en Movimientos hay **un solo** gasto de Q 1,000 (el del SMS) y en la visacuota las cuotas cargadas suben en 1; no hay un segundo «Cuota n/12 · …» manual.
+4. Prueba con un SMS de Q 1,200 (otro monto) o a más de 3 días: esperado, SÍ se crea la cuota aparte.
+5. Prueba con una transferencia entre tus cuentas por Q 1,000: esperado, no se toma como la cuota.
+
+**T-99 — Actualizar con deudas del configurador anterior: nada se carga de golpe**
+Solo si tu teléfono ya tenía deudas creadas al configurar la app con la versión anterior.
+1. Antes de actualizar anota tus gastos del período y las deudas de Cuentas → Visacuotas.
+2. Instala el build nuevo y abre la app. Esperado: **no** aparece ningún gasto nuevo «Cuota n/… · …» con fecha de hoy por esas deudas; tus gastos anteriores no cambian.
+3. Cuentas → Visacuotas. Esperado: «Próxima cuota» de cada préstamo o visacuota apunta al próximo día de pago (no a hoy). Las deudas que habías declarado como **Tarjeta de crédito** quedan **inactivas** (dejan de cargar un gasto cada mes); sus cargos anteriores se conservan.
+4. Llega el día de pago de un préstamo. Esperado: al abrir la app aparece su cuota, una sola vez.
+
+**T-100 — Gastos fijos pagados no se reinician el sábado con «siguiente día hábil»**
+Se prueba mejor con el día de pago a la vuelta de un fin de semana.
+1. Ajustes → Ciclo de pago: mensual, día de pago = el **sábado** que viene (por ejemplo 15) y en las reglas del período (Ajustes → Ciclo de pago → Reglas) elige **«Lunes después»** (si el día de pago cae en fin de semana, el período arranca el lunes).
+2. Marca un gasto fijo como pagado dentro del período que está corriendo (por ejemplo «Luz»).
+3. Cierra la app del todo (deslízala fuera de las recientes) y ábrela **el sábado**. Esperado: «Luz» **sigue pagada** (no pasa a «Vencida»): el período real sigue siendo el anterior hasta el lunes.
+4. Ábrela de nuevo el lunes. Esperado: ahora sí empieza el período nuevo y «Luz» vuelve a quedar pendiente.
+5. Repite con la regla **«Viernes antes»** (la predeterminada): el período arranca el viernes. Esperado: «Luz» se reinicia el viernes, no antes ni después.
+
+**T-101 — Deshacer sincronización con un par de transferencia (solo Android con SMS activo)**
+1. Registra a mano (o por una sincronización anterior) una salida de Q 500 de una cuenta por transferencia (categoría Transferencia, tipo gasto).
+2. Haz que llegue por SMS la entrada de Q 500 en otro banco, con fecha de menos de 36 horas de diferencia, y sincroniza. Esperado: la sincronización junta las dos como una transferencia neutra (ya no suman al gasto del período).
+3. Ajustes → Sincronización de SMS → **Deshacer última sincronización** → confirma. Esperado: la entrada nueva se elimina y la salida de Q 500 **vuelve a ser un gasto normal** (suma al gasto del período, a las estadísticas y al presupuesto); no queda como «transferencia» sin pareja.
+4. Comprueba en Movimientos que esa salida ya no muestra la etiqueta «Transferencia entre tus cuentas».
+
+**T-102 — Capacidad de pago con ingreso declarado y período corto**
+Sin ninguna cuenta con saldo (todas «Sin seguimiento») y con una tarjeta con corte, pago y algo por pagar.
+1. Ingreso declarado Q 8,000 al mes y ciclo **Semanal**. Gasta unos Q 1,500 esta semana (sin usar la tarjeta) y deja en la tarjeta un estado de unos Q 3,000 que venza en pocos días.
+2. Toca el semáforo de capacidad de pago del Inicio. Esperado: «Lo que tendrás» ≈ Q 1,846 − lo gastado esta semana (el ingreso mensual repartido a una semana, ×12/52), no Q 6,500; el semáforo sale en **rojo** («No alcanza»).
+3. Cambia a **Quincenal**: «lo que tendrás» = Q 4,000 − lo gastado en la quincena. Cambia a **Mensual**: Q 8,000 − lo gastado en el mes (sin cambio respecto a antes).
+4. La frase del detalle sigue diciendo «Calculado con tu ingreso declarado, porque aún no llevas saldos en tus cuentas.».
+
+**T-103 — Visacuota con todos los cortes cumplidos al actualizar queda terminada**
+Solo si tu teléfono tenía una visacuota o préstamo antiguo cuya fecha de inicio ya quedó muy atrás (todos sus cortes ya pasaron) y no marcaba todas las cuotas como pagadas.
+1. Antes de actualizar anota esa visacuota (por ejemplo «2/6» pagadas y activa).
+2. Actualiza y abre la app. Esperado: esa visacuota aparece **terminada** (6/6) y deja de contar en el ratio deuda/ingreso, «Cuotas mensuales» y «Visacuotas pendientes»; ya no se queda activa para siempre.
+3. Una visacuota a la que todavía le quedan cortes sigue activa y con las cuotas que llevaba.
+
+**T-104 — Deshacer un ingreso vinculado solo restaura el inicio del período y lo aprendido (solo Android con SMS activo)**
+1. Ten una fuente de ingreso base que ancla el período (por ejemplo «Sueldo», día 27) y un depósito de ese sueldo ya vinculado a ella (el período arrancó ese día).
+2. Sincroniza otro depósito del mismo origen que la app reconozca sola como ese sueldo en el mismo ciclo. Esperado: el período arranca el día de ese depósito.
+3. **Deshacer última sincronización** → confirma. Esperado: el inicio del período **vuelve al día del primer depósito** (no a la fecha esperada por la regla) y lo que la app había aprendido de ese origen (la categoría con la que reconoce depósitos de ese remitente) vuelve a como estaba antes del lote; si no existía antes, se olvida.
+4. Con un lote donde el vínculo fue el primero de su ciclo: Deshacer quita el inicio automático y el período vuelve a la fecha esperada, como siempre.
+
 ---
 
 ## 21. Resumen de resultados
@@ -714,6 +779,15 @@ Cada frase debe estar en «tú»:
 | T-93 (irregular: ningún contador dice «0 días») | | |
 | T-94 (patrimonio con y sin cuentas que llevan saldo) | | |
 | T-95 (voseo residual corregido) | | |
+| T-96 (deudas al configurar: ninguna cuota el mismo día) | | |
+| T-97 (deuda tipo tarjeta declarada, sin doble conteo) | | |
+| T-98 (préstamo: el SMS del débito es la cuota) | | |
+| T-99 (actualizar con deudas del configurador anterior) | | |
+| T-100 (gastos fijos pagados no se reinician el sábado) | | |
+| T-101 (deshacer sincronización con par de transferencia) | | |
+| T-102 (capacidad con ingreso declarado y período corto) | | |
+| T-103 (visacuota con todos los cortes cumplidos queda terminada) | | |
+| T-104 (deshacer ingreso vinculado restaura período y lo aprendido) | | |
 
 ## Cómo reportar un problema
 

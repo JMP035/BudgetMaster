@@ -157,7 +157,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Semáforo de capacidad de pago',
-                description: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás: verde si usas menos del 70 %, ámbar desde el 70 %, rojo desde el 90 % y «no alcanza» al llegar al 100 %. Tócalo para ver el detalle: de dónde sale lo que tendrás (los saldos de tus cuentas más los ingresos que esperas antes del pago, o tu ingreso declarado si ninguna cuenta lleva saldo) y cuánto te sobra o te falta.',
+                description: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás: verde si usas menos del 70 %, ámbar desde el 70 %, rojo desde el 90 % y «no alcanza» al llegar al 100 %. Tócalo para ver el detalle: de dónde sale lo que tendrás (los saldos de tus cuentas más los ingresos que esperas antes del pago, o, si ninguna cuenta lleva saldo, la parte de tu ingreso declarado que toca a un período —mensual completo, la mitad en quincenal, 12/52 en semanal— menos lo que ya gastaste en él) y cuánto te sobra o te falta.',
                 emptyHint: 'Aparece cuando tienes una tarjeta con día de corte y de pago, y algo por pagar. Configura el corte y el pago de tu tarjeta en Cuentas.',
             },
             {
@@ -519,7 +519,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_debt', elementId: 'stats_debt', screen: 'stats', position: 'top', icon: 'alert-circle-outline', padding: 8,
                 title: 'Ratio deuda / ingreso',
-                description: 'Compara lo que pagas cada mes en cuotas de visacuotas y préstamos activos con tu ingreso mensual: el de tus fuentes de ingreso o, si no tienes, el que declaraste. No incluye el consumo de tarjeta que pagas completo cada mes. Verde por debajo del 20 %, ámbar entre 20 % y 40 %, rojo por encima del 40 %. Si venía de lo que declaraste al configurar la app, aparece avisado y puedes quitarlo con «Ya no la tengo».',
+                description: 'Compara lo que pagas cada mes en cuotas de visacuotas y préstamos activos con tu ingreso mensual: el de tus fuentes de ingreso o, si no tienes, el que declaraste. No incluye el consumo de tarjeta que pagas completo cada mes. Verde por debajo del 20 %, ámbar entre 20 % y 40 %, rojo por encima del 40 %. Si venía de lo que declaraste al configurar la app (por ejemplo una deuda tipo tarjeta, que no se convierte en cuota porque sus compras ya son gasto), aparece avisado y puedes quitarlo con «Ya no la tengo».',
                 emptyHint: 'Aparece cuando tienes visacuotas o préstamos activos. Agrégalos en Cuentas → Visacuotas.',
             },
             {
@@ -624,7 +624,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'acc_8', elementId: 'accounts_fab', screen: 'accounts', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar una visacuota',
-                description: 'Indica la tarjeta (o «Sin tarjeta (préstamo)» con su día de pago), el monto total, la cuota mensual, el número de cuotas, las que ya pagaste y la fecha de la compra: la primera cuota entra en el primer corte desde esa fecha.',
+                description: 'Indica la tarjeta (o «Sin tarjeta (préstamo)» con su día de pago), el monto total, la cuota mensual, el número de cuotas, las que ya pagaste y la fecha de la compra: la primera cuota entra en el primer corte desde esa fecha. Un préstamo sin tarjeta carga su cuota en su día de pago; si el SMS del débito ya llegó (mismo monto, a menos de 3 días de ese día), ese SMS es la cuota y no se cuenta dos veces. Los préstamos y visacuotas que registraste al configurar la app empiezan en su próximo día de pago.',
             },
         ],
     },

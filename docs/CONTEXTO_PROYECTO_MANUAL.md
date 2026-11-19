@@ -18,10 +18,10 @@ Personas comunes en Guatemala, **sin conocimientos técnicos ni financieros**: e
 
 ## Fuentes de verdad (en este orden)
 1. `MANUAL_USUARIO.md` (en la raíz del repositorio) — borrador técnico, 17 secciones, ya en «tú» y verificado contra el código el 18 de noviembre de 2026. Es el contenido más completo.
-2. `docs/PRUEBAS_MANUALES.md` — instructivo de **96 pruebas manuales** (P-01 y T-01 a T-95); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
+2. `docs/PRUEBAS_MANUALES.md` — instructivo de **105 pruebas manuales** (P-01 y T-01 a T-104); cada una dice qué debe verse. Sirve para saber qué **está verificado** y qué no.
 3. Los resultados que el dueño de la app aporte tras probar (aciertos, fallos, capturas).
 
-Además existen **35 pruebas automáticas** (`npm run test:*`) con **5,090 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
+Además existen **36 pruebas automáticas** (`npm run test:*`) con **5,143 comprobaciones**, todas en verde a la fecha. Cubren la lógica (período, score, ratio de deuda, presupuesto repartido, tarjetas, notificaciones, tono «tú», etc.), no lo que se ve en el teléfono.
 
 **Regla:** no inventar funciones ni describir pantallas que no estén en esas fuentes. Si algo no está claro, preguntar. Si algo aún no se ha probado en un teléfono (por ejemplo, el widget), marcarlo como pendiente de verificación en vez de afirmarlo.
 
