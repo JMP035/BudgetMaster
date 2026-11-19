@@ -13,7 +13,7 @@ import type { PeriodAnchor } from '../services/PeriodAnchors';
 import {
   cycleKeyFor, dueDateInPeriod, fixedCycleConfig, isPaidForPeriod, periodFor, setPeriodStartResolver,
 } from '../services/FixedCycle';
-import { computeFinancialPeriod, daysUntilNextPay } from '../services/FinancialPeriod';
+import { compactPeriodLabel, computeFinancialPeriod, daysUntilNextPay } from '../services/FinancialPeriod';
 import type { FixedExpense } from '../services/storage';
 
 let failures = 0;
@@ -296,6 +296,18 @@ console.log('Mensual P27 sin resolvedor');
   check('el día de pago el contador salta al siguiente (31)', daysUntilNextPay(P27, d(2026, 10, 27, 8), null) === 31);
   const feb = computeFinancialPeriod({ paymentCycle: 'monthly', paymentDay: 31, paymentDays: [] }, d(2027, 2, 28), null);
   check('día 31 en febrero: arranca el 28 feb', ymd(feb.start) === '2027-02-28');
+}
+
+// ═════════════ Rango corto del período (encabezado del Inicio) ═════════════
+console.log('compactPeriodLabel');
+{
+  const lab = (a: Date, b: Date) => compactPeriodLabel(a, b);
+  check('mismo año: 27 oct – 26 nov 2026', lab(d(2026, 10, 27), d(2026, 11, 26)) === '27 oct – 26 nov 2026', lab(d(2026, 10, 27), d(2026, 11, 26)));
+  check('cruce de año: 27 dic 2026 – 26 ene 2027', lab(d(2026, 12, 27), d(2027, 1, 26)) === '27 dic 2026 – 26 ene 2027', lab(d(2026, 12, 27), d(2027, 1, 26)));
+  check('mismo mes: 1 – 30 nov 2026', lab(d(2026, 11, 1), d(2026, 11, 30, 23, 59)) === '1 – 30 nov 2026', lab(d(2026, 11, 1), d(2026, 11, 30, 23, 59)));
+  const wk = computeFinancialPeriod({ paymentCycle: 'weekly', paymentDay: 1, paymentDays: [] }, d(2026, 11, 11), null);
+  check('semanal de 7 días: 8 – 14 nov 2026', lab(wk.start, wk.end) === '8 – 14 nov 2026', lab(wk.start, wk.end));
+  check('sin mayúsculas ni puntos del locale', !/[A-Z.]/.test(lab(d(2026, 5, 15), d(2026, 6, 14))));
 }
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);

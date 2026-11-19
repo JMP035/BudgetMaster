@@ -4,6 +4,8 @@ import {
     ActivityIndicator, Animated, Easing, Linking, Modal, Platform, RefreshControl,
     ScrollView, StyleSheet, Text, TouchableOpacity, View
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { compactPeriodLabel } from "../services/FinancialPeriod";
 import {
     Account, CategoryBudget, CreditInstallment, FixedExpense, IncomeSource,
     FinancialPeriod, SavingsGoal, StorageService, Transaction, UserSettings,
@@ -748,6 +750,7 @@ export default function DashboardScreen({
 }: Props) {
     const glass = useGlassDialog();
     const undo = useUndoLastSync(onRefresh);
+    const insets = useSafeAreaInsets();
     const now = new Date();
 
     const briefingRef = useTutorialRef('briefing_card');
@@ -1074,6 +1077,7 @@ export default function DashboardScreen({
         activeAccountsCount: accounts.filter(a => a.isActive).length,
     });
     const daysLeft = getDaysUntilNextPayment(settings);
+    const firstName = (settings.userName ?? '').trim().split(/\s+/)[0] || '';
 
     // Gráfica: últimos 6 meses calendario (por diseño)
     const month = now.getMonth();
@@ -1099,41 +1103,21 @@ export default function DashboardScreen({
             <AmbientOrb size={240} color={C.primary} style={s.orbC} />
             <ScrollView
             {...tutScroll}
-            style={s.screen}
+            style={[s.screen, { paddingTop: insets.top + 12 }]}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.primary} />}
             showsVerticalScrollIndicator={false}
         >
             {/* HEADER */}
             <View style={s.header} ref={headerRef} collapsable={false}>
-                <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 10 }}>
+                {/* Fila 1: logo, saludo (solo el primer nombre), ayuda y sincronización */}
+                <View style={s.headerTop}>
                     <View style={s.logoBox}>
-                        <Ionicons name="wallet-outline" size={26} color={C.onPrimary} />
+                        <Ionicons name="wallet-outline" size={22} color={C.onPrimary} />
                     </View>
-                    <TouchableOpacity
-                        style={{ flex: 1, minWidth: 110 }}
-                        onPress={() => setShowPeriodSheet(true)}
-                        activeOpacity={0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Período ${period.label}. Toca para ver cuándo empieza`}
-                    >
-                        <Text style={s.greeting} numberOfLines={1}>Hola, {settings.userName}</Text>
-                        <View style={s.monthRow}>
-                            <Text style={s.month}>{period.label.toUpperCase()}</Text>
-                            <Ionicons name="create-outline" size={13} color={C.primaryLight} />
-                        </View>
-                        <Text style={s.periodProgress}>
-                            Día {period.daysPassed} de {period.daysTotal} del período
-                        </Text>
-                    </TouchableOpacity>
+                    <Text style={s.greeting} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+                        {firstName ? `Hola, ${firstName}` : "Hola"}
+                    </Text>
                     <HelpButton tutorialId="tutorial_inicio" />
-                </View>
-                <View style={{ flexDirection: "row", gap: 8, flexShrink: 0 }}>
-                    {daysLeft > 0 && settings.paymentCycle !== "irregular" && (
-                        <View style={[s.daysBadge, { borderColor: daysLeft <= 3 ? C.danger + "66" : C.cardBorder }]}>
-                            <Ionicons name="time-outline" size={12} color={daysLeft <= 3 ? C.danger : C.textMuted} />
-                            <Text style={[s.daysBadgeTxt, { color: daysLeft <= 3 ? C.danger : C.textMuted }]}>{daysLeft}d</Text>
-                        </View>
-                    )}
                     {smsOn && (
                         <View ref={syncRef} collapsable={false}>
                             <TouchableOpacity
@@ -1163,6 +1147,26 @@ export default function DashboardScreen({
                         </View>
                     )}
                 </View>
+
+                {/* Fila 2: período en una línea, avance y días al cobro (toca para ver cuándo empieza) */}
+                <TouchableOpacity
+                    style={s.periodRow}
+                    onPress={() => setShowPeriodSheet(true)}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Período ${period.label}. Toca para ver cuándo empieza`}
+                >
+                    <Text style={s.month} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                        {compactPeriodLabel(period.start, period.end)}
+                    </Text>
+                    <Ionicons name="create-outline" size={13} color={C.primaryLight} />
+                    <Text style={s.periodProgress}>· Día {period.daysPassed} de {period.daysTotal}</Text>
+                    {daysLeft >= 0 && settings.paymentCycle !== "irregular" && (
+                        <Text style={[s.periodProgress, { color: daysLeft <= 3 ? C.danger : C.textSub }]}>
+                            · {daysLeft === 0 ? "Hoy cobras" : daysLeft === 1 ? "1 día al cobro" : `${daysLeft} días al cobro`}
+                        </Text>
+                    )}
+                </TouchableOpacity>
             </View>
 
             {/* MENSAJES SIN CLASIFICAR: fila propia para que no le quite ancho al saludo */}
@@ -1436,16 +1440,15 @@ const s = StyleSheet.create({
     orbA: { top: -60, right: -90 },
     orbB: { top: 360, left: -120 },
     orbC: { top: 720, right: -80 },
-    screen: { flex: 1, paddingHorizontal: 16, paddingTop: 52 },
-    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-    logoBox: { width: 44, height: 44, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", marginRight: 12, borderWidth: 1, borderTopColor: C.primaryGlow, borderLeftColor: C.primaryLight, borderRightColor: C.primaryDark, borderBottomColor: C.primaryDark },
-    periodProgress: { color: C.accent, fontSize: 9, marginTop: 1, fontWeight: "700", letterSpacing: 0.5 },
+    screen: { flex: 1, paddingHorizontal: 16 },
+    header: { marginBottom: 20, gap: 8 },
+    headerTop: { flexDirection: "row", alignItems: "center", gap: 10 },
+    periodRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", columnGap: 6, rowGap: 2 },
+    logoBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.primary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderTopColor: C.primaryGlow, borderLeftColor: C.primaryLight, borderRightColor: C.primaryDark, borderBottomColor: C.primaryDark },
+    periodProgress: { color: C.accent, fontSize: 11, fontWeight: "700" },
     periodBadge: { flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 14, flexWrap: "wrap" },
-    greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3 },
-    monthRow: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 2 },
-    month: { color: C.textPrimary, fontSize: 11, letterSpacing: 1.5, fontWeight: "700", flexShrink: 1 },
-    daysBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, backgroundColor: C.glassFill },
-    daysBadgeTxt: { fontSize: 11, fontWeight: "700" },
+    greeting: { color: C.text, fontSize: 22, fontWeight: "800", letterSpacing: 0.3, flex: 1, minWidth: 0 },
+    month: { color: C.textPrimary, fontSize: 12, letterSpacing: 0.5, fontWeight: "700", flexShrink: 1 },
     inboxRow: { flexDirection: "row", marginTop: -8, marginBottom: 14 },
     inboxChip: { flexDirection: "row", alignItems: "center", gap: 4, flexShrink: 1, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: C.warning + "66", backgroundColor: C.glassFill },
     inboxChipTxt: { color: C.warning, fontSize: 11, fontWeight: "700", flexShrink: 1 },

@@ -40,6 +40,24 @@ function weeklyOffset(settings: CycleSettings, now: Date): number {
 const fmt_d = (d: Date) =>
   d.toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' });
 
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
+/**
+ * Rango corto del período para el encabezado, en una sola línea y sin depender del idioma del sistema.
+ *  - mismo mes:        «1 – 30 nov 2026»
+ *  - mismo año:        «27 oct – 26 nov 2026»
+ *  - años distintos:   «27 dic 2026 – 26 ene 2027»
+ * No reemplaza a `FinancialPeriod.label` (que usan el score y otras pantallas).
+ */
+export function compactPeriodLabel(start: Date, end: Date): string {
+  const sd = start.getDate(), ed = end.getDate();
+  const sm = MONTHS_SHORT[start.getMonth()], em = MONTHS_SHORT[end.getMonth()];
+  const sy = start.getFullYear(), ey = end.getFullYear();
+  if (sy !== ey) return `${sd} ${sm} ${sy} – ${ed} ${em} ${ey}`;
+  if (start.getMonth() === end.getMonth()) return `${sd} – ${ed} ${em} ${ey}`;
+  return `${sd} ${sm} – ${ed} ${em} ${ey}`;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
 }
