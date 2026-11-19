@@ -82,37 +82,43 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'tour_1', elementId: 'briefing_card', screen: 'dashboard', position: 'bottom', icon: 'sparkles-outline', padding: 12,
                 title: 'Tu CFO Personal',
-                description: 'Esta tarjeta es tu briefing diario: analiza tus movimientos y te da un resumen cada vez que abres la app. Funciona sin configurar nada; si agregas tu API Key de Gemini en Ajustes, el análisis es más detallado.',
+                lead: 'Esta tarjeta es tu briefing diario: analiza tus movimientos y te da un resumen cada vez que abres la app.',
+                description: 'Funciona sin configurar nada; si agregas tu API Key de Gemini en Ajustes, el análisis es más detallado.',
             },
             {
                 id: 'tour_2', elementId: 'score_card', screen: 'dashboard', position: 'bottom', icon: 'shield-checkmark-outline', padding: 12,
                 title: 'Score Financiero',
-                description: 'Tu puntuación del 0 al 100, calculada con los movimientos que registras en tu período actual (el que empieza el día que cobras, no el mes calendario): cuánto ahorras, si te mantienes dentro del presupuesto y si pagaste tus gastos fijos. Si tu ingreso del período aún no está registrado, el ahorro no suma ni resta.',
+                description: 'Tu puntuación del 0 al 100, calculada con los movimientos que registras en tu período actual (el que empieza el día que cobras, no el mes calendario): cuánto ahorras, si te mantienes dentro del presupuesto y si pagaste tus gastos fijos.\n\nSi tu ingreso del período aún no está registrado, el ahorro no suma ni resta.',
             },
             {
                 id: 'tour_3', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
                 title: 'Sync SMS',
-                description: 'Este botón lee tus SMS bancarios (BAC, BANRURAL, GTC, BANTRAB, PROMERICA) y registra tus gastos automáticamente. La primera vez Android te pedirá permiso para leer SMS: sin ese permiso no se puede sincronizar. Solo funciona en Android.',
+                lead: 'Este botón lee tus SMS bancarios (BAC, BANRURAL, GTC, BANTRAB, PROMERICA) y registra tus gastos automáticamente.',
+                description: 'La primera vez Android te pedirá permiso para leer SMS: sin ese permiso no se puede sincronizar. Solo funciona en Android.',
             },
             {
                 id: 'tour_4', elementId: 'tab_add', position: 'top', icon: 'add-circle-outline', padding: 12,
                 title: 'Agregar Transacción',
-                description: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano. Ahí también puedes pegar el texto de un SMS bancario (botón «Pegar SMS») para que la app complete los datos sola; no necesitas dar permiso de SMS.',
+                lead: 'El botón cobre central abre la pantalla para registrar gastos e ingresos a mano.',
+                description: 'Ahí también puedes pegar el texto de un SMS bancario (botón «Pegar SMS») para que la app complete los datos sola; no necesitas dar permiso de SMS.',
             },
             {
                 id: 'tour_5', elementId: 'tab_budget', position: 'top', icon: 'wallet-outline', padding: 8,
                 title: 'Presupuesto',
-                description: 'Aquí planificas tu mes — gastos fijos, límites por categoría, metas de ahorro y tus fuentes de ingreso (de dónde y cuándo te pagan). Es donde conviertes tus intenciones en un plan real.',
+                lead: 'Aquí planificas tu mes — gastos fijos, límites por categoría, metas de ahorro y tus fuentes de ingreso (de dónde y cuándo te pagan).',
+                description: 'Es donde conviertes tus intenciones en un plan real.',
             },
             {
                 id: 'tour_6', elementId: 'tab_advisor', position: 'top', icon: 'sparkles-outline', padding: 8,
                 title: 'Asesor IA',
-                description: 'Tu CFO en modo chat. Pregúntale lo que quieras: ¿puedo comprarme X?, ¿cómo voy este mes?, ¿qué hago con este excedente? Responde con tus datos locales, y con Gemini lo hace en lenguaje natural.',
+                lead: 'Tu CFO en modo chat.',
+                description: 'Pregúntale lo que quieras: ¿puedo comprarme X?, ¿cómo voy este mes?, ¿qué hago con este excedente? Responde con tus datos locales, y con Gemini lo hace en lenguaje natural.',
             },
             {
                 id: 'tour_7', elementId: 'tab_settings', position: 'top', icon: 'settings-outline', padding: 8,
                 title: 'Ajustes y Academia',
-                description: 'Configura tu perfil, presupuesto, moneda, tipo de cambio y la API Key de Gemini. Cada módulo tiene un botón ? en su encabezado que abre su propio tutorial, y en Ajustes → Academia encuentras todos juntos.',
+                lead: 'Configura tu perfil, presupuesto, moneda, tipo de cambio y la API Key de Gemini.',
+                description: 'Cada módulo tiene un botón ? en su encabezado que abre su propio tutorial, y en Ajustes → Academia encuentras todos juntos.',
             },
         ],
     },
@@ -144,12 +150,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_2', elementId: 'briefing_card', screen: 'dashboard', position: 'bottom', icon: 'sparkles-outline', padding: 8,
                 title: 'Briefing del día',
-                description: 'Un resumen escrito de cómo vas: gasto del período, alertas y una recomendación concreta. Se genera con tus datos locales; si agregas una API Key de Gemini en Ajustes, el texto es más conversacional.',
+                lead: 'Un resumen escrito de cómo vas: gasto del período, alertas y una recomendación concreta.',
+                description: 'Se genera con tus datos locales; si agregas una API Key de Gemini en Ajustes, el texto es más conversacional.',
             },
             {
                 id: 'ini_3', elementId: 'score_card', screen: 'dashboard', position: 'bottom', icon: 'shield-checkmark-outline', padding: 8,
                 title: 'Score financiero',
-                description: 'Puntaje de 0 a 100 con lo que registras en tu período actual (no el mes calendario): tasa de ahorro, presupuesto del período, gastos fijos pagados y cuentas activas. Si tu ingreso del período aún no está registrado, el ahorro no suma ni resta. Toca el ícono de información para ver cada punto.',
+                lead: 'Puntaje de 0 a 100 con lo que registras en tu período actual (no el mes calendario): tasa de ahorro, presupuesto del período, gastos fijos pagados y cuentas activas.',
+                description: 'Si tu ingreso del período aún no está registrado, el ahorro no suma ni resta. Toca el ícono de información para ver cada punto.',
             },
             {
                 id: 'ini_4', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'diamond-outline', padding: 8,
@@ -166,12 +174,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_5', elementId: 'dash_balance_q', screen: 'dashboard', position: 'top', icon: 'cash-outline', padding: 8,
                 title: 'Balance por moneda',
-                description: 'Ingresos, gastos y saldo del período en quetzales. Si registras movimientos en dólares aparece una segunda tarjeta en USD: las monedas nunca se mezclan.',
+                lead: 'Ingresos, gastos y saldo del período en quetzales.',
+                description: 'Si registras movimientos en dólares aparece una segunda tarjeta en USD: las monedas nunca se mezclan.',
             },
             {
                 id: 'ini_6', elementId: 'dash_budget', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Presupuesto del período',
-                description: 'Cuánto llevas gastado frente a tu presupuesto del período (el mensual de Ajustes, repartido si cobras por quincena o semana). Cambia de color al acercarte al límite. Si tienes una tarjeta con corte y día de pago, justo debajo aparece el semáforo de capacidad de pago (verde, ámbar o rojo): te dice qué parte de lo que tendrás para pagarla ya está comprometida.',
+                lead: 'Cuánto llevas gastado frente a tu presupuesto del período (el mensual de Ajustes, repartido si cobras por quincena o semana).',
+                description: 'Cambia de color al acercarte al límite. Si tienes una tarjeta con corte y día de pago, justo debajo aparece el semáforo de capacidad de pago (verde, ámbar o rojo): te dice qué parte de lo que tendrás para pagarla ya está comprometida.',
             },
             {
                 id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
@@ -190,23 +200,27 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_7', elementId: 'accounts_widget', screen: 'dashboard', position: 'top', icon: 'business-outline', padding: 8,
                 title: 'Tus cuentas',
-                description: 'Resumen de tus cuentas, tarjetas y visacuotas. Toca este widget para abrir el módulo de Cuentas, donde registras saldos, transferencias y compras en cuotas.',
+                lead: 'Resumen de tus cuentas, tarjetas y visacuotas.',
+                description: 'Toca este widget para abrir el módulo de Cuentas, donde registras saldos, transferencias y compras en cuotas.',
                 emptyHint: 'Este widget aparece más abajo en el Inicio.',
             },
             {
                 id: 'ini_8', elementId: 'dash_fixed', screen: 'dashboard', position: 'top', icon: 'calendar-outline', padding: 8,
                 title: 'Gastos fijos y metas',
-                description: 'Estos widgets muestran cuántos gastos fijos ya pagaste y cómo avanzan tus metas de ahorro. Al tocarlos te llevan a Presupuesto.',
+                lead: 'Estos widgets muestran cuántos gastos fijos ya pagaste y cómo avanzan tus metas de ahorro.',
+                description: 'Al tocarlos te llevan a Presupuesto.',
             },
             {
                 id: 'ini_9', elementId: 'dash_recent', screen: 'dashboard', position: 'top', icon: 'list-outline', padding: 8,
                 title: 'Movimientos recientes',
-                description: 'Tus últimos registros. Para buscar, filtrar o editar cualquier movimiento usa la pestaña Movimientos.',
+                lead: 'Tus últimos registros.',
+                description: 'Para buscar, filtrar o editar cualquier movimiento usa la pestaña Movimientos.',
             },
             {
                 id: 'ini_10', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-circle-outline', padding: 16, requiresSms: true,
                 title: 'Sincronizar SMS',
-                description: 'Lee tus SMS bancarios y registra los movimientos detectados, sin duplicar los que ya importaste. Solo funciona en Android y necesita el permiso de SMS. Desliza hacia abajo en el Inicio para recargar los datos.',
+                lead: 'Lee tus SMS bancarios y registra los movimientos detectados, sin duplicar los que ya importaste.',
+                description: 'Solo funciona en Android y necesita el permiso de SMS. Desliza hacia abajo en el Inicio para recargar los datos.',
             },
         ],
     },
@@ -232,7 +246,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'per_2', elementId: 'settings_period', screen: 'settings', position: 'bottom', icon: 'sunny-outline', padding: 8,
                 title: 'Fin de semana y feriados',
-                description: 'Si tu día de pago cae sábado, domingo o feriado de Guatemala, el sueldo llega otro día. Toca «Cuándo empieza mi período» y, en Reglas, elige qué hacer: Viernes antes, Lunes después o Día exacto. También decides si cuentan los feriados y cuántos días de tolerancia aceptas (de 1 a 7). El período arranca el día en que de verdad te pagan.',
+                lead: 'Si tu día de pago cae sábado, domingo o feriado de Guatemala, el sueldo llega otro día.',
+                description: 'Toca «Cuándo empieza mi período» y, en Reglas, elige qué hacer: Viernes antes, Lunes después o Día exacto. También decides si cuentan los feriados y cuántos días de tolerancia aceptas (de 1 a 7).\n\nEl período arranca el día en que de verdad te pagan.',
             },
             {
                 id: 'per_3', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'cash-outline', padding: 8, requires: 'income_source',
@@ -251,7 +266,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'per_4', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'hand-left-outline', padding: 8,
                 title: 'Editarlo a mano siempre gana',
-                description: 'Toca el rango del período para abrir «Cuándo empieza tu período»: elige la fecha en que de verdad te pagaron y toca Guardar. Lo que fijas a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.',
+                lead: 'Toca el rango del período para abrir «Cuándo empieza tu período»: elige la fecha en que de verdad te pagaron y toca Guardar.',
+                description: 'Lo que fijas a mano siempre gana: la app no lo cambia sola. «Volver a automático» le devuelve la decisión a tus reglas y a tu sueldo.',
                 emptyHint: 'El rango del período aparece en el encabezado del Inicio.',
             },
         ],
@@ -264,10 +280,10 @@ export const TUTORIALS: Tutorial[] = [
         icon: 'cash-outline', color: C.primary,
         steps: [
             {
-                id: 'sue_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
-                requires: 'bank_account',
+                id: 'sue_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8, requires: 'bank_account',
                 title: '1. La cuenta donde te pagan',
-                description: 'Primero tiene que existir la cuenta donde cae tu pago (por ejemplo tu Monetaria). Si todavía no la tienes, créala en Cuentas con el botón +. Con ella la app sabe a qué cuenta llegó cada depósito.',
+                lead: 'Primero tiene que existir la cuenta donde cae tu pago (por ejemplo tu Monetaria).',
+                description: 'Si todavía no la tienes, créala en Cuentas con el botón +. Con ella la app sabe a qué cuenta llegó cada depósito.',
                 emptyHint: 'Todavía no tienes cuentas. Crea la primera con el botón +.',
             },
             {
@@ -304,12 +320,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sue_4', screen: 'budget', position: 'center', icon: 'checkmark-circle-outline',
                 title: '7. Confirma lo que entendió la app',
-                description: 'Después de analizar el SMS ves una tarjeta «Entendimos»: el banco, la cuenta, quién envía el dinero y el monto aproximado. Si es correcto toca «Sí, es así»; si algo no cuadra toca «Corregir» y cambia quién envía o el monto. Recién entonces guarda la fuente.',
+                lead: 'Después de analizar el SMS ves una tarjeta «Entendimos»: el banco, la cuenta, quién envía el dinero y el monto aproximado.',
+                description: 'Si es correcto toca «Sí, es así»; si algo no cuadra toca «Corregir» y cambia quién envía o el monto. Recién entonces guarda la fuente.',
             },
             {
                 id: 'sue_5', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'cash-outline', padding: 8, requires: 'income_source',
                 title: '8. Cuando llega el pago',
-                description: 'Cuando entra tu depósito, la app lo reconoce, le pone la categoría de la fuente y la marca «Recibido»; si la fuente mueve tu período, tu período arranca ese día. Si no está segura, te pregunta «¿Es tu sueldo?» en el centro de revisión. También puedes vincular un depósito a mano desde su detalle en Movimientos.',
+                lead: 'Cuando entra tu depósito, la app lo reconoce, le pone la categoría de la fuente y la marca «Recibido»; si la fuente mueve tu período, tu período arranca ese día.',
+                description: 'Si no está segura, te pregunta «¿Es tu sueldo?» en el centro de revisión. También puedes vincular un depósito a mano desde su detalle en Movimientos.',
                 emptyHint: 'Todavía no tienes fuentes de ingreso. Crea la primera con el botón +.',
             },
         ],
@@ -324,17 +342,20 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'mov_1', elementId: 'tx_header', screen: 'transactions', position: 'bottom', icon: 'list-outline', padding: 8,
                 title: 'Tu historial completo',
-                description: 'Aquí están todos tus gastos, ingresos y transferencias, del más reciente al más antiguo. El contador muestra cuántos registros coinciden con los filtros activos.',
+                lead: 'Aquí están todos tus gastos, ingresos y transferencias, del más reciente al más antiguo.',
+                description: 'El contador muestra cuántos registros coinciden con los filtros activos.',
             },
             {
                 id: 'mov_2', elementId: 'tx_search', screen: 'transactions', position: 'bottom', icon: 'search-outline', padding: 8,
                 title: 'Búsqueda',
-                description: 'Escribe parte de la descripción, el nombre del banco o la categoría. La lista se filtra mientras escribes; toca la X para limpiar.',
+                lead: 'Escribe parte de la descripción, el nombre del banco o la categoría.',
+                description: 'La lista se filtra mientras escribes; toca la X para limpiar.',
             },
             {
                 id: 'mov_3', elementId: 'tx_type_filter', screen: 'transactions', position: 'bottom', icon: 'funnel-outline', padding: 8,
                 title: 'Filtrar por tipo',
-                description: 'Muestra todos los movimientos, solo gastos o solo ingresos. Este filtro se combina con la búsqueda.',
+                lead: 'Muestra todos los movimientos, solo gastos o solo ingresos.',
+                description: 'Este filtro se combina con la búsqueda.',
             },
             {
                 id: 'mov_4', elementId: 'tx_currency_filter', screen: 'transactions', position: 'bottom', icon: 'cash-outline', padding: 8,
@@ -388,37 +409,44 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'add_1', elementId: 'add_header', screen: 'add', position: 'bottom', icon: 'add-outline', padding: 8,
                 title: 'Registrar un movimiento',
-                description: 'Aquí anotas a mano cualquier gasto o ingreso. También llegas tocando el botón cobre central de la barra inferior.',
+                lead: 'Aquí anotas a mano cualquier gasto o ingreso.',
+                description: 'También llegas tocando el botón cobre central de la barra inferior.',
             },
             {
                 id: 'add_2', elementId: 'add_type_selector', screen: 'add', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
                 title: 'Gasto o Ingreso',
-                description: 'Primero elige si es un Gasto (dinero que salió: compras, pagos, retiros) o un Ingreso (dinero que entró: salario, ventas, transferencias recibidas). Al cambiar el tipo se reinicia la categoría elegida.',
+                lead: 'Primero elige si es un Gasto (dinero que salió: compras, pagos, retiros) o un Ingreso (dinero que entró: salario, ventas, transferencias recibidas).',
+                description: 'Al cambiar el tipo se reinicia la categoría elegida.',
             },
             {
                 id: 'add_3', elementId: 'add_currency', screen: 'add', position: 'bottom', icon: 'cash-outline', padding: 8,
                 title: 'Selecciona la Moneda',
-                description: 'Elige entre Q, USD, EUR o £. La app lleva balances separados por moneda, así un gasto en dólares no se mezcla con tus quetzales.',
+                lead: 'Elige entre Q, USD, EUR o £.',
+                description: 'La app lleva balances separados por moneda, así un gasto en dólares no se mezcla con tus quetzales.',
             },
             {
                 id: 'add_4', elementId: 'add_amount', screen: 'add', position: 'bottom', icon: 'calculator-outline', padding: 8,
                 title: 'Ingresa el Monto',
-                description: 'Escribe el monto, con decimales si hace falta (por ejemplo 150.50). El número toma el color del tipo elegido para que confirmes de un vistazo si es gasto o ingreso.',
+                lead: 'Escribe el monto, con decimales si hace falta (por ejemplo 150.50).',
+                description: 'El número toma el color del tipo elegido para que confirmes de un vistazo si es gasto o ingreso.',
             },
             {
                 id: 'add_5', elementId: 'add_description', screen: 'add', position: 'bottom', icon: 'pencil-outline', padding: 8,
                 title: 'Agrega una Descripción',
-                description: 'Opcional pero recomendado: escribe en qué gastaste o de dónde viene el dinero. Te ayuda a identificar la transacción después.',
+                lead: 'Opcional pero recomendado: escribe en qué gastaste o de dónde viene el dinero.',
+                description: 'Te ayuda a identificar la transacción después.',
             },
             {
                 id: 'add_6', elementId: 'add_category', screen: 'add', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Elige la Categoría',
-                description: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista): queda elegida y disponible en toda la app. También puedes administrarlas en Ajustes → Mis Categorías.',
+                lead: 'La categoría alimenta tus estadísticas y el presupuesto por categoría: elegirla bien te dice exactamente en qué se va tu dinero.',
+                description: 'Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista): queda elegida y disponible en toda la app. También puedes administrarlas en Ajustes → Mis Categorías.',
             },
             {
                 id: 'add_7', elementId: 'add_sms_btn', screen: 'add', position: 'bottom', icon: 'clipboard-outline', padding: 8,
                 title: 'Atajo: pegar un SMS',
-                description: 'Si tienes un SMS del banco, toca «Pegar SMS», pega el texto y presiona «Analizar SMS»: la app completa monto, moneda y tipo por ti. Funciona en cualquier teléfono, aunque la lectura de SMS esté apagada, y no pide ningún permiso. Al final revisa los datos y toca «Guardar».',
+                lead: 'Si tienes un SMS del banco, toca «Pegar SMS», pega el texto y presiona «Analizar SMS»: la app completa monto, moneda y tipo por ti.',
+                description: 'Funciona en cualquier teléfono, aunque la lectura de SMS esté apagada, y no pide ningún permiso. Al final revisa los datos y toca «Guardar».',
             },
             {
                 id: 'add_8', elementId: 'add_save_btn', screen: 'add', position: 'top', icon: 'save-outline', padding: 8,
@@ -438,22 +466,26 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_1', elementId: 'sync_btn', screen: 'dashboard', position: 'bottom', icon: 'sync-outline', padding: 16,
                 title: 'Botón de Sincronización',
-                description: 'Este botón, arriba a la derecha en Inicio, revisa los SMS de los últimos 3 meses, detecta los bancarios y los registra como movimientos. Los mensajes que ya importaste antes no se duplican.',
+                lead: 'Este botón, arriba a la derecha en Inicio, revisa los SMS de los últimos 3 meses, detecta los bancarios y los registra como movimientos.',
+                description: 'Los mensajes que ya importaste antes no se duplican.',
             },
             {
                 id: 'sms_2', position: 'center', icon: 'lock-closed-outline',
                 title: 'Permiso de Android',
-                description: 'La primera vez que sincronices, Android te preguntará si BudgetMaster puede leer tus SMS: elige "Permitir". Si lo rechazaste con "No volver a preguntar", actívalo en Ajustes del teléfono → Apps → BudgetMaster → Permisos → SMS.',
+                lead: 'La primera vez que sincronices, Android te preguntará si BudgetMaster puede leer tus SMS: elige "Permitir".',
+                description: 'Si lo rechazaste con "No volver a preguntar", actívalo en Ajustes del teléfono → Apps → BudgetMaster → Permisos → SMS.',
             },
             {
                 id: 'sms_3', position: 'center', icon: 'shield-outline',
                 title: 'Tu privacidad está protegida',
-                description: 'La app SOLO lee mensajes con palabras bancarias (compra, débito, abono). Nunca lee mensajes personales. Todo queda en tu celular.',
+                lead: 'La app SOLO lee mensajes con palabras bancarias (compra, débito, abono).',
+                description: 'Nunca lee mensajes personales. Todo queda en tu celular.',
             },
             {
                 id: 'sms_4', position: 'center', icon: 'settings-outline',
                 title: 'Configurar en Ajustes',
-                description: 'En Ajustes → Sincronización SMS Automática puedes activarla o desactivarla. Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Si un SMS no se detecta, pégalo a mano en Agregar → «Pegar SMS».',
+                lead: 'En Ajustes → Sincronización SMS Automática puedes activarla o desactivarla.',
+                description: 'Bancos soportados: BAC, BANRURAL, GTC, BANTRAB y PROMERICA. Si un SMS no se detecta, pégalo a mano en Agregar → «Pegar SMS».',
             },
             {
                 id: 'sms_5', position: 'center', icon: 'pricetag-outline',
@@ -475,7 +507,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_6', position: 'center', icon: 'shield-checkmark-outline',
                 title: 'Centro de revisión',
-                description: 'Si lo abres desde el aviso de una sincronización, ves lo que trajo esa sincronización; toca «Revisar también lo de antes» o usa Ajustes → «Revisar pendientes» para ver todo, también lo del período anterior. «Revisar» cuenta también las preguntas «¿A qué cuenta fue?».',
+                description: 'Si lo abres desde el aviso de una sincronización, ves lo que trajo esa sincronización; toca «Revisar también lo de antes» o usa Ajustes → «Revisar pendientes» para ver todo, también lo del período anterior.\n\n«Revisar» cuenta también las preguntas «¿A qué cuenta fue?».',
             },
         ],
     },
@@ -489,12 +521,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_1', elementId: 'budget_tabs', screen: 'budget', position: 'bottom', icon: 'wallet-outline', padding: 8,
                 title: 'Cuatro herramientas de planificación',
-                description: 'Presupuesto tiene cuatro pestañas: Gastos Fijos (tus compromisos mensuales), Categorías (límites de gasto), Metas (ahorro con objetivo) e Ingresos (de dónde y cuándo te pagan). Vamos a recorrer cada una.',
+                lead: 'Presupuesto tiene cuatro pestañas: Gastos Fijos (tus compromisos mensuales), Categorías (límites de gasto), Metas (ahorro con objetivo) e Ingresos (de dónde y cuándo te pagan).',
+                description: 'Vamos a recorrer cada una.',
             },
             {
                 id: 'budget_2', elementId: 'budget_fixed_summary', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Resumen de gastos fijos',
-                description: 'Cuántos gastos fijos pagaste este período, cuánto dinero ya cubriste, cuánto falta y en cuántos días es tu próximo ingreso. La barra muestra el porcentaje cubierto.',
+                lead: 'Cuántos gastos fijos pagaste este período, cuánto dinero ya cubriste, cuánto falta y en cuántos días es tu próximo ingreso.',
+                description: 'La barra muestra el porcentaje cubierto.',
             },
             {
                 id: 'budget_3', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'checkbox-outline', padding: 8,
@@ -513,7 +547,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_4', elementId: 'budget_fixed_fab', screen: 'budget', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar un gasto fijo',
-                description: 'Con este botón registras renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago, categoría y, si quieres, la cuenta o tarjeta de donde sale el pago. La app te recuerda 3 días antes de cada vencimiento (a las 8:00, sin avisarte de noche) y las casillas se reinician al empezar un nuevo período.',
+                lead: 'Con este botón registras renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago, categoría y, si quieres, la cuenta o tarjeta de donde sale el pago.',
+                description: 'La app te recuerda 3 días antes de cada vencimiento (a las 8:00, sin avisarte de noche) y las casillas se reinician al empezar un nuevo período.',
             },
             {
                 id: 'budget_4b', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'card-outline', padding: 8,
@@ -536,7 +571,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_5b', elementId: 'budget_cat_list', screen: 'budget', scrollKey: 'budget_categories', position: 'bottom', icon: 'list-outline', padding: 8,
                 title: 'Movimientos de cada categoría',
-                description: 'Toca una categoría para ver los movimientos del período. Los gastos en dólares u otra moneda se muestran aparte: no se convierten ni cuentan en el límite. Más abajo, «Gastos sin presupuesto» lista las categorías con gasto que todavía no tienen límite.',
+                lead: 'Toca una categoría para ver los movimientos del período.',
+                description: 'Los gastos en dólares u otra moneda se muestran aparte: no se convierten ni cuentan en el límite. Más abajo, «Gastos sin presupuesto» lista las categorías con gasto que todavía no tienen límite.',
                 emptyHint: 'Aquí aparecen las categorías con límite y, debajo, las que tienen gasto este período pero aún no tienen límite.',
             },
             {
@@ -554,13 +590,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_7', elementId: 'budget_goals_list', screen: 'budget', action: { id: 'budget:setTab', arg: 2 }, scrollKey: 'budget_goals', position: 'bottom', icon: 'trophy-outline', padding: 8,
                 title: 'Metas de ahorro',
-                description: 'Cada meta muestra el porcentaje alcanzado, cuánto falta, los días que quedan y cuánto deberías apartar por mes para llegar a tiempo. Toca Abonar cada vez que separes dinero para esa meta.',
+                lead: 'Cada meta muestra el porcentaje alcanzado, cuánto falta, los días que quedan y cuánto deberías apartar por mes para llegar a tiempo.',
+                description: 'Toca Abonar cada vez que separes dinero para esa meta.',
                 emptyHint: 'Todavía no tienes metas. Crea la primera con el botón +.',
             },
             {
                 id: 'budget_8', elementId: 'budget_goals_fab', screen: 'budget', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Crear una meta',
-                description: 'Define el nombre, el monto objetivo, cuánto ya tienes ahorrado, la moneda y la fecha límite con el calendario. Al completarla pasa a la sección Metas completadas.',
+                lead: 'Define el nombre, el monto objetivo, cuánto ya tienes ahorrado, la moneda y la fecha límite con el calendario.',
+                description: 'Al completarla pasa a la sección Metas completadas.',
             },
             {
                 id: 'budget_9', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'cash-outline', padding: 8,
@@ -578,7 +616,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_10', elementId: 'budget_income_fab', screen: 'budget', scrollKey: 'budget_income', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Crear una fuente de ingreso',
-                description: 'Con este botón registras de dónde y cuándo te pagan: nombre, categoría, monto, moneda, cada cuánto (mensual, quincenal, semanal o irregular), el día, la cuenta donde te pagan y si es un ingreso base o un extra. Con un SMS de ejemplo la app aprende a reconocer tu pago sola. Mira el tutorial «Tu sueldo» para el proceso completo.',
+                description: 'Con este botón registras de dónde y cuándo te pagan: nombre, categoría, monto, moneda, cada cuánto (mensual, quincenal, semanal o irregular), el día, la cuenta donde te pagan y si es un ingreso base o un extra.\n\nCon un SMS de ejemplo la app aprende a reconocer tu pago sola. Mira el tutorial «Tu sueldo» para el proceso completo.',
             },
         ],
     },
@@ -592,18 +630,21 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_1', elementId: 'stats_filter', screen: 'stats', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Elige el período',
-                description: 'Período Actual sigue tu ciclo de pago; también puedes ver el Período Anterior, Este Año o Todo el historial. Las tarjetas se recalculan con el período elegido, salvo la comparativa de 6 meses, que siempre muestra los últimos seis.',
+                lead: 'Período Actual sigue tu ciclo de pago; también puedes ver el Período Anterior, Este Año o Todo el historial.',
+                description: 'Las tarjetas se recalculan con el período elegido, salvo la comparativa de 6 meses, que siempre muestra los últimos seis.',
             },
             {
                 id: 'stats_currency', elementId: 'stats_currency', screen: 'stats', position: 'bottom', icon: 'cash-outline', padding: 8,
                 title: 'Quetzales o dólares',
-                description: 'Si en el período tienes movimientos en dólares, elige Q o $: los cuadros, las gráficas, el ahorro y el aviso de transferencias se calculan solo con esa moneda, sin convertir. Las tarjetas de más abajo siguen en quetzales.',
+                lead: 'Si en el período tienes movimientos en dólares, elige Q o $: los cuadros, las gráficas, el ahorro y el aviso de transferencias se calculan solo con esa moneda, sin convertir.',
+                description: 'Las tarjetas de más abajo siguen en quetzales.',
                 emptyHint: 'Aparece cuando tienes movimientos en dólares en el período elegido.',
             },
             {
                 id: 'stats_2', elementId: 'stats_quick', screen: 'stats', action: { id: 'stats:setView', arg: 'expense' }, position: 'bottom', icon: 'swap-vertical-outline', padding: 8,
                 title: 'Resumen rápido',
-                description: 'Ingresos, gastos y ahorro del período. Toca un cuadro para cambiar la gráfica de abajo: INGRESOS muestra de dónde vino tu dinero, GASTOS en qué se fue y AHORRO te explica la cuenta. El cuadro elegido queda resaltado.',
+                lead: 'Ingresos, gastos y ahorro del período.',
+                description: 'Toca un cuadro para cambiar la gráfica de abajo: INGRESOS muestra de dónde vino tu dinero, GASTOS en qué se fue y AHORRO te explica la cuenta. El cuadro elegido queda resaltado.',
             },
             {
                 id: 'stats_transfers', elementId: 'stats_transfers', screen: 'stats', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
@@ -622,7 +663,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_3', elementId: 'stats_pie', screen: 'stats', action: { id: 'stats:setView', arg: 'expense' }, position: 'bottom', icon: 'pie-chart-outline', padding: 8,
                 title: 'Desglose por categoría',
-                description: 'Muestra en qué categorías se fue tu dinero (o, con INGRESOS, de dónde vino). Toca una porción o una fila de la leyenda para ver su monto y porcentaje.',
+                lead: 'Muestra en qué categorías se fue tu dinero (o, con INGRESOS, de dónde vino).',
+                description: 'Toca una porción o una fila de la leyenda para ver su monto y porcentaje.',
                 emptyHint: 'La gráfica muestra un aviso cuando no hay movimientos en la moneda y el período elegidos.',
             },
             {
@@ -633,27 +675,31 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_4', elementId: 'stats_projected', screen: 'stats', position: 'top', icon: 'trending-up-outline', padding: 8,
                 title: 'Flujo de caja proyectado',
-                description: 'Toma tu gasto promedio diario y lo proyecta hasta el final del período, para que sepas con tiempo si te va a sobrar o faltar dinero. En períodos pasados muestra lo que realmente gastaste.',
+                lead: 'Toma tu gasto promedio diario y lo proyecta hasta el final del período, para que sepas con tiempo si te va a sobrar o faltar dinero.',
+                description: 'En períodos pasados muestra lo que realmente gastaste.',
             },
             {
                 id: 'stats_5', elementId: 'stats_compare', screen: 'stats', position: 'top', icon: 'stats-chart-outline', padding: 8,
                 title: 'Comparativa de 6 meses',
-                description: 'Barras de gastos e ingresos de los últimos seis meses; la más brillante es el mes actual. Si hay diferencia con el período anterior, ves cuánto subió o bajó tu gasto.',
+                lead: 'Barras de gastos e ingresos de los últimos seis meses; la más brillante es el mes actual.',
+                description: 'Si hay diferencia con el período anterior, ves cuánto subió o bajó tu gasto.',
             },
             {
                 id: 'stats_6', elementId: 'stats_accumulated', screen: 'stats', position: 'top', icon: 'diamond-outline', padding: 8,
                 title: 'Ahorro acumulado',
-                description: 'Ingresos menos gastos registrados, acumulados mes a mes, más tus ahorros externos. No es el saldo de tus cuentas: es la tendencia de lo que vas registrando.',
+                lead: 'Ingresos menos gastos registrados, acumulados mes a mes, más tus ahorros externos.',
+                description: 'No es el saldo de tus cuentas: es la tendencia de lo que vas registrando.',
             },
             {
                 id: 'stats_7', elementId: 'stats_daily', screen: 'stats', position: 'top', icon: 'today-outline', padding: 8,
                 title: 'Gasto promedio diario',
-                description: 'Cuánto gastas por día en promedio frente a tu presupuesto diario ideal (presupuesto del período ÷ días del período; si cobras por quincena o semana, el mensual de Ajustes ya viene repartido). Por encima de 100% vas más rápido de lo planificado.',
+                description: 'Cuánto gastas por día en promedio frente a tu presupuesto diario ideal (presupuesto del período ÷ días del período; si cobras por quincena o semana, el mensual de Ajustes ya viene repartido).\n\nPor encima de 100% vas más rápido de lo planificado.',
             },
             {
                 id: 'stats_8', elementId: 'stats_nospend', screen: 'stats', position: 'top', icon: 'shield-checkmark-outline', padding: 8,
                 title: 'Días sin gastar',
-                description: 'Cuántos días del período no registraste ningún gasto. Más días sin gastar suele significar menos compras impulsivas.',
+                lead: 'Cuántos días del período no registraste ningún gasto.',
+                description: 'Más días sin gastar suele significar menos compras impulsivas.',
             },
             {
                 id: 'stats_9', elementId: 'stats_banks', screen: 'stats', position: 'top', icon: 'business-outline', padding: 8,
@@ -679,13 +725,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_10', elementId: 'stats_velocity', screen: 'stats', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Velocidad de gasto',
-                description: 'Compara lo que llevas gastado en este período con todo el período anterior. Si es positivo, estás gastando más rápido que antes.',
+                lead: 'Compara lo que llevas gastado en este período con todo el período anterior.',
+                description: 'Si es positivo, estás gastando más rápido que antes.',
                 emptyHint: 'Esta tarjeta solo aparece con el filtro Período Actual.',
             },
             {
                 id: 'stats_11', elementId: 'stats_savings_projection', screen: 'stats', position: 'top', icon: 'rocket-outline', padding: 8,
                 title: 'Proyección de ahorro',
-                description: 'Al final de la pantalla: estima cuánto acumularías en 6 y 12 meses si sigues ahorrando al ritmo promedio de los últimos seis meses. Se basa en tus transacciones registradas, no en el saldo de tus cuentas.',
+                lead: 'Al final de la pantalla: estima cuánto acumularías en 6 y 12 meses si sigues ahorrando al ritmo promedio de los últimos seis meses.',
+                description: 'Se basa en tus transacciones registradas, no en el saldo de tus cuentas.',
             },
         ],
     },
@@ -699,23 +747,27 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ia_1', elementId: 'advisor_header', screen: 'advisor', position: 'bottom', icon: 'sparkles-outline', padding: 8,
                 title: 'Modo del asesor',
-                description: 'Modo local entiende tus consultas y órdenes directamente en el teléfono, sin internet ni configuración. Si pegas tu API Key gratuita de aistudio.google.com en Ajustes → Inteligencia Artificial, verás Gemini activo y además podrás conversar de forma abierta.',
+                lead: 'Modo local entiende tus consultas y órdenes directamente en el teléfono, sin internet ni configuración.',
+                description: 'Si pegas tu API Key gratuita de aistudio.google.com en Ajustes → Inteligencia Artificial, verás Gemini activo y además podrás conversar de forma abierta.',
             },
             {
                 id: 'ia_2', elementId: 'advisor_chat', screen: 'advisor', position: 'bottom', icon: 'chatbubbles-outline', padding: 8,
                 title: 'La conversación',
-                description: 'El primer mensaje es un diagnóstico de tu situación actual. Cada respuesta usa tus movimientos, cuentas, gastos fijos, presupuestos, metas y visacuotas reales.',
+                lead: 'El primer mensaje es un diagnóstico de tu situación actual.',
+                description: 'Cada respuesta usa tus movimientos, cuentas, gastos fijos, presupuestos, metas y visacuotas reales.',
             },
             {
                 id: 'ia_3', elementId: 'advisor_suggestions', screen: 'advisor', position: 'top', icon: 'flash-outline', padding: 8,
                 title: 'Preguntas sugeridas',
-                description: 'Atajos pensados para tu situación del momento. Toca uno para preguntarlo directamente.',
+                lead: 'Atajos pensados para tu situación del momento.',
+                description: 'Toca uno para preguntarlo directamente.',
                 emptyHint: 'Las sugerencias aparecen cuando el campo de texto está vacío y no hay una respuesta en curso.',
             },
             {
                 id: 'ia_actions', elementId: 'advisor_actions', screen: 'advisor', position: 'top', icon: 'flash-outline', padding: 8,
                 title: 'Acciones guiadas',
-                description: 'Crear meta, Presupuesto, Gasto fijo, Registrar gasto y Consultar te piden los datos paso a paso. Antes de guardar ves una tarjeta para Confirmar, Editar o Cancelar.',
+                lead: 'Crear meta, Presupuesto, Gasto fijo, Registrar gasto y Consultar te piden los datos paso a paso.',
+                description: 'Antes de guardar ves una tarjeta para Confirmar, Editar o Cancelar.',
                 emptyHint: 'Se ocultan mientras el teclado está abierto.',
             },
             {
@@ -733,7 +785,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ia_5', elementId: 'advisor_clear', screen: 'advisor', position: 'bottom', icon: 'refresh-outline', padding: 8,
                 title: 'Reiniciar el chat',
-                description: 'Borra la conversación y genera un diagnóstico nuevo con tus datos actualizados. Tus datos financieros no se tocan.',
+                lead: 'Borra la conversación y genera un diagnóstico nuevo con tus datos actualizados.',
+                description: 'Tus datos financieros no se tocan.',
             },
         ],
     },
@@ -1080,7 +1133,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'wid_1', position: 'center', icon: 'add-circle-outline',
                 title: '1. Agrégalo desde tu teléfono',
-                description: 'Mantén presionado un espacio vacío de la pantalla de inicio de tu teléfono, toca «Widgets», busca «BudgetMaster», elige el tamaño (pequeño 2×2 o mediano 4×2) y arrástralo. Abre la app al menos una vez para que cargue tus cifras.',
+                lead: 'Mantén presionado un espacio vacío de la pantalla de inicio de tu teléfono, toca «Widgets», busca «BudgetMaster», elige el tamaño (pequeño 2×2 o mediano 4×2) y arrástralo.',
+                description: 'Abre la app al menos una vez para que cargue tus cifras.',
             },
             {
                 id: 'wid_2', position: 'center', icon: 'speedometer-outline',
@@ -1185,12 +1239,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_3', elementId: 'settings_currency', screen: 'settings', position: 'bottom', icon: 'cash-outline', padding: 8,
                 title: 'Moneda principal',
-                description: 'La moneda que usas en tu día a día. Es la que aparece seleccionada por defecto al registrar un movimiento.',
+                lead: 'La moneda que usas en tu día a día.',
+                description: 'Es la que aparece seleccionada por defecto al registrar un movimiento.',
             },
             {
                 id: 'set_4', elementId: 'settings_rate', screen: 'settings', position: 'top', icon: 'swap-horizontal-outline', padding: 8,
                 title: 'Tipo de cambio',
-                description: 'Cuántos quetzales vale un dólar. Se actualiza solo desde el Banco de Guatemala, o desde un servicio de respaldo, cada 6 horas. Sin internet se usa el último valor guardado. Si lo editas a mano queda fijo hasta que toques Volver a automático.',
+                lead: 'Cuántos quetzales vale un dólar.',
+                description: 'Se actualiza solo desde el Banco de Guatemala, o desde un servicio de respaldo, cada 6 horas. Sin internet se usa el último valor guardado. Si lo editas a mano queda fijo hasta que toques Volver a automático.',
             },
             {
                 id: 'set_5', elementId: 'settings_savings', screen: 'settings', position: 'top', icon: 'business-outline', padding: 8,
@@ -1213,7 +1269,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_8', elementId: 'settings_gemini', screen: 'settings', position: 'top', icon: 'sparkles-outline', padding: 8,
                 title: 'Gemini (opcional)',
-                description: 'Pega tu API Key gratuita de aistudio.google.com para que el Asesor responda en lenguaje natural. Sin clave, el asesor funciona igual en modo local.',
+                lead: 'Pega tu API Key gratuita de aistudio.google.com para que el Asesor responda en lenguaje natural.',
+                description: 'Sin clave, el asesor funciona igual en modo local.',
             },
             {
                 id: 'set_notif', elementId: 'settings_notifications', screen: 'settings', position: 'top', icon: 'notifications-outline', padding: 8,
@@ -1246,7 +1303,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_10', elementId: 'settings_academy', screen: 'settings', position: 'top', icon: 'school-outline', padding: 8,
                 title: 'Academia',
-                description: 'Abre cualquier tutorial o reinícialos todos. Recuerda que cada módulo tiene su botón ? en el encabezado.',
+                lead: 'Abre cualquier tutorial o reinícialos todos.',
+                description: 'Recuerda que cada módulo tiene su botón ? en el encabezado.',
             },
             {
                 id: 'set_11', elementId: 'settings_save', screen: 'settings', position: 'top', icon: 'save-outline', padding: 8,
@@ -1257,7 +1315,8 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'set_12', elementId: 'settings_danger', screen: 'settings', position: 'top', icon: 'warning-outline', padding: 8,
                 title: 'Zona de peligro',
-                description: 'Borra todos tus datos del teléfono de forma permanente. La app te pide confirmación antes de hacerlo. También reinicia tus tutoriales (el recorrido inicial vuelve a arrancar solo cuando termines la configuración inicial) y vacía el widget de la pantalla de inicio, que dice «Abre BudgetMaster…» hasta que vuelvas a configurar la app.',
+                lead: 'Borra todos tus datos del teléfono de forma permanente.',
+                description: 'La app te pide confirmación antes de hacerlo. También reinicia tus tutoriales (el recorrido inicial vuelve a arrancar solo cuando termines la configuración inicial) y vacía el widget de la pantalla de inicio, que dice «Abre BudgetMaster…» hasta que vuelvas a configurar la app.',
             },
         ],
     },

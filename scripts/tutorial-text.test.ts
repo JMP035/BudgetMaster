@@ -71,7 +71,7 @@ const smsOff = (t: Tutorial): Tutorial | null => {
 };
 
 // Tutoriales que todavía no pasaron al formato nuevo (se vacía al terminar la conversión).
-const NOT_CONVERTED: string[] = ['tour_inicial'];
+const NOT_CONVERTED: string[] = [];
 
 const balanced = (s: string | undefined) => {
   if (!s) return true;
