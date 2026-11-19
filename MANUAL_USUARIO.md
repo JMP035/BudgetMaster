@@ -535,7 +535,7 @@ Tutoriales interactivos con "spotlight" sobre la pantalla real. Están en la gu�
 16. **Ajustes** — cada sección, incluido el presupuesto por período y el ciclo de pago.
 17. **Widget en tu pantalla de inicio** («Widget», solo Android) — agregarlo desde el teléfono, qué muestra cada tamaño, el ojo para ocultar los montos (ocultos por defecto) y «+ gasto».
 
-En cada paso: **Siguiente** para avanzar u **Omitir tutorial** para salir. Los vistos quedan marcados. Si un paso necesita algo que todavía no existe (una cuenta, una tarjeta con corte y pago, una fuente de ingreso, los SMS activos), el tutorial lo dice y ofrece **«Crearlo ahora»**: se cierra para que lo crees, y lo abres de nuevo después. Para repetirlos todos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
+En cada paso: **Siguiente** para avanzar u **Omitir** para salir. Los vistos quedan marcados. Si un paso necesita algo que todavía no existe (una cuenta, una tarjeta con corte y pago, una fuente de ingreso, los SMS activos), el tutorial lo dice y ofrece **«Crearlo ahora»**: se cierra para que lo crees, y lo abres de nuevo después. Para repetirlos todos: **Ajustes → Academia → Reiniciar todos los tutoriales**.
 
 ---
 

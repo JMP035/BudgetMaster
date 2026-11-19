@@ -2,10 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
     Animated, BackHandler, Easing, Keyboard, LayoutChangeEvent, Modal,
-    ScrollView, StyleSheet, Text,
+    NativeScrollEvent, NativeSyntheticEvent, ScrollView, StyleSheet, Text,
     TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Defs, LinearGradient, Rect as SvgRect, Stop } from "react-native-svg";
 import { useTutorial } from "../context/TutorialContext";
 import { Tutorial, TutorialScreen, TutorialService, TutorialStep } from "../services/TutorialService";
 import { missingRequirement, requirementNoticeText } from "../services/TutorialRequirements";
@@ -132,18 +133,24 @@ const CARD_MAX_WIDTH = 440;
 const GAP = 12;               // separación entre la tarjeta y el anillo del spotlight
 const EDGE = 8;               // margen mínimo contra los bordes seguros de la pantalla
 const RING = 6;               // grosor del resplandor del spotlight
-const MIN_BODY = 96;          // alto mínimo legible de título + descripción
-const MIN_BODY_COMPACT = 44;  // piso absoluto del cuerpo cuando hay que comprimir
+const MIN_BODY_SCROLL = 120;  // alto de cuerpo que justifica ubicar la tarjeta con scroll junto al elemento
+const MIN_BODY_FLOOR = 44;    // piso absoluto del cuerpo cuando hay que comprimir
+const CARD_PADDING = 16;      // padding del contenedor de la tarjeta (arriba y abajo suman el doble)
+const CARD_MAX_RATIO_SPOT = 0.5;    // tope de altura con elemento resaltado
+const CARD_MAX_RATIO_CENTER = 0.62; // tope de altura sin elemento resaltado
+const SCROLL_END_TOLERANCE = 4;
+const FADE_HEIGHT = 28;
 
-interface CardMeasure { key: string; naturalH: number; bodyH: number; iconBlockH: number; }
+interface CardMeasure { key: string; headerH: number; bodyH: number; footerH: number; }
 
 /**
  * Tarjeta del tutorial en dos fases:
- *  1. MEDICIÓN: se renderiza invisible, sin límites, para conocer su alto natural
- *     (tarjeta completa, cuerpo y bloque del ícono). Solo se mide una vez por clave.
- *  2. UBICACIÓN: con esas medidas fijas se decide dónde va (junto al elemento,
- *     con scroll interno o superpuesta) sin retroalimentarse del alto ya ubicado.
- * Cabecera y pie (contador + botones) son fijos; solo el cuerpo hace scroll.
+ *  1. MEDICIÓN: se renderiza invisible, sin límites, para conocer el alto natural de sus
+ *     tres piezas (cabecera, cuerpo y pie). Solo se mide una vez por clave. Pinta EXACTAMENTE
+ *     la misma estructura y estilos que la fase de ubicación.
+ *  2. UBICACIÓN: con esas medidas fijas se decide dónde va (junto al elemento, en la mitad
+ *     opuesta o centrada) con un tope de alto (50 % con elemento, 62 % sin él).
+ * Cabecera (progreso, ícono pequeño y título) y pie (botones) son fijos; solo el cuerpo hace scroll.
  */
 function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containerHeight, onNext, onSkip, onFulfill }: StepCardProps) {
     const insets = useSafeAreaInsets();
@@ -157,10 +164,19 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
 
     const measureKey = `${winW}:${fontScale}:${fallback}:${missing ?? ''}`;
     const [measured, setMeasured] = useState<CardMeasure | null>(null);
-    const partsRef = useRef<{ key?: string; naturalH?: number; bodyH?: number; iconBlockH?: number }>({});
+    const partsRef = useRef<{ key?: string; headerH?: number; bodyH?: number; footerH?: number }>({});
     const prevKeyRef = useRef(measureKey);
     const m = measured && measured.key === measureKey ? measured : null;
     const ready = m != null;
+
+    // Estado del scroll del cuerpo: mientras no se llega al final se avisa «Desliza para leer más».
+    const [atEnd, setAtEnd] = useState(false);
+    const scrollRef = useRef({ viewH: 0, contentH: 0, offset: 0 });
+    const updateAtEnd = () => {
+        const { viewH, contentH, offset } = scrollRef.current;
+        if (viewH <= 0 || contentH <= 0) return;
+        setAtEnd(contentH - offset - viewH <= SCROLL_END_TOLERANCE);
+    };
 
     // Si cambia el ancho, la escala de fuente o la nota de fallback, hay que re-medir.
     useEffect(() => {
@@ -188,32 +204,41 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
         return () => pulse.stop();
     }, [ready]);
 
-    const report = (part: 'naturalH' | 'bodyH' | 'iconBlockH', value: number) => {
+    const report = (part: 'headerH' | 'bodyH' | 'footerH', value: number) => {
         let p = partsRef.current;
         if (p.key !== measureKey) {
             p = { key: measureKey };
             partsRef.current = p;
         }
         p[part] = value;
-        if (p.naturalH != null && p.bodyH != null && p.iconBlockH != null) {
-            setMeasured({ key: measureKey, naturalH: p.naturalH, bodyH: p.bodyH, iconBlockH: p.iconBlockH });
+        if (p.headerH != null && p.bodyH != null && p.footerH != null) {
+            setMeasured({ key: measureKey, headerH: p.headerH, bodyH: p.bodyH, footerH: p.footerH });
         }
     };
 
-    const progress = (
-        <View style={card.progressRow}>
-            {tutorial.steps.map((_, i) => (
-                <View key={i} style={[
-                    card.progressDot,
-                    { backgroundColor: i <= stepIndex ? C.primaryLight : C.glassBorder, width: i === stepIndex ? 24 : 8 }
-                ]} />
-            ))}
-        </View>
+    // Las tres piezas se usan IGUAL en la fase de medición y en la de ubicación.
+    const headerContent = (
+        <>
+            <View style={card.progressRow}>
+                {tutorial.steps.map((_, i) => (
+                    <View key={i} style={[
+                        card.progressDot,
+                        { backgroundColor: i <= stepIndex ? C.primaryLight : C.glassBorder, width: i === stepIndex ? 24 : 8 }
+                    ]} />
+                ))}
+                <Text style={card.counter}>{stepIndex + 1}/{tutorial.steps.length}</Text>
+            </View>
+            <View style={card.titleRow}>
+                <Animated.View style={[card.iconSmall, { transform: [{ scale: pulseAnim }] }]}>
+                    <Ionicons name={step.icon as any} size={18} color={C.primaryLight} />
+                </Animated.View>
+                <Text style={card.title} numberOfLines={2}>{step.title}</Text>
+            </View>
+        </>
     );
 
     const bodyContent = (
         <>
-            <Text style={card.title}>{step.title}</Text>
             <Text style={card.desc}>{step.description}</Text>
             {missing ? (
                 <>
@@ -232,20 +257,17 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
         </>
     );
 
-    const footer = (
-        <>
-            <Text style={card.counter}>{stepIndex + 1} / {tutorial.steps.length}</Text>
-            <View style={card.btnRow}>
-                <GlassButton kind="ghost" label="Omitir tutorial" onPress={onSkip} style={card.skipBtn} />
-                <GlassButton
-                    kind="primary"
-                    label={isLast ? "¡Listo!" : "Siguiente"}
-                    icon={isLast ? "checkmark" : "arrow-forward"}
-                    onPress={onNext}
-                    style={card.nextBtn}
-                />
-            </View>
-        </>
+    const footerContent = (
+        <View style={card.btnRow}>
+            <GlassButton kind="ghost" label="Omitir" onPress={onSkip} style={card.skipBtn} />
+            <GlassButton
+                kind="primary"
+                label={isLast ? "¡Listo!" : "Siguiente"}
+                icon={isLast ? "checkmark" : "arrow-forward"}
+                onPress={onNext}
+                style={card.nextBtn}
+            />
+        </View>
     );
 
     // ── FASE DE MEDICIÓN ────────────────────────────────────────
@@ -253,19 +275,17 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
         return (
             <View
                 pointerEvents="none"
-                onLayout={(e: LayoutChangeEvent) => report('naturalH', e.nativeEvent.layout.height)}
                 style={[card.container, { left: sideMargin, right: sideMargin, top: 0, opacity: 0 }]}
             >
-                {progress}
-                <View onLayout={(e: LayoutChangeEvent) => report('iconBlockH', e.nativeEvent.layout.height)}>
-                    <View style={card.iconWrap}>
-                        <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
-                    </View>
+                <View onLayout={(e: LayoutChangeEvent) => report('headerH', e.nativeEvent.layout.height)}>
+                    {headerContent}
                 </View>
                 <View onLayout={(e: LayoutChangeEvent) => report('bodyH', e.nativeEvent.layout.height)}>
                     {bodyContent}
                 </View>
-                {footer}
+                <View style={card.footer} onLayout={(e: LayoutChangeEvent) => report('footerH', e.nativeEvent.layout.height)}>
+                    {footerContent}
+                </View>
             </View>
         );
     }
@@ -276,24 +296,19 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
     const safeBottom = H - Math.max(insets.bottom, EDGE) - EDGE;
     const avail = Math.max(0, safeBottom - safeTop);
 
-    const { naturalH, bodyH, iconBlockH } = m;
-    const chromeFull = naturalH - bodyH;
-    // Pantalla muy baja (landscape / chica): se oculta el ícono y se achica el padding.
-    const compact = (avail - chromeFull) < MIN_BODY;
-    const chrome = compact ? chromeFull - iconBlockH : chromeFull;
-    const naturalEff = compact ? naturalH - iconBlockH : naturalH;
-    const cardCap = Math.min(naturalEff, avail);
-    const minScrollBody = Math.min(bodyH, 120);
+    const { headerH, bodyH, footerH } = m;
+    const chrome = Math.ceil(headerH) + Math.ceil(footerH) + CARD_PADDING * 2;
+    const naturalH = chrome + Math.ceil(bodyH);
+    const cap = Math.min(avail, Math.round(H * (rect ? CARD_MAX_RATIO_SPOT : CARD_MAX_RATIO_CENTER)));
+    const target = Math.min(naturalH, cap);
 
     let top: number;
     let cardH: number;
-    let bodyMax: number | undefined;
     let overlap = false;
 
     if (!rect) {
-        cardH = cardCap;
+        cardH = target;
         top = safeTop + (avail - cardH) / 2;
-        bodyMax = naturalEff > avail ? avail - chrome : undefined;
     } else {
         const pad = step.padding ?? PADDING;
         const holeTop = rect.y - pad - RING;
@@ -305,24 +320,21 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
         const placeOn = (side: 'above' | 'below', h: number) =>
             side === 'above' ? holeTop - GAP - h : holeBottom + GAP;
 
-        const fit = order.find(s => space(s) >= naturalEff);
+        const fit = order.find(s => space(s) >= target);
         if (fit) {
-            // (a) cabe completa junto al elemento
-            cardH = naturalEff;
+            // (a) cabe (completa o con scroll interno según el tope) junto al elemento
+            cardH = target;
             top = placeOn(fit, cardH);
-            bodyMax = undefined;
         } else {
             const best = space(order[1]) > space(order[0]) ? order[1] : order[0];
-            if (space(best) >= chrome + minScrollBody) {
-                // (b) cabe con scroll interno en el cuerpo
-                cardH = space(best);
-                bodyMax = cardH - chrome;
+            if (space(best) >= chrome + MIN_BODY_SCROLL) {
+                // (b) en el lado con más espacio, con scroll interno en el cuerpo
+                cardH = Math.min(target, space(best));
                 top = placeOn(best, cardH);
             } else {
-                // (c) el elemento ocupa casi todo: la tarjeta se superpone
+                // (c) el elemento ocupa casi todo: la tarjeta se superpone, en la mitad opuesta al elemento
                 overlap = true;
-                cardH = cardCap;
-                bodyMax = naturalEff > avail ? avail - chrome : undefined;
+                cardH = target;
                 const anchorBottom = (rect.y + rect.height / 2) <= (safeTop + safeBottom) / 2;
                 top = anchorBottom ? safeBottom - cardH : safeTop;
             }
@@ -330,42 +342,62 @@ function StepCard({ tutorial, step, stepIndex, rect, fallback, missing, containe
     }
 
     top = Math.max(safeTop, Math.min(top, safeBottom - cardH));
-    if (bodyMax != null) bodyMax = Math.max(MIN_BODY_COMPACT, bodyMax);
+    const bodyMax = naturalH > cardH ? Math.max(MIN_BODY_FLOOR, cardH - chrome) : undefined;
 
     return (
         <Animated.View
             style={[
                 card.container,
-                compact && card.containerCompact,
-                { left: sideMargin, right: sideMargin, top, maxHeight: avail },
+                { left: sideMargin, right: sideMargin, top, maxHeight: Math.max(cardH, bodyMax != null ? chrome + MIN_BODY_FLOOR : 0) + 1 },
                 { opacity: fadeAnim, transform: [{ translateY: slideAnim }] },
             ]}
         >
             <GlassBackground radius={22} blur={false} />
             {overlap && <View pointerEvents="none" style={card.overlapBorder} />}
 
-            {/* Cabecera fija: progreso e ícono */}
-            {progress}
-            {!compact && (
-                <Animated.View style={[card.iconWrap, { transform: [{ scale: pulseAnim }] }]}>
-                    <Ionicons name={step.icon as any} size={28} color={C.primaryLight} />
-                </Animated.View>
-            )}
+            {/* Cabecera fija: progreso, contador, ícono pequeño y título */}
+            <View>{headerContent}</View>
 
             {/* Cuerpo: único tramo con scroll cuando falta espacio */}
             {bodyMax != null ? (
-                <ScrollView
-                    style={{ maxHeight: bodyMax, flexGrow: 0 }}
-                    showsVerticalScrollIndicator
-                >
-                    {bodyContent}
-                </ScrollView>
+                <View style={{ maxHeight: bodyMax }}>
+                    <ScrollView
+                        style={{ maxHeight: bodyMax, flexGrow: 0 }}
+                        persistentScrollbar
+                        showsVerticalScrollIndicator
+                        scrollEventThrottle={16}
+                        onLayout={(e: LayoutChangeEvent) => { scrollRef.current.viewH = e.nativeEvent.layout.height; updateAtEnd(); }}
+                        onContentSizeChange={(_w, h) => { scrollRef.current.contentH = h; updateAtEnd(); }}
+                        onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => { scrollRef.current.offset = e.nativeEvent.contentOffset.y; updateAtEnd(); }}
+                    >
+                        {bodyContent}
+                    </ScrollView>
+                    {!atEnd && (
+                        <>
+                            <Svg pointerEvents="none" width="100%" height={FADE_HEIGHT} style={card.fade}>
+                                <Defs>
+                                    <LinearGradient id="bodyFade" x1="0" y1="0" x2="0" y2="1">
+                                        <Stop offset="0" stopColor={C.cardHigh} stopOpacity={0} />
+                                        <Stop offset="1" stopColor={C.cardHigh} stopOpacity={1} />
+                                    </LinearGradient>
+                                </Defs>
+                                <SvgRect x="0" y="0" width="100%" height={FADE_HEIGHT} fill="url(#bodyFade)" />
+                            </Svg>
+                            <View pointerEvents="none" style={card.moreWrap}>
+                                <View style={card.morePill}>
+                                    <Text style={card.moreTxt}>Desliza para leer más</Text>
+                                    <Ionicons name="chevron-down" size={14} color={C.textSub} />
+                                </View>
+                            </View>
+                        </>
+                    )}
+                </View>
             ) : (
                 <View>{bodyContent}</View>
             )}
 
-            {/* Pie fijo: contador + botones siempre visibles */}
-            {footer}
+            {/* Pie fijo: botones siempre visibles */}
+            <View style={card.footer}>{footerContent}</View>
         </Animated.View>
     );
 }
@@ -897,20 +929,25 @@ const ov = StyleSheet.create({
 });
 
 const card = StyleSheet.create({
-    container: { position: "absolute", borderRadius: 22, overflow: "hidden", backgroundColor: C.cardHigh, padding: 22, zIndex: 9999 },
-    containerCompact: { padding: 16 },
+    container: { position: "absolute", borderRadius: 22, overflow: "hidden", backgroundColor: C.cardHigh, padding: CARD_PADDING, zIndex: 9999 },
     overlapBorder: { ...StyleSheet.absoluteFillObject, borderRadius: 22, borderWidth: 1, borderColor: C.glassActiveBorder },
-    progressRow: { flexDirection: "row", gap: 6, marginBottom: 18, alignItems: "center" },
+    progressRow: { flexDirection: "row", gap: 6, marginBottom: 10, alignItems: "center" },
     progressDot: { height: 6, borderRadius: 3 },
-    iconWrap: { width: 58, height: 58, borderRadius: 18, borderWidth: 1.5, backgroundColor: C.glassActive, borderColor: C.glassActiveBorder, alignItems: "center", justifyContent: "center", marginBottom: 14 },
-    title: { color: C.textPrimary, fontSize: 19, fontWeight: "900", marginBottom: 8, lineHeight: 26 },
-    desc: { color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 14 },
+    iconSmall: { width: 32, height: 32, borderRadius: 10, borderWidth: 1.5, backgroundColor: C.glassActive, borderColor: C.glassActiveBorder, alignItems: "center", justifyContent: "center" },
+    titleRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+    title: { color: C.textPrimary, fontSize: 17, fontWeight: "900", lineHeight: 22, flex: 1 },
+    desc: { color: C.text, fontSize: 14, lineHeight: 21, marginBottom: 10 },
     notice: { marginBottom: 14 },
     fulfillBtn: { marginBottom: 14 },
-    counter: { color: C.textSub, fontSize: 11, letterSpacing: 1, marginBottom: 14 },
+    counter: { color: C.textSub, fontSize: 11, letterSpacing: 1, marginLeft: "auto" },
+    footer: { paddingTop: 10 },
     btnRow: { flexDirection: "row", alignItems: "center", gap: 12 },
     skipBtn: { flex: 1, paddingHorizontal: 4 },
     nextBtn: { flex: 2 },
+    fade: { position: "absolute", left: 0, right: 0, bottom: 0 },
+    moreWrap: { position: "absolute", left: 0, right: 0, bottom: 2, alignItems: "center" },
+    morePill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12, borderWidth: 1, borderColor: C.glassBorder, backgroundColor: C.cardHigh },
+    moreTxt: { color: C.textSub, fontSize: 12 },
 });
 
 const mn = StyleSheet.create({
