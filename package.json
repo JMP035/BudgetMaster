@@ -35,6 +35,7 @@
     "test:notification-plan": "sucrase-node scripts/notification-plan.test.ts",
     "test:notif-ui": "sucrase-node scripts/notif-ui.test.ts",
     "test:widget-snapshot": "sucrase-node scripts/widget-snapshot.test.ts",
+    "test:widget-format": "sucrase-node scripts/widget-format.test.ts",
     "test:financial-score": "sucrase-node scripts/financial-score.test.ts",
     "test:debt-load": "sucrase-node scripts/debt-load.test.ts",
     "test:card-setup": "sucrase-node scripts/card-setup.test.ts",

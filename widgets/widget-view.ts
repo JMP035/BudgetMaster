@@ -3,28 +3,17 @@
 import { StorageService } from '../services/storage';
 import { WIDGET_STALE_TEXT, freshenWidgetSnapshot, maskForPrivacy, widgetDaysText, widgetShortDate } from '../services/WidgetSnapshot';
 import type { WidgetSnapshot } from '../services/WidgetSnapshot';
-import { formatMoney } from '../services/format';
-import { C } from '../theme';
+import { HIDDEN_AMOUNT, cardLine, widgetMoney } from '../services/WidgetFormat';
 import type { CapacityLevel } from '../services/Capacity';
 import type { HexColor } from 'react-native-android-widget';
+import { W } from './widget-style';
 
-const hex = (c: string) => c as HexColor;
+// Los colores y el fondo viven en widget-style.ts (sin dependencias de la librería); se re-exportan aquí.
+export { W } from './widget-style';
+export { HIDDEN_AMOUNT } from '../services/WidgetFormat';
 
-/** Colores del widget: todos salen de theme.ts (ónix + bronce). */
-export const W = {
-  bg: hex(C.bg),
-  bgTop: hex(C.cardHigh),
-  border: hex(C.cardBorder),
-  text: hex(C.text),
-  sub: hex(C.textSub),
-  muted: hex(C.textMuted),
-  bronze: hex(C.primaryLight),
-  bronzeDeep: hex(C.primary),
-  track: hex(C.shimmer),
-  ok: hex(C.accent),
-  warn: hex(C.warning),
-  danger: hex(C.danger),
-};
+/** Tamaño del widget en dp, tal como lo informa el lanzador. */
+export type WidgetSize = { width: number; height: number };
 
 /** Color del semáforo: ok verde, warn ámbar, alert y red rojo (igual que el Dashboard). */
 export function levelColor(level: CapacityLevel): HexColor {
@@ -32,9 +21,6 @@ export function levelColor(level: CapacityLevel): HexColor {
   if (level === 'warn') return W.warn;
   return W.danger;
 }
-
-/** Texto que ocupa el lugar de un monto cuando la privacidad está activa. */
-export const HIDDEN_AMOUNT = '••••';
 
 export const WIDGET_NAMES = ['BudgetSmall', 'BudgetMedium'] as const;
 export type WidgetName = (typeof WIDGET_NAMES)[number];
@@ -76,20 +62,16 @@ export async function togglePrivacy(): Promise<boolean> {
   return next === 'hidden';
 }
 
-/** Monto formateado o «••••» si está oculto. */
+/** Monto abreviado para el widget («Q 4,158», «Q 12.4k») o «••••» si está oculto. */
 export function amountText(hidden: boolean, n: number, currency = 'Q'): string {
-  return hidden ? HIDDEN_AMOUNT : formatMoney(n, currency, { decimals: 2 });
+  return hidden ? HIDDEN_AMOUNT : widgetMoney(n, currency, 'compact');
 }
 
-/** Línea del próximo pago de tarjeta: «BAC Visa · 02/12 · Q 9,276.01 + $ 39.67 (estimado)». */
+/** Línea del próximo pago de tarjeta: «02/12 · Q 9,276 + $ 39.67 (est.)». */
 export function nextCardText(snap: WidgetSnapshot, hidden: boolean): string | null {
   const c = snap.nextCard;
   if (!c) return null;
-  const parts: string[] = [];
-  if (c.Q > 0 || c.USD <= 0) parts.push(formatMoney(c.Q, 'Q'));
-  if (c.USD > 0) parts.push(formatMoney(c.USD, 'USD'));
-  const money = hidden ? HIDDEN_AMOUNT : parts.join(' + ');
-  return `${widgetShortDate(c.due)} · ${money}${c.estimated ? ' (estimado)' : ''}`;
+  return cardLine(c, hidden);
 }
 
 /** Línea del próximo gasto fijo: «02/12 · Luz · Q 300.00». */

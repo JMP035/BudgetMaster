@@ -40,6 +40,9 @@ export const C = {
     glassInputBorder: "rgba(255,255,255,0.12)",
     glassActive: "rgba(94,65,35,0.40)",   // primaryDark 40%: chip/pestaña seleccionada
     glassActiveBorder: "rgba(184,134,75,0.55)",
+    // Widgets de Android: ónix traslúcido (no hay blur real en un widget; con 88 % de opacidad se lee sobre cualquier fondo)
+    widgetGlass: "rgba(18,18,18,0.88)",      // base del widget
+    widgetGlassDeep: "rgba(8,8,8,0.92)",     // pie del degradado SVG (solo la variante con degradado)
     scrimTutorial: "rgba(0,0,0,0.82)",
     scrimSoft: "rgba(0,0,0,0.60)",
     spotlightRing: "rgba(227,188,126,0.90)",
