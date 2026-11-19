@@ -1,22 +1,30 @@
 // Plan para deshacer un lote de sincronización SMS (módulo PURO, sin escribir nada).
 // Sin react-native ni AsyncStorage: de ./storage solo `import type`.
-import type { CreditInstallment, FixedExpense, SmsBatchRecord, Transaction } from './storage';
-import { removeAnchorsForTx } from './PeriodAnchors';
+import type { CreditInstallment, FixedExpense, IncomeRule, SmsBatchRecord, Transaction } from './storage';
+import { removeAnchorsForTx, upsertAutoAnchor } from './PeriodAnchors';
 import { revertTransferPair } from './TransferPairs';
 import type { PeriodAnchor } from './PeriodAnchors';
 
 /**
  * Revierte los vínculos de ingreso del lote sobre los movimientos que SE QUEDAN (los editados que no se
  * eliminan): restaura la categoría previa y quita la fuente y el ciclo. Las anclas automáticas nacidas de
- * esos movimientos (y de los que se eliminan) se quitan siempre. Puro: no escribe nada.
+ * esos movimientos (y de los que se eliminan) se quitan siempre y, si el vínculo había sobrescrito otra ancla
+ * automática de esa clave (`prevAnchor`), esa vuelve. La regla de origen que el vínculo aprendió vuelve a como
+ * estaba (`prevRule`) o, si nació con el lote (null), se quita. Los vínculos se deshacen del último al primero.
+ * Lotes viejos sin esos campos: solo categoría y anclas, como antes. Puro: no escribe nada.
  */
 export function planIncomeLinksUndo(
   links: SmsBatchRecord['incomeLinks'] | undefined,
   remainingTxs: Transaction[],
   anchors: PeriodAnchor[],
-): { txs: Transaction[]; anchors: PeriodAnchor[]; txsChanged: boolean; anchorsChanged: boolean; reverted: number } {
+  incomeRules?: IncomeRule[],
+): {
+  txs: Transaction[]; anchors: PeriodAnchor[]; incomeRules: IncomeRule[];
+  txsChanged: boolean; anchorsChanged: boolean; rulesChanged: boolean; reverted: number;
+} {
+  const rulesIn = incomeRules ?? [];
   if (!links || links.length === 0) {
-    return { txs: remainingTxs, anchors, txsChanged: false, anchorsChanged: false, reverted: 0 };
+    return { txs: remainingTxs, anchors, incomeRules: rulesIn, txsChanged: false, anchorsChanged: false, rulesChanged: false, reverted: 0 };
   }
   const byTx = new Map(links.map(l => [l.txId, l] as const));
   let txsChanged = false;
@@ -31,8 +39,32 @@ export function planIncomeLinksUndo(
     return t.categoryEditedAt ? rest : { ...rest, category: l.prevCategory };
   });
   let nextAnchors = anchors;
-  for (const l of links) nextAnchors = removeAnchorsForTx(nextAnchors, l.txId);
-  return { txs, anchors: nextAnchors, txsChanged, anchorsChanged: nextAnchors.length !== anchors.length, reverted };
+  let nextRules = rulesIn;
+  let rulesChanged = false;
+  for (const l of [...links].reverse()) {
+    nextAnchors = removeAnchorsForTx(nextAnchors, l.txId);
+    // El ancla que este vínculo sobrescribió vuelve (si no hay ya otra automática de esa clave).
+    if (l.prevAnchor && !nextAnchors.some(a => a.key === l.prevAnchor!.key && a.source === 'auto')) {
+      nextAnchors = upsertAutoAnchor(nextAnchors, l.prevAnchor);
+    }
+    if (l.ruleKey !== undefined && l.prevRule !== undefined) {
+      const has = nextRules.some(r => r.key === l.ruleKey);
+      if (l.prevRule === null) {
+        if (has) { nextRules = nextRules.filter(r => r.key !== l.ruleKey); rulesChanged = true; }
+      } else if (has) {
+        nextRules = nextRules.map(r => (r.key === l.ruleKey ? { ...l.prevRule! } : r));
+        rulesChanged = true;
+      } else {
+        nextRules = [...nextRules, { ...l.prevRule }];
+        rulesChanged = true;
+      }
+    }
+  }
+  const anchorsChanged = JSON.stringify(nextAnchors) !== JSON.stringify(anchors);
+  return {
+    txs, anchors: anchorsChanged ? nextAnchors : anchors, incomeRules: rulesChanged ? nextRules : rulesIn,
+    txsChanged, anchorsChanged, rulesChanged, reverted,
+  };
 }
 
 /**

@@ -416,6 +416,12 @@ export interface IncomeLinkPlan {
   anchors: PeriodAnchor[];
   /** Clave del ancla automática creada (si se movió el período). */
   anchorKey?: string;
+  /** Ancla automática de esa clave que la nueva sobrescribió (para restaurarla al deshacer). */
+  prevAnchor?: PeriodAnchor;
+  /** Clave de la regla de origen aprendida con este vínculo (solo fuentes base con SMS de origen). */
+  ruleKey?: string;
+  /** Esa regla tal como estaba antes (null = no existía y nació con este vínculo). Solo con `ruleKey`. */
+  prevRule?: IncomeRule | null;
 }
 
 type ScheduleSettings = Pick<UserSettings, 'paymentCycle' | 'paymentDay' | 'paymentDays'> & { payRules?: PayRules };
@@ -456,6 +462,7 @@ export function planIncomeLink(input: {
   const prevCategory = tx.category;
   let incomeRules = input.incomeRules;
   const ruleKey = source.role === 'base' ? incomeKeyOfTx(tx) : null;
+  const prevRule = ruleKey ? (input.incomeRules.find(r => r.key === ruleKey) ?? null) : null;
   if (ruleKey) {
     const label = incomeOriginLabelOfTx(tx) ?? source.pattern?.originLabel ?? source.name;
     incomeRules = upsertIncomeRule(incomeRules, ruleKey, label, source.category, nowIso)
@@ -463,13 +470,19 @@ export function planIncomeLink(input: {
   }
   let anchors = removeAnchorsForTx(input.anchors, tx.id);
   const anchor = anchorForIncome(tx, source, occKey, settings, rules, nowIso);
+  const prevAnchor = anchor ? anchors.find(a => a.key === anchor.key && a.source === 'auto') : undefined;
   if (anchor) anchors = upsertAutoAnchor(anchors, anchor);
   const linked: Transaction = {
     ...tx, category: source.category, incomeSourceId: source.id, incomeCycleKey: occKey,
     // Sin regla que lo sostenga, la revisión de SMS volvería a proponer otra categoría: se marca como elegida.
     ...(!ruleKey && source.role === 'base' ? { categoryEditedAt: nowIso } : {}),
   };
-  return { tx: linked, prevCategory, incomeRules, anchors, ...(anchor ? { anchorKey: anchor.key } : {}) };
+  return {
+    tx: linked, prevCategory, incomeRules, anchors,
+    ...(anchor ? { anchorKey: anchor.key } : {}),
+    ...(prevAnchor ? { prevAnchor } : {}),
+    ...(ruleKey ? { ruleKey, prevRule } : {}),
+  };
 }
 
 // ═════════════ Lectura segura de lo guardado ═════════════

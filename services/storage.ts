@@ -354,7 +354,13 @@ export interface SmsBatchRecord {
   /** Uniones gasto fijo <-> SMS hechas en este lote (para deshacer: se restaura el manual). */
   fixedMerges?: Array<{ smsId: string; expenseId: string; manual: Transaction }>;
   /** Ingresos que el lote vinculó solo a una fuente (para deshacer: categoría previa y ancla del período). */
-  incomeLinks?: Array<{ txId: string; prevCategory: string; anchorKey?: string }>;
+  incomeLinks?: Array<{
+    txId: string; prevCategory: string; anchorKey?: string;
+    /** Ancla automática de esa clave que el vínculo sobrescribió (se restaura al deshacer). */
+    prevAnchor?: PeriodAnchor;
+    /** Regla de origen que el vínculo aprendió y cómo estaba antes (null = nació con el lote; se quita al deshacer). */
+    ruleKey?: string; prevRule?: IncomeRule | null;
+  }>;
   /** Pares de transferencia que el lote vinculó solo (para deshacer: la mitad que se conserva, p. ej. de una sync anterior, vuelve a su tipo). */
   transferPairs?: Array<{ outId: string; inId: string }>;
   /** Pagos de tarjeta que el lote emparejó solo (para deshacer: la salida vuelve a su tipo y el pago pierde su estado). */
@@ -1037,7 +1043,10 @@ export const StorageService = {
    */
   async linkIncome(
     txId: string, sourceId: string, occKey: string,
-  ): Promise<{ tx: Transaction; prevCategory: string; anchorKey?: string } | null> {
+  ): Promise<{
+    tx: Transaction; prevCategory: string; anchorKey?: string;
+    prevAnchor?: PeriodAnchor; ruleKey?: string; prevRule?: IncomeRule | null;
+  } | null> {
     const [txs, sources, incomeRules, anchors, settings] = await Promise.all([
       this.getTransactions(), this.getIncomeSources(), this.getIncomeRules(), this.getPeriodAnchors(), this.getSettings(),
     ]);
@@ -1051,7 +1060,12 @@ export const StorageService = {
     await this.saveTransactions(txs.map(t => (t.id === txId ? plan.tx : t)));
     if (plan.incomeRules !== incomeRules) await this.saveIncomeRules(plan.incomeRules);
     await this.savePeriodAnchors(plan.anchors);   // también reconstruye el resolvedor del período
-    return { tx: plan.tx, prevCategory: plan.prevCategory, ...(plan.anchorKey ? { anchorKey: plan.anchorKey } : {}) };
+    return {
+      tx: plan.tx, prevCategory: plan.prevCategory,
+      ...(plan.anchorKey ? { anchorKey: plan.anchorKey } : {}),
+      ...(plan.prevAnchor ? { prevAnchor: plan.prevAnchor } : {}),
+      ...(plan.ruleKey ? { ruleKey: plan.ruleKey, prevRule: plan.prevRule ?? null } : {}),
+    };
   },
 
   /** Quita el vínculo del ingreso con su fuente y las anclas automáticas que nacieron de él. La categoría se queda. */
@@ -1230,7 +1244,7 @@ export const StorageService = {
       : afterTwins;
     // Ingresos que el lote vinculó solo a una fuente: categoría previa en los que se quedan y fuera sus anclas.
     const incomeUndo = (batch.incomeLinks && batch.incomeLinks.length > 0)
-      ? planIncomeLinksUndo(batch.incomeLinks, remaining, await this.getPeriodAnchors())
+      ? planIncomeLinksUndo(batch.incomeLinks, remaining, await this.getPeriodAnchors(), await this.getIncomeRules())
       : null;
     // Pagos de tarjeta que el lote emparejó solo: la salida de la cuenta pagadora vuelve a lo que era.
     const cardUndo = (batch.cardPayments && batch.cardPayments.length > 0)
@@ -1243,6 +1257,7 @@ export const StorageService = {
       await this.saveTransactions(pairUndo.txs);
     }
     if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
+    if (incomeUndo?.rulesChanged) await this.saveIncomeRules(incomeUndo.incomeRules);
     // Cuentas de saldo automático que el lote re-ancló con el saldo del SMS: vuelve el ancla de antes.
     if (batch.balanceAnchors && batch.balanceAnchors.length > 0) {
       const balUndo = planBalanceAnchorsUndo(batch.balanceAnchors, await this.getAccounts());

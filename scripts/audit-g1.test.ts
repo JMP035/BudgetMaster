@@ -6,11 +6,13 @@ import { resetMemoryStorage } from './_async-storage-mock';
 import { capacityFor, resourcesUntil } from '../services/Capacity';
 import type { CapacityContext } from '../services/Capacity';
 import { migrateInstallmentsSchedule, planInstallmentCharges } from '../services/InstallmentSchedule';
+import { buildExistingSmsIndex, planSmsImport } from '../services/BankSmsParser';
+import { learnPatternFromSms } from '../services/IncomeSources';
 import { computeFinancialPeriod } from '../services/FinancialPeriod';
 import { fixedCycleConfig, setPeriodStartResolver } from '../services/FixedCycle';
 import { DEFAULT_PAY_RULES } from '../services/PayCalendar';
 import { DEFAULT_SETTINGS, StorageService } from '../services/storage';
-import type { Account, CreditInstallment, FixedExpense, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
+import type { Account, CreditInstallment, FixedExpense, IncomeSource, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
 
 let failures = 0;
 let checks = 0;
@@ -173,6 +175,88 @@ async function scenarios(): Promise<void> {
     // Idempotente: una vez cerrada no vuelve a cambiar.
     const again = planInstallmentCharges([after], [], [], [], NOW);
     check('G1-5: idempotente', again.updates.length === 0 && again.toAdd.length === 0);
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // 6. Deshacer un vínculo de ingreso automático restaura el ancla y la regla anteriores
+  // ───────────────────────────────────────────────────────────
+  {
+    const SMS = (day: string) => `BANRURAL: Recibiste Q7,426.61 en tu cuenta Monetaria *** ****5051 de SECCION DE OPERACIONES DE DEPOSITOS, el ${day}/09/2026 a las 10:31.`;
+    const importTx = (body: string, at: Date): Transaction => {
+      const plan = planSmsImport([{ body, receivedAt: at.getTime() }], buildExistingSmsIndex([], [], []), []);
+      if (plan.transactions.length !== 1) throw new Error('no se importó');
+      return plan.transactions[0];
+    };
+    const learned = learnPatternFromSms(SMS('27'), d(2026, 9, 27).getTime());
+    if (!learned.ok) throw new Error('no aprendió');
+    const src: IncomeSource = {
+      id: 'src_sueldo', name: 'Sueldo', category: 'salary', amount: 7426.61, currency: 'Q', frequency: 'monthly',
+      days: [27], role: 'base', anchorsPeriod: true, pattern: learned.pattern, isActive: true, createdAt: '2026-01-01T12:00:00.000Z',
+    };
+    const setup = async (): Promise<{ t1: Transaction; t2: Transaction }> => {
+      resetMemoryStorage();
+      await StorageService.saveSettings({ ...DEFAULT_SETTINGS, paymentCycle: 'monthly', paymentDay: 27 });
+      await StorageService.saveIncomeSources([src]);
+      const t1 = importTx(SMS('25'), d(2026, 9, 25, 10, 31));
+      const t2 = importTx(SMS('26'), d(2026, 9, 26, 10, 31));
+      await StorageService.saveTransactions([t1, { ...t2, id: 'dep2', smsFingerprint: 'otro' }]);
+      return { t1, t2: { ...t2, id: 'dep2', smsFingerprint: 'otro' } };
+    };
+    const linkRecord = (r: NonNullable<Awaited<ReturnType<typeof StorageService.linkIncome>>>, txId: string): NonNullable<SmsBatchRecord['incomeLinks']>[number] => ({
+      txId, prevCategory: r.prevCategory,
+      ...(r.anchorKey ? { anchorKey: r.anchorKey } : {}),
+      ...(r.prevAnchor ? { prevAnchor: r.prevAnchor } : {}),
+      ...(r.ruleKey ? { ruleKey: r.ruleKey, prevRule: r.prevRule ?? null } : {}),
+    });
+
+    // (a) Había un ancla automática y una regla aprendida de un vínculo anterior (mismo ciclo y mismo origen).
+    {
+      const { t1, t2 } = await setup();
+      const r1 = await StorageService.linkIncome(t1.id, src.id, '2026-09-27');
+      const ruleBefore = (await StorageService.getIncomeRules())[0];
+      const anchorBefore = (await StorageService.getPeriodAnchors()).find(a => a.key === '2026-09-27' && a.source === 'auto');
+      check('G1-6 (previo): el primer vínculo crea ancla y regla', !!r1 && !!anchorBefore && anchorBefore.txId === t1.id && ruleBefore.hits === 1);
+      const r2 = await StorageService.linkIncome(t2.id, src.id, '2026-09-27');
+      const anchorMid = (await StorageService.getPeriodAnchors()).find(a => a.key === '2026-09-27' && a.source === 'auto');
+      check('G1-6 (previo): el segundo vínculo sobrescribe el ancla y suma un acierto', !!r2 && anchorMid?.txId === t2.id && anchorMid.start === '2026-09-26'
+        && (await StorageService.getIncomeRules())[0].hits === 2);
+      await StorageService.recordSmsBatch({
+        id: 'b_inc', at: new Date().toISOString(), mode: 'auto', txIds: [t2.id], installmentIds: [], fixedMarks: [],
+        incomeLinks: [linkRecord(r2!, t2.id)],
+      });
+      await StorageService.undoSmsBatch('b_inc', { includeEdited: false });
+      const anchors = await StorageService.getPeriodAnchors();
+      const auto = anchors.find(a => a.key === '2026-09-27' && a.source === 'auto');
+      check('G1-6: al deshacer vuelve el ancla automática anterior (la del primer depósito)',
+        !!auto && auto.txId === t1.id && auto.start === '2026-09-25', JSON.stringify(anchors));
+      const rule = (await StorageService.getIncomeRules())[0];
+      check('G1-6: la regla aprendida vuelve a sus aciertos de antes (hits 1)', !!rule && rule.hits === 1, JSON.stringify(rule));
+    }
+
+    // (b) La regla nació con este vínculo: al deshacer desaparece (y no queda ancla).
+    {
+      const { t1 } = await setup();
+      const r1 = await StorageService.linkIncome(t1.id, src.id, '2026-09-27');
+      check('G1-6 (previo): la regla nace con el vínculo', (await StorageService.getIncomeRules()).length === 1);
+      await StorageService.recordSmsBatch({
+        id: 'b_inc2', at: new Date().toISOString(), mode: 'auto', txIds: [t1.id], installmentIds: [], fixedMarks: [],
+        incomeLinks: [linkRecord(r1!, t1.id)],
+      });
+      await StorageService.undoSmsBatch('b_inc2', { includeEdited: false });
+      check('G1-6: la regla que nació en el lote se quita al deshacer', (await StorageService.getIncomeRules()).length === 0);
+      check('G1-6: y no queda ancla del sueldo', (await StorageService.getPeriodAnchors()).length === 0);
+    }
+    // (c) Lote viejo (sin prevAnchor / ruleKey): sigue funcionando como antes.
+    {
+      const { t1 } = await setup();
+      const r1 = await StorageService.linkIncome(t1.id, src.id, '2026-09-27');
+      await StorageService.recordSmsBatch({
+        id: 'b_inc3', at: new Date().toISOString(), mode: 'auto', txIds: [t1.id], installmentIds: [], fixedMarks: [],
+        incomeLinks: [{ txId: t1.id, prevCategory: r1!.prevCategory, anchorKey: r1!.anchorKey }],
+      });
+      const res = await StorageService.undoSmsBatch('b_inc3', { includeEdited: false });
+      check('G1-6: lote viejo sin los campos nuevos se deshace igual', res.removedTx === 1 && (await StorageService.getPeriodAnchors()).length === 0);
+    }
   }
 }
 

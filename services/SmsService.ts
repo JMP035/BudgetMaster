@@ -446,7 +446,12 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
             const r = await StorageService.linkIncome(t.id, m.sourceId, m.occKey);
             if (r) {
               taken.add(cycle);
-              incomeLinks.push({ txId: t.id, prevCategory: r.prevCategory, ...(r.anchorKey ? { anchorKey: r.anchorKey } : {}) });
+              incomeLinks.push({
+                txId: t.id, prevCategory: r.prevCategory,
+                ...(r.anchorKey ? { anchorKey: r.anchorKey } : {}),
+                ...(r.prevAnchor ? { prevAnchor: r.prevAnchor } : {}),
+                ...(r.ruleKey ? { ruleKey: r.ruleKey, prevRule: r.prevRule ?? null } : {}),
+              });
               salaryLinked.push({ txId: t.id, sourceId: m.sourceId, occKey: m.occKey });
               mutated = true;
               continue;
