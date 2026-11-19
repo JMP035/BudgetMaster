@@ -5,7 +5,8 @@ import {
   StyleSheet, Text, TouchableOpacity,
   UIManager, View
 } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { decideQuickAdd } from "../services/QuickAdd";
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Account, AppData, CategoryBudget, CreditInstallment,
@@ -169,8 +170,13 @@ function AppContent() {
   const pendingImportRef = useRef(false);
 
   // «+ gasto» del widget de Android: budgetmaster://quick-add llega como /?open=add.
-  const { open: openParam } = useLocalSearchParams<{ open?: string }>();
-  const quickAddHandledRef = useRef(false);
+  // app/+native-intent.tsx lo reescribe a /?open=add&n=<marca>: solo actualiza los parámetros de ESTA pantalla (no apila otra).
+  const { open: openParam, n: nonceParam } = useLocalSearchParams<{ open?: string; n?: string }>();
+  const router = useRouter();
+  // Marca del último toque ya atendido (con la app abierta puede haber varios, cada uno con su marca).
+  const quickAddHandledRef = useRef<string | null>(null);
+  // true cuando loadData ya leyó los ajustes (antes, onboardingComplete es solo el valor por defecto).
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
@@ -228,6 +234,7 @@ function AppContent() {
   useEffect(() => {
     (async () => {
       const data = await loadData();
+      setSettingsLoaded(true);
       // El tour automático solo corre si el onboarding ya está completo
       if (data.settings.onboardingComplete) {
         // Quien eligió «Más tarde» en el cierre del onboarding no recibe el recorrido solo.
@@ -291,16 +298,32 @@ function AppContent() {
     return () => sub.remove();
   }, [runAutoSync]);
 
-  // «+ gasto» del widget: abre la pestaña Agregar UNA sola vez, ya pasada la splash, el onboarding y la biometría
-  // (los hijos de BiometricGate solo se montan después de desbloquear: el bloqueo nunca se salta).
+  // «+ gasto» del widget: abre la pestaña Agregar una vez por toque (cada toque trae su marca `n`), ya pasada la splash, la
+  // carga de ajustes y la biometría (los hijos de BiometricGate solo se montan después de desbloquear: el bloqueo nunca
+  // se salta). Si el onboarding no terminó, el pedido se DESCARTA (no se salta a Agregar cuando arranca el recorrido).
+  // Tras atenderlo se limpian los parámetros: así la ruta queda en «/» y el siguiente toque es un pedido nuevo.
   useEffect(() => {
-    if (openParam !== "add" || quickAddHandledRef.current) return;
-    if (showSplash || !settings.onboardingComplete || !settings.cardsOnboardingComplete) return;
-    quickAddHandledRef.current = true;
-    setShowAccounts(false);
-    setShowAI(false);
-    setTab("add");
-  }, [openParam, showSplash, settings.onboardingComplete, settings.cardsOnboardingComplete]);
+    const d = decideQuickAdd({
+      open: openParam,
+      nonce: nonceParam,
+      handled: quickAddHandledRef.current,
+      splashDone: !showSplash,
+      settingsLoaded,
+      onboardingDone: settings.onboardingComplete && settings.cardsOnboardingComplete,
+    });
+    if (d.action === "none" || d.action === "wait") return;
+    quickAddHandledRef.current = d.key;
+    if (d.action === "open") {
+      setShowAccounts(false);
+      setShowAI(false);
+      setTab("add");
+    }
+    try {
+      router.setParams({ open: undefined, n: undefined });
+    } catch (e) {
+      console.warn("[quick-add] limpiar parámetros:", e);
+    }
+  }, [openParam, nonceParam, showSplash, settingsLoaded, settings.onboardingComplete, settings.cardsOnboardingComplete, router]);
 
   // ── Widget de Android: la foto de cifras se rehace 1 s después del último cambio de datos ──
   useEffect(() => {

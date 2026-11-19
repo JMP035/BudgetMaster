@@ -497,7 +497,7 @@ Un **widget en la pantalla de inicio de tu teléfono** para ver cómo vas sin ab
 | Mediano (4×2) | Lo **disponible por día**, la **barra del presupuesto** gastado, el **próximo pago de tarjeta** (fecha y monto; «estimado» si todavía no escribes el estado de cuenta real), el **próximo gasto fijo**, el **semáforo de capacidad de pago** y los **saldos** de las cuentas que llevan seguimiento. |
 
 - **El ojo (ocultar los montos):** por defecto los montos salen ocultos (••••). Toca el **ojo** para verlos y tócalo otra vez para ocultarlos de nuevo; vale para los dos widgets. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.
-- **«+ gasto»:** abre BudgetMaster directo en la pestaña **Agregar**. Si tienes la seguridad biométrica activada, te la pide primero.
+- **«+ gasto»:** abre BudgetMaster directo en la pestaña **Agregar**, también si la app ya estaba abierta o en segundo plano (cada toque te lleva a Agregar sin abrir otra copia de la app). Si tienes la seguridad biométrica activada, te la pide primero. Si todavía no terminaste la configuración inicial, el toque se ignora: termínala primero.
 - Tocar cualquier otra parte del widget abre la app.
 - Las cifras son las mismas del Inicio (período de pago real, presupuesto del período, sin traslados ni pagos de tarjeta). Se actualizan cuando abres la app o registras algo, y el sistema los repinta cada ~30 minutos.
 - Si tus ingresos son **irregulares** no hay un «próximo pago» que contar: el widget muestra «N días en el período» (los que quedan del mes calendario) y reparte lo disponible entre esos días; nunca dice «Hoy cobras».

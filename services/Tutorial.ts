@@ -807,7 +807,7 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'wid_4', position: 'center', icon: 'add-outline',
                 title: '4. «+ gasto»',
-                description: 'El botón «+ gasto» del widget abre BudgetMaster directo en la pestaña Agregar para anotar un gasto al instante. Si tienes la seguridad biométrica activada, la app te la pide primero.',
+                description: 'El botón «+ gasto» del widget abre BudgetMaster directo en la pestaña Agregar para anotar un gasto al instante, también si la app ya estaba abierta o en segundo plano (cada toque te lleva a Agregar sin abrir otra copia de la app). Si tienes la seguridad biométrica activada, la app te la pide primero. Si todavía no terminaste la configuración inicial, el toque se ignora: termínala primero.',
             },
         ],
     },
