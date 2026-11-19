@@ -56,12 +56,32 @@ export function isLiveInstallment(i: CreditInstallment): boolean {
 }
 
 /**
- * Deuda declarada en el onboarding VIEJO (Q/mes): `activeDebts` solo si es > 0 y no hay ninguna cuota `onb_*`
- * (el onboarding nuevo ya las crea, y sumarlas otra vez contaría la misma deuda dos veces).
+ * Deuda DECLARADA en el onboarding (Q/mes), sin cuota que la siga:
+ * - Onboarding actual: las deudas tipo «Tarjeta de crédito» no se convierten en cuota (el consumo de la tarjeta ya es
+ *   gasto); quedan marcadas `declaredOnly` en `activeDebtsList` con su `monthlyQ` y solo ellas cuentan aquí. Los
+ *   préstamos y visacuotas ya están en las cuotas, así que no se suman otra vez.
+ * - Onboarding viejo: `activeDebts` completo, solo si no hay ninguna cuota `onb_*` (si la hay, esa misma deuda ya
+ *   está en las cuotas y sumarla contaría dos veces).
+ * `activeDebts` en 0 («Ya no la tengo») la quita en ambos casos.
  */
-export function legacyDeclaredDebtQ(s: Pick<UserSettings, 'activeDebts'>, insts: CreditInstallment[]): number {
+export function legacyDeclaredDebtQ(
+  s: Pick<UserSettings, 'activeDebts'> & { activeDebtsList?: unknown[] },
+  insts: CreditInstallment[],
+): number {
   const declared = Number(s.activeDebts);
   if (!(declared > 0)) return 0;
+  const list = Array.isArray(s.activeDebtsList) ? s.activeDebtsList : [];
+  let declaredOnly = 0;
+  let hasDeclaredOnly = false;
+  for (const e of list) {
+    if (!e || typeof e !== 'object') continue;
+    const x = e as { declaredOnly?: unknown; monthlyQ?: unknown };
+    if (x.declaredOnly !== true) continue;
+    hasDeclaredOnly = true;
+    const q = Number(x.monthlyQ);
+    if (q > 0) declaredOnly += q;
+  }
+  if (hasDeclaredOnly) return round2(Math.min(declared, declaredOnly));
   for (const i of insts) {
     if (typeof i.id === 'string' && i.id.indexOf('onb_') === 0) return 0;
   }
@@ -79,7 +99,7 @@ export function debtLevelOf(pct: number | null): DebtLevel {
 
 export function monthlyDebtLoad(i: {
   installments: CreditInstallment[];
-  settings: Pick<UserSettings, 'monthlyIncome' | 'exchangeRate' | 'activeDebts'>;
+  settings: Pick<UserSettings, 'monthlyIncome' | 'exchangeRate' | 'activeDebts'> & { activeDebtsList?: unknown[] };
   sources: IncomeSource[];
   txs: Transaction[];
 }): DebtLoad {

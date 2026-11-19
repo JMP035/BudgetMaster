@@ -11,6 +11,8 @@ import { learnPatternFromSms } from './IncomeSources';
 import { applyPatternCorrection, WEEKDAY_NAMES } from './IncomeSourceView';
 import { normalizeWeekday } from './FinancialPeriod';
 import { dueDateInPeriod, periodFor, periodForWith } from './FixedCycle';
+import { effectiveCutoffDay } from './CardCycle';
+import { nextDueAfter } from './InstallmentSchedule';
 import type { FixedCycleConfig, PeriodStartResolver } from './FixedCycle';
 import { formatPeriodRange, formatShortDay } from './BudgetBreakdown';
 import { suggestInstallmentCount } from './InstallmentMath';
@@ -67,6 +69,8 @@ export interface DraftDebt {
   totalAmount: string;
   /** Tarjeta del borrador a la que pertenece (solo tipo tarjeta / visacuota). */
   accountId?: string;
+  /** Día de pago ('1'..'31') de un préstamo o visacuota sin tarjeta. Opcional: sin él se usa el día de hoy. */
+  dueDay?: string;
   currency: DraftCurrency;
 }
 
@@ -237,12 +241,14 @@ function sanitizeIncomeSample(x: unknown): DraftIncomeSample | null {
 
 function sanitizeDebt(x: unknown): DraftDebt | null {
   if (!isObj(x)) return null;
-  const { id, name, type, monthlyPayment, totalAmount, accountId, currency } = x;
+  const { id, name, type, monthlyPayment, totalAmount, accountId, currency, dueDay } = x;
   if (!isStr(id) || !id || !isStr(name) || !isStr(monthlyPayment) || !isStr(totalAmount)) return null;
   if (!DEBT_KINDS.includes(type as DebtKind) || !isCur(currency)) return null;
   if (accountId !== undefined && !isStr(accountId)) return null;
+  if (dueDay !== undefined && !isStr(dueDay)) return null;
   const out: DraftDebt = { id, name, type: type as DebtKind, monthlyPayment, totalAmount, currency };
   if (accountId !== undefined) out.accountId = accountId;
+  if (dueDay !== undefined) out.dueDay = dueDay;
   return out;
 }
 
@@ -672,28 +678,44 @@ export function buildOnboardingCommit(
     isActive: true,
   }));
 
-  // Deudas
-  const accountIds = new Set(draft.accounts.map(a => a.id));
+  // Deudas. Préstamos y visacuotas se siguen como cuotas que se cargan como gasto en su día de pago; la PRIMERA es
+  // la próxima fecha de pago (nunca «ahora»: ni un cargo inmediato ni retroactivo). Una deuda tipo «Tarjeta de
+  // crédito» NO se convierte en cuota: el consumo de la tarjeta ya es gasto y una cuota mensual encima lo contaría
+  // dos veces; solo queda como deuda declarada (`declaredOnly`, ver DebtLoad.legacyDeclaredDebtQ).
+  const nowLocal = new Date(ctx.nowIso);
+  const accountById = new Map(accounts.map(a => [a.id, a] as const));
   const installments: CreditInstallment[] = [];
   let totalDebts = 0;
+  const debtsList: Array<Record<string, unknown>> = [];
   for (const d of draft.debts) {
     const monthly = num(d.monthlyPayment);
-    if (monthly <= 0) continue;
-    totalDebts += d.currency === 'USD' ? monthly * rate : monthly;
+    const base = { id: d.id, name: d.name, type: d.type, monthlyPayment: d.monthlyPayment, totalAmount: d.totalAmount };
+    if (monthly <= 0) { debtsList.push(base); continue; }
+    const monthlyQ = d.currency === 'USD' ? monthly * rate : monthly;
+    totalDebts += monthlyQ;
+    if (d.type === 'credit') { debtsList.push({ ...base, declaredOnly: true, monthlyQ: round2(monthlyQ) }); continue; }
+    debtsList.push(base);
     const total = num(d.totalAmount);
+    const linked = d.accountId ? accountById.get(d.accountId) : undefined;
+    const card = linked && linked.type === 'credit' ? linked : undefined;
+    const dueNum = parseInt((d.dueDay ?? '').trim(), 10);
+    const dueDay = Number.isFinite(dueNum) && dueNum >= 1 && dueNum <= 31 ? dueNum : nowLocal.getDate();
+    // Con tarjeta manda su corte; sin ella, el día de pago (el de hoy si no lo dijo). Siempre posterior a hoy.
+    const first = nextDueAfter(card ? effectiveCutoffDay(card) : dueDay, nowLocal).toISOString();
     installments.push({
       id: `onb_${d.id}`,
-      accountId: d.accountId && accountIds.has(d.accountId) ? d.accountId : '',
+      accountId: card ? card.id : '',
       name: d.name.trim(),
       totalAmount: total || monthly * 12,
       monthlyPayment: monthly,
       totalInstallments: total > 0 ? suggestInstallmentCount(total, monthly) : 12,
       paidInstallments: 0,
-      startDate: ctx.nowIso,
-      trackSince: ctx.nowIso,
+      startDate: first,
+      trackSince: first,
       paidOffset: 0,
+      ...(card ? {} : { dueDay }),
       currency: d.currency as Currency,
-      category: d.type === 'credit' ? 'transfer' : d.type === 'loan' ? 'other' : 'subscriptions',
+      category: d.type === 'loan' ? 'other' : 'subscriptions',
       isActive: true,
       notes: `Registrado en onboarding (${DEBT_LABEL[d.type]})`,
     });
@@ -718,9 +740,7 @@ export function buildOnboardingCommit(
     budgetLimit,
     budgetLimitUSDMode: 'auto',
     activeDebts: round2(totalDebts),
-    activeDebtsList: draft.debts.map(d => ({
-      id: d.id, name: d.name, type: d.type, monthlyPayment: d.monthlyPayment, totalAmount: d.totalAmount,
-    })),
+    activeDebtsList: debtsList,
     monthlySavingsGoal,
     preferredBanks,
     externalSavings: base.externalSavings,

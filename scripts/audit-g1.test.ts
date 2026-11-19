@@ -8,10 +8,13 @@ import type { CapacityContext } from '../services/Capacity';
 import { migrateInstallmentsSchedule, planInstallmentCharges } from '../services/InstallmentSchedule';
 import { buildExistingSmsIndex, planSmsImport } from '../services/BankSmsParser';
 import { learnPatternFromSms } from '../services/IncomeSources';
+import { emptyDraft, buildOnboardingCommit, sanitizeDraft } from '../services/OnboardingPlan';
+import type { DraftDebt, OnboardingDraft } from '../services/OnboardingPlan';
+import { monthlyDebtLoad } from '../services/DebtLoad';
 import { computeFinancialPeriod } from '../services/FinancialPeriod';
 import { fixedCycleConfig, setPeriodStartResolver } from '../services/FixedCycle';
 import { DEFAULT_PAY_RULES } from '../services/PayCalendar';
-import { DEFAULT_SETTINGS, StorageService } from '../services/storage';
+import { DEFAULT_SETTINGS, StorageService, parseAmount } from '../services/storage';
 import type { Account, CreditInstallment, FixedExpense, IncomeSource, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
 
 let failures = 0;
@@ -256,6 +259,121 @@ async function scenarios(): Promise<void> {
       });
       const res = await StorageService.undoSmsBatch('b_inc3', { includeEdited: false });
       check('G1-6: lote viejo sin los campos nuevos se deshace igual', res.removedTx === 1 && (await StorageService.getPeriodAnchors()).length === 0);
+    }
+  }
+  // ───────────────────────────────────────────────────────────
+  // 1. Deudas del onboarding: nada de gastos inmediatos, tarjeta solo declarada, gemelo en préstamos, migración
+  // ───────────────────────────────────────────────────────────
+  {
+    const NOW = d(2026, 11, 18, 15);
+    const ctx = { isAndroid: true, exchangeRate: 7.7, parse: parseAmount, nowIso: NOW.toISOString() };
+    const draftWith = (debts: DraftDebt[], extra: Partial<OnboardingDraft> = {}): OnboardingDraft => ({
+      ...emptyDraft(), name: 'Ana', income: '8000', paymentDay: '27', debts, ...extra,
+    });
+    const loan = (extra: Partial<DraftDebt> = {}): DraftDebt => ({
+      id: 'd1', name: 'Préstamo', type: 'loan', monthlyPayment: '1000', totalAmount: '12000', currency: 'Q', ...extra,
+    });
+    const dayOf = (iso: string | undefined): string => {
+      const x = new Date(iso ?? '');
+      return `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`;
+    };
+
+    // (a) Préstamo sin día de pago: onboarding el 18/11 → nada hoy; la primera cuota cae el 18/12.
+    {
+      const c = buildOnboardingCommit(draftWith([loan()]), DEFAULT_SETTINGS, ctx);
+      const inst = c.installments[0];
+      const today = planInstallmentCharges(c.installments, c.accounts, [], [], NOW);
+      check('G1-1a: el onboarding de un préstamo NO genera un gasto el mismo día', today.toAdd.length === 0, JSON.stringify(today.toAdd.map(t => [t.id, t.date])));
+      check('G1-1a: trackSince es la próxima fecha de pago (18/12), nunca «ahora»', dayOf(inst.trackSince) === '2026-12-18', String(inst.trackSince));
+      check('G1-1a: sin día, guarda el de hoy como día de pago', inst.dueDay === 18, String(inst.dueDay));
+      const next = planInstallmentCharges(c.installments, c.accounts, [], [], d(2026, 12, 18, 9));
+      check('G1-1a: el primer cargo es la próxima cuota (18/12, cuota 1/12)',
+        next.toAdd.length === 1 && next.toAdd[0].description === 'Cuota 1/12 · Préstamo' && dayOf(next.toAdd[0].date) === '2026-12-18',
+        JSON.stringify(next.toAdd.map(t => [t.description, t.date])));
+    }
+    // (b) Con día de pago.
+    {
+      const c = buildOnboardingCommit(draftWith([loan({ dueDay: '25' })]), DEFAULT_SETTINGS, ctx);
+      check('G1-1b: día 25 → primer cargo el 25/11 (no hoy)',
+        planInstallmentCharges(c.installments, c.accounts, [], [], NOW).toAdd.length === 0
+        && planInstallmentCharges(c.installments, c.accounts, [], [], d(2026, 11, 25, 9)).toAdd.length === 1);
+      const c2 = buildOnboardingCommit(draftWith([loan({ dueDay: '5' })]), DEFAULT_SETTINGS, ctx);
+      check('G1-1b: día 5 (ya pasó este mes) → primer cargo el 5/12',
+        planInstallmentCharges(c2.installments, c2.accounts, [], [], d(2026, 12, 4)).toAdd.length === 0
+        && dayOf(planInstallmentCharges(c2.installments, c2.accounts, [], [], d(2026, 12, 5)).toAdd[0]?.date) === '2026-12-5');
+      const d1 = sanitizeDraft(JSON.parse(JSON.stringify(draftWith([loan({ dueDay: '25' })]))));
+      check('G1-1b: el borrador conserva el día de pago', !!d1 && d1.debts[0].dueDay === '25');
+    }
+    // (c) Visacuota con tarjeta cuyo corte es hoy: tampoco hay cargo inmediato.
+    {
+      const card = { id: 'k1', name: 'BAC Visa', kind: 'credit' as const, currency: 'Q' as const, balance: '', bankCode: 'BAC', bankLabel: 'BAC Credomatic', cutoffDay: '18', paymentDueDay: '5' };
+      const c = buildOnboardingCommit(draftWith([loan({ id: 'd3', type: 'installment', accountId: 'k1' })], { accounts: [card as never] }), DEFAULT_SETTINGS, ctx);
+      check('G1-1c: visacuota con corte hoy: sin cargo el mismo día', planInstallmentCharges(c.installments, c.accounts, [], [], NOW).toAdd.length === 0);
+      check('G1-1c: el primer cargo es el próximo corte (18/12)', planInstallmentCharges(c.installments, c.accounts, [], [], d(2026, 12, 18, 9)).toAdd.length === 1);
+    }
+    // (d) Tarjeta de crédito declarada: no se convierte en cuota; sigue como deuda «declarada» sin doble conteo.
+    {
+      const c = buildOnboardingCommit(draftWith([
+        loan(), loan({ id: 'd2', name: 'Visa BAC', type: 'credit', monthlyPayment: '600', totalAmount: '' }),
+      ]), DEFAULT_SETTINGS, ctx);
+      check('G1-1d: la deuda tipo tarjeta no se convierte en cuota', c.installments.length === 1 && c.installments[0].id === 'onb_d1', JSON.stringify(c.installments.map(i => i.id)));
+      const load = monthlyDebtLoad({ installments: c.installments, settings: c.settings, sources: [], txs: [] });
+      check('G1-1d: el préstamo cuenta como préstamo y la tarjeta como declarada (sin duplicar)',
+        load.loansQ === 1000 && load.legacyQ === 600 && load.totalQ === 1600, JSON.stringify([load.loansQ, load.legacyQ, load.totalQ]));
+      const cleared = monthlyDebtLoad({ installments: c.installments, settings: { ...c.settings, activeDebts: 0 }, sources: [], txs: [] });
+      check('G1-1d: «Ya no la tengo» (activeDebts 0) quita la declarada y deja el préstamo', cleared.legacyQ === 0 && cleared.totalQ === 1000);
+      const only = buildOnboardingCommit(draftWith([loan({ id: 'd2', name: 'Visa BAC', type: 'credit', monthlyPayment: '600' })]), DEFAULT_SETTINGS, ctx);
+      const loadOnly = monthlyDebtLoad({ installments: only.installments, settings: only.settings, sources: [], txs: [] });
+      check('G1-1d: solo tarjeta: queda declarada (600) y ninguna cuota', only.installments.length === 0 && loadOnly.legacyQ === 600 && loadOnly.activeCount === 0);
+    }
+    // (e) Gemelo en préstamos: un SMS de gasto (cualquier cuenta, mismo monto ±0.01, ±3 días) es la cuota.
+    {
+      const inst: CreditInstallment = {
+        id: 'p1', accountId: '', name: 'Préstamo', totalAmount: 12000, monthlyPayment: 1000, totalInstallments: 12, paidInstallments: 0,
+        startDate: d(2026, 11, 25).toISOString(), trackSince: d(2026, 11, 25).toISOString(), paidOffset: 0, dueDay: 25,
+        currency: 'Q', category: 'other', isActive: true,
+      } as CreditInstallment;
+      const sms = (id: string, amount: number, at: Date, extra: Partial<Transaction> = {}) => tx(id, 'expense', amount, at, { accountId: 'debito', ...extra });
+      const p = planInstallmentCharges([inst], [], [sms('s1', 1000.005, d(2026, 11, 23, 8))], [], d(2026, 11, 25, 9));
+      check('G1-1e: el SMS de gasto del banco ES la cuota (no se crea otra)',
+        p.toAdd.length === 0 && p.twinUpdates.length === 1 && p.twinUpdates[0].installmentId === 'p1' && p.twinUpdates[0].installmentNo === 1,
+        JSON.stringify([p.toAdd.length, p.twinUpdates.length]));
+      const far = planInstallmentCharges([inst], [], [sms('s2', 1000, d(2026, 11, 30, 8))], [], d(2026, 11, 25, 9));
+      check('G1-1e: a más de 3 días ya no es gemelo', far.toAdd.length === 1 && far.twinUpdates.length === 0);
+      const other = planInstallmentCharges([inst], [], [sms('s3', 1200, d(2026, 11, 25, 8))], [], d(2026, 11, 25, 9));
+      check('G1-1e: otro monto no es gemelo', other.toAdd.length === 1);
+      const manual = planInstallmentCharges([inst], [], [sms('s4', 1000, d(2026, 11, 25, 8), { source: 'manual' })], [], d(2026, 11, 25, 9));
+      check('G1-1e: solo cuentan SMS (un registro manual no se toca)', manual.toAdd.length === 1 && manual.twinUpdates.length === 0);
+      const paired = planInstallmentCharges([inst], [], [sms('s5', 1000, d(2026, 11, 25, 8), { transferPairId: 'tp_x', type: 'transfer' })], [], d(2026, 11, 25, 9));
+      check('G1-1e: una transferencia entre cuentas propias no es la cuota', paired.toAdd.length === 1 && paired.twinUpdates.length === 0);
+    }
+    // (f) Quien ya tenía deudas del onboarding anterior: la actualización no genera cargos inmediatos.
+    {
+      resetMemoryStorage();
+      const mk = (id: string, notes: string, category: string): CreditInstallment => ({
+        id, accountId: '', name: id, totalAmount: 12000, monthlyPayment: 1000, totalInstallments: 12, paidInstallments: 1,
+        startDate: d(2026, 10, 18).toISOString(), trackSince: d(2026, 10, 18).toISOString(), paidOffset: 0,
+        currency: 'Q', category, isActive: true, notes,
+      } as CreditInstallment);
+      await StorageService.saveCreditInstallments([
+        mk('onb_d1', 'Registrado en onboarding (Préstamo)', 'other'),
+        mk('onb_d2', 'Registrado en onboarding (Tarjeta de crédito)', 'transfer'),
+      ]);
+      await StorageService.saveTransactions([{
+        id: 'inst_onb_d1_1', amount: 1000, description: 'Cuota 1/12 · onb_d1', category: 'other', date: d(2026, 10, 18).toISOString(),
+        type: 'expense', source: 'manual', currency: 'Q', installmentId: 'onb_d1', installmentNo: 1,
+      }]);
+      const res = await StorageService.syncInstallmentCharges(NOW);
+      const txs = await StorageService.getTransactions();
+      check('G1-1f: tras actualizar, el mismo día no aparece ningún gasto automático nuevo',
+        res.added === 0 && txs.length === 1, JSON.stringify(txs.map(t => t.id)));
+      const after = await StorageService.getCreditInstallments();
+      const d1 = after.find(i => i.id === 'onb_d1')!;
+      check('G1-1f: la cuota del préstamo sigue activa y su trackSince pasa a la próxima fecha (18/12)', d1.isActive && dayOf(d1.trackSince) === '2026-12-18', String(d1.trackSince));
+      check('G1-1f: la «tarjeta de crédito» convertida en cuota deja de generar gastos', after.find(i => i.id === 'onb_d2')!.isActive === false);
+      const dec = await StorageService.syncInstallmentCharges(d(2026, 12, 18, 9));
+      const txs2 = await StorageService.getTransactions();
+      check('G1-1f: en su día de pago (18/12) sí se carga la cuota del préstamo', dec.added === 1 && txs2.some(t => t.id === 'inst_onb_d1_3'), JSON.stringify(txs2.map(t => t.id)));
     }
   }
 }

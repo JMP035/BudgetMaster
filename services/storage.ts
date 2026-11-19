@@ -28,7 +28,7 @@ import { computeFinancialPeriod, daysLeftInPeriod, daysUntilNextPay, hasPayDate,
 import type { FinancialPeriod } from './FinancialPeriod';
 import { planFixedFusion, relinkFixedAfterSplit } from './FixedExpenseMatcher';
 import {
-  detachInstallmentCharges, dropInstallmentCharges, migrateInstallmentsSchedule, planInstallmentCharges,
+  detachInstallmentCharges, dropInstallmentCharges, migrateInstallmentsSchedule, migrateOnboardingDebts, planInstallmentCharges,
   prepareInstallmentForSave,
 } from './InstallmentSchedule';
 // Módulos puros del onboarding: de ellos solo se importan valores sin dependencia de storage en runtime
@@ -1906,7 +1906,7 @@ export const StorageService = {
    * se reintenta en el siguiente arranque (los pasos son idempotentes). Para agregar otra migración, suma
    * una entrada a la lista `steps` con su id de marca.
    */
-  async runMigrations(): Promise<void> {
+  async runMigrations(now: Date = new Date()): Promise<void> {
     try {
       let done: string[] = [];
       try {
@@ -1939,7 +1939,17 @@ export const StorageService = {
           id: 'installments_schedule_v1',
           run: async () => {
             const [insts, accounts] = await Promise.all([this.getCreditInstallments(), this.getAccounts()]);
-            const r = migrateInstallmentsSchedule(insts, accounts, new Date());
+            const r = migrateInstallmentsSchedule(insts, accounts, now);
+            if (r.changed) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
+          },
+        },
+        {
+          // Deudas del onboarding anterior: la próxima cuota es la primera que se carga (nada inmediato al actualizar)
+          // y las de «Tarjeta de crédito» dejan de generar gastos. Va después de installments_schedule_v1.
+          id: 'onboarding_debts_due_v1',
+          run: async () => {
+            const [insts, accounts] = await Promise.all([this.getCreditInstallments(), this.getAccounts()]);
+            const r = migrateOnboardingDebts(insts, accounts, now);
             if (r.changed) await AsyncStorage.setItem(K.CREDIT_INSTALLMENTS, JSON.stringify(r.installments));
           },
         },
@@ -2302,7 +2312,7 @@ export const StorageService = {
    * Los ids de cargos borrados a mano (en descartados) no se regeneran.
    */
   async syncInstallmentCharges(now: Date = new Date()): Promise<{ added: number; changed: boolean }> {
-    await this.runMigrations();
+    await this.runMigrations(now);
     const [insts, accounts, txs, dismissed] = await Promise.all([
       this.getCreditInstallments(), this.getAccounts(), this.getTransactions(), this.getDismissedSms(),
     ]);
@@ -2364,7 +2374,7 @@ export const StorageService = {
   async checkAndRunMonthlyReset(now: Date = new Date()): Promise<boolean> {
     // El reinicio mide el período con el resolvedor global: en frío vale null (período NOMINAL) y con fin de semana o
     // feriado cortaría un día antes o después del real. Por eso se arman primero migraciones, anclas y resolvedor.
-    await this.runMigrations();
+    await this.runMigrations(now);
     await this.getPeriodAnchors();
     refreshPeriodResolver(await this.getSettings());
     // Gastos fijos: por período (idempotente, en cada carga). Visacuotas: un cargo por corte de la tarjeta

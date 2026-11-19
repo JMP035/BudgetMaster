@@ -9,6 +9,12 @@ import { storedToLocalDate } from './FixedCycle';
 import { cutDate, cycleRange, dayNum, effectiveCutoffDay } from './CardCycle';
 
 const MAX_COUNT = 1200;
+/** Días de margen para reconocer el SMS del débito de un préstamo como la cuota (±). */
+const TWIN_DAYS = 3;
+
+function dayDiff(a: Date, b: Date): number {
+  return Math.round((Date.UTC(a.getFullYear(), a.getMonth(), a.getDate()) - Date.UTC(b.getFullYear(), b.getMonth(), b.getDate())) / 86400000);
+}
 
 function validDay(n: number | undefined): number | null {
   return typeof n === 'number' && isFinite(n) && n >= 1 && n <= 31 ? Math.floor(n) : null;
@@ -36,6 +42,16 @@ export function cutForInstallment(inst: CreditInstallment, card: Account | undef
   const m = start.getMonth();
   const base = dayNum(cutDate(day, y, m)) < dayNum(start) ? m + 1 : m;
   return cutDate(day, y, base + (Math.max(1, Math.floor(n)) - 1));
+}
+
+/**
+ * Próxima fecha (12:00 local) con ese día del mes ESTRICTAMENTE posterior a hoy (el día se recorta al largo del mes):
+ * hoy 18/11 con día 18 → 18/12; con día 25 → 25/11; con día 5 → 5/12.
+ */
+export function nextDueAfter(day: number, now: Date): Date {
+  const d = validDay(day) ?? now.getDate();
+  const thisMonth = cutDate(d, now.getFullYear(), now.getMonth());
+  return dayNum(thisMonth) > dayNum(now) ? thisMonth : cutDate(d, now.getFullYear(), now.getMonth() + 1);
 }
 
 /** Cuántos cortes de la visacuota ya se cumplieron (corte <= hoy), sin pasar del total de cuotas. */
@@ -109,6 +125,24 @@ export function planInstallmentCharges(
       const id = `inst_${inst.id}_${n}`;
       if (haveIds.has(id) || dismissedSet.has(id) || haveNo.has(`${inst.id}#${n}`)) continue;
 
+      if (!card) {
+        // Préstamo sin tarjeta: el débito suele llegar también por SMS (de cualquier cuenta). Un SMS de gasto del
+        // mismo monto (±0.01) con fecha a ±3 días de la cuota ES esa cuota: se le marca en vez de crear otro gasto.
+        const twin = txs.find(t => {
+          if (usedTwins.has(t.id) || t.source !== 'sms' || t.type !== 'expense' || t.installmentId) return false;
+          if (t.transferPairId || t.currency !== inst.currency) return false;
+          if (Math.round(Math.abs(t.amount - inst.monthlyPayment) * 100) > 1) return false;
+          const local = storedToLocalDate(t.date);
+          if (!local) return false;
+          return Math.abs(dayDiff(local, cut)) <= TWIN_DAYS;
+        });
+        if (twin) {
+          usedTwins.add(twin.id);
+          haveNo.add(`${inst.id}#${n}`);
+          twinUpdates.push({ ...twin, installmentId: inst.id, installmentNo: n });
+          continue;
+        }
+      }
       if (card) {
         const range = cycleRange(card, cut);
         const fromN = dayNum(range.from);
@@ -177,6 +211,37 @@ export function migrateInstallmentsSchedule(
     changed = true;
     const card = cardOfInstallment(i, accounts);
     return { ...i, trackSince: now.toISOString(), paidOffset: i.paidInstallments - chargedCount(i, card, now) };
+  });
+  return { installments: changed ? installments : insts, changed };
+}
+
+/**
+ * Migración 'onboarding_debts_due_v1': las deudas del onboarding anterior (`onb_*`) se crearon con
+ * startDate = trackSince = el día del onboarding y sin día de pago, así que cargaban un gasto cada día de esos.
+ * - Préstamos y visacuotas: `trackSince` pasa a la PRÓXIMA cuota (nunca se genera un cargo inmediato por la
+ *   actualización); lo ya cargado se queda como está.
+ * - Las que eran «Tarjeta de crédito» dejan de generar gastos (el consumo de la tarjeta ya es gasto): quedan
+ *   inactivas, con sus cargos anteriores intactos.
+ * Idempotente: solo toca `onb_*` activas sin día de pago cuyo trackSince todavía es anterior a su próxima cuota.
+ */
+export function migrateOnboardingDebts(
+  insts: CreditInstallment[],
+  accounts: Account[],
+  now: Date,
+): { installments: CreditInstallment[]; changed: boolean } {
+  let changed = false;
+  const installments = insts.map(i => {
+    if (typeof i.id !== 'string' || i.id.indexOf('onb_') !== 0 || !i.isActive || !i.trackSince) return i;
+    if (i.dueDay !== undefined && i.dueDay !== null) return i;
+    if (typeof i.notes === 'string' && i.notes.indexOf('(Tarjeta de crédito)') >= 0) {
+      changed = true;
+      return { ...i, isActive: false };
+    }
+    const next = nextInstallmentCut(i, cardOfInstallment(i, accounts), now);
+    const track = storedToLocalDate(i.trackSince);
+    if (!next || !track || dayNum(track) >= dayNum(next)) return i;
+    changed = true;
+    return { ...i, trackSince: next.toISOString() };
   });
   return { installments: changed ? installments : insts, changed };
 }

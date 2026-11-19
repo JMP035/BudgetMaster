@@ -205,7 +205,7 @@ const LEGIT_ACCENT_WORDS = new Set([
   'ahí', 'aquí', 'así', 'sí', 'qué', 'allá', 'está', 'esté', 'dé', 'sé', 'caché', 'mié', 'aá',
   'actualicé', 'descarté', 'eché', 'encontré', 'entendí', 'gasté', 'identifiqué', 'logré', 'recibí', 'reconocí', 'revisé',
   'aparecerá', 'armará', 'borrará', 'corregirá', 'creará', 'dejará', 'descontará', 'detectará', 'marcará', 'mostrará',
-  'pedirá', 'podrá', 'preguntará', 'quitará', 'seguirá', 'tomará', 'unirá', 'usará', 'volverá',
+  'pedirá', 'podrá', 'preguntará', 'quitará', 'registrará', 'seguirá', 'tomará', 'unirá', 'usará', 'volverá',
 ]);
 
 /** Busca las formas «generales» de voseo (ver arriba) en el texto sin comentarios. */

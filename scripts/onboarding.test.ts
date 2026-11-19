@@ -198,6 +198,32 @@ function acc(id: string, bankCode: string | null, kind: DraftAccount['kind'], ex
   check('activeDebtsList conserva todas las deudas con la forma de siempre', c.settings.activeDebtsList?.length === 3
     && eq(Object.keys(c.settings.activeDebtsList![0]), ['id', 'name', 'type', 'monthlyPayment', 'totalAmount']));
   check('categoría de visacuota por tipo', i1.category === 'subscriptions' && i2.category === 'other');
+  // Fecha del primer cargo: la próxima fecha de pago, nunca «ahora» (NOW = 12/11/2026).
+  const dayOf = (iso: string | undefined): string => { const x = new Date(iso ?? ''); return `${x.getFullYear()}-${x.getMonth() + 1}-${x.getDate()}`; };
+  check('préstamo sin día de pago: trackSince = misma fecha del mes siguiente, no ahora', i2.trackSince === i2.startDate && dayOf(i2.trackSince) === '2026-12-12' && i2.dueDay === 12,
+    `${i2.trackSince} ${i2.dueDay}`);
+  check('visacuota con tarjeta: no lleva dueDay y empieza en el próximo corte', i1.dueDay === undefined && i1.trackSince === i1.startDate && i1.trackSince !== NOW);
+}
+
+{
+  const d = draftWith({
+    accounts: [acc('c1', 'BAC', 'credit', { cutoffDay: '25', paymentDueDay: '10' })],
+    debts: [
+      { id: 'debt_p', name: 'Préstamo', type: 'loan', monthlyPayment: '1000', totalAmount: '12000', currency: 'Q', dueDay: '25' },
+      { id: 'debt_t', name: 'Visa', type: 'credit', monthlyPayment: '600', totalAmount: '', currency: 'Q', accountId: 'c1' },
+      { id: 'debt_u', name: 'Auto USD', type: 'other', monthlyPayment: '100', totalAmount: '', currency: 'USD', dueDay: '99' },
+    ],
+  });
+  const c = buildOnboardingCommit(d, BASE, ctxAndroid);
+  check('día de pago 25: primer cargo el 25/11 y dueDay guardado', c.installments[0].dueDay === 25 && c.installments[0].trackSince?.slice(0, 10) === '2026-11-25', String(c.installments[0].trackSince));
+  check('la deuda tipo tarjeta de crédito no se convierte en cuota', !c.installments.some(i => i.id === 'onb_debt_t') && c.installments.length === 2);
+  const list = c.settings.activeDebtsList as Array<Record<string, unknown>>;
+  check('queda en activeDebtsList como declaredOnly con su monto en Q', list.length === 3 && list[1].declaredOnly === true && list[1].monthlyQ === 600 && list[0].declaredOnly === undefined);
+  check('activeDebts sigue sumando todas las cuotas declaradas (USD convertido)', c.settings.activeDebts === 1000 + 600 + 770, String(c.settings.activeDebts));
+  check('día de pago fuera de rango: usa el de hoy (12)', c.installments[1].dueDay === 12);
+  const back = sanitizeDraft(JSON.parse(JSON.stringify(d)));
+  check('sanitizeDraft conserva dueDay y rechaza un dueDay que no es texto', back?.debts[0].dueDay === '25'
+    && sanitizeDraft({ ...JSON.parse(JSON.stringify(d)), debts: [{ ...d.debts[0], dueDay: 25 }] }) === null);
 }
 
 // ─────────────────────────────────────────────────────────────

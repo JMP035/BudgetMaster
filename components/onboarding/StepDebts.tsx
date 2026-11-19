@@ -2,7 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { debtLevelOf } from "../../services/DebtLoad";
-import { DebtKind, DraftCurrency, DraftDebt, newDraftId } from "../../services/OnboardingPlan";
+import { DebtKind, DraftCurrency, DraftDebt, newDraftId, validateDay } from "../../services/OnboardingPlan";
 import { parseAmount } from "../../services/storage";
 import { C } from "../../theme";
 import { GlassButton, GlassButtonGroup } from "../GlassButton";
@@ -38,6 +38,7 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
     const [monthly, setMonthly] = useState("");
     const [total, setTotal] = useState("");
     const [cardId, setCardId] = useState<string | undefined>(undefined);
+    const [dueDay, setDueDay] = useState("");
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => { onFormOpenChange(open); }, [open, onFormOpenChange]);
@@ -45,10 +46,13 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
 
     const cards = draft.accounts.filter(a => a.kind === "credit");
     const askCard = (type === "credit" || type === "installment") && cards.length > 0;
+    // Préstamos y visacuotas sin tarjeta se registran como gasto en su día de pago. Con tarjeta manda su corte; la
+    // tarjeta de crédito no se convierte en cuota (su consumo ya es gasto): ahí no se pide día.
+    const askDueDay = type !== "credit" && !(type === "installment" && askCard && !!cardId);
 
     const openForm = () => {
         setName(""); setType("credit"); setCurrency(draft.incomeCurrency); setMonthly(""); setTotal("");
-        setCardId(undefined); setError(null);
+        setCardId(undefined); setDueDay(""); setError(null);
         setOpen(true);
         setTimeout(() => ctx.reveal(formRef.current), 80);
     };
@@ -60,6 +64,9 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
         if (total.trim() && (!Number.isFinite(parseAmount(total)) || parseAmount(total) < 0)) {
             setError("Ingresa un total válido."); return;
         }
+        if (askDueDay && dueDay.trim() && !validateDay(dueDay).ok) {
+            setError("El día de pago debe estar entre 1 y 31."); return;
+        }
         const debt: DraftDebt = {
             id: newDraftId("debt"),
             name: name.trim(),
@@ -69,6 +76,7 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
             currency,
         };
         if (askCard && cardId && cards.some(c => c.id === cardId)) debt.accountId = cardId;
+        if (askDueDay && dueDay.trim()) debt.dueDay = dueDay.trim();
         onChange({ debts: [...draft.debts, debt] });
         closeForm();
     };
@@ -89,6 +97,11 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
                 title="¿Tienes deudas activas?"
                 subtitle="Registra cada deuda por separado: tarjetas de crédito, préstamos, visacuotas. Así puedo ayudarte a eliminarlas con un plan."
             />
+            <InlineNotice
+                variant="info"
+                style={{ marginBottom: 10 }}
+                text="Cada cuota de un préstamo o visacuota se registrará como gasto en su día de pago, empezando por el próximo. La tarjeta de crédito no se convierte en cuota: sus compras ya cuentan como gasto cuando las registras."
+            />
 
             {draft.debts.length === 0 && !open && (
                 <GlassCard radius={14} blur={false} leftAccentColor={C.income}>
@@ -107,7 +120,10 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
                         <Ionicons name={info.icon} size={20} color={C.danger} />
                         <View style={s.itemMain}>
                             <Text style={ps.itemName} numberOfLines={2}>{d.name}</Text>
-                            <Text style={ps.itemSub} numberOfLines={2}>{card ? `${info.long} · ${card.name}` : info.long}</Text>
+                            <Text style={ps.itemSub} numberOfLines={2}>
+                                {card ? `${info.long} · ${card.name}` : info.long}
+                                {d.dueDay && d.type !== "credit" ? ` · paga el día ${d.dueDay}` : ""}
+                            </Text>
                         </View>
                         <Money
                             amount={num(d.monthlyPayment)}
@@ -224,6 +240,21 @@ export default function StepDebts({ draft, onChange, rate, onFormOpenChange }: S
                             prefix={currency === "USD" ? "$" : "Q"}
                             accessibilityLabel="Cuota mensual"
                         />
+
+                        {askDueDay && (
+                            <>
+                                <Text style={ps.label}>Día de pago (opcional)</Text>
+                                <StyledInput
+                                    value={dueDay}
+                                    onChangeText={t => { setDueDay(t.replace(/[^0-9]/g, "")); setError(null); }}
+                                    placeholder="Ej: 15"
+                                    keyboardType="number-pad"
+                                    maxLength={2}
+                                    accessibilityLabel="Día de pago de la deuda"
+                                />
+                                <Text style={ps.hint}>Del 1 al 31. Si lo dejas vacío usamos el día de hoy; la primera cuota se registra en el próximo día de pago.</Text>
+                            </>
+                        )}
 
                         <Text style={ps.label}>Total de la deuda (opcional)</Text>
                         <StyledInput
