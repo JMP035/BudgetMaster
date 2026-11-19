@@ -2,7 +2,7 @@
 import React from 'react';
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
 import { AddExpenseButton, EyeButton, WIDGET_ROOT_STYLE } from './widget-parts';
-import { W, amountText, daysText } from './widget-view';
+import { W, amountText, daysText, emptyText } from './widget-view';
 import type { WidgetView } from './widget-view';
 
 export function BudgetSmallWidget({ view }: { view: WidgetView }) {
@@ -27,7 +27,7 @@ export function BudgetSmallWidget({ view }: { view: WidgetView }) {
           <TextWidget text={daysText(snap)} style={{ fontSize: 12, color: W.bronze }} />
         </FlexWidget>
       ) : (
-        <TextWidget text="Abre BudgetMaster para ver tu resumen" maxLines={3} style={{ fontSize: 12, color: W.sub }} />
+        <TextWidget text={emptyText(view, 'Abre BudgetMaster para ver tu resumen')} maxLines={3} style={{ fontSize: 12, color: W.sub }} />
       )}
     </FlexWidget>
   );

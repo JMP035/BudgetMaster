@@ -1,7 +1,7 @@
 // Lo que comparten los widgets de Android: leer la foto y la privacidad (por StorageService, nunca AsyncStorage
 // directo) y dar formato a los textos. El widget no recalcula nada: pinta lo que la app guardó.
 import { StorageService } from '../services/storage';
-import { maskForPrivacy, widgetDaysText, widgetShortDate } from '../services/WidgetSnapshot';
+import { WIDGET_STALE_TEXT, freshenWidgetSnapshot, maskForPrivacy, widgetDaysText, widgetShortDate } from '../services/WidgetSnapshot';
 import type { WidgetSnapshot } from '../services/WidgetSnapshot';
 import { formatMoney } from '../services/format';
 import { C } from '../theme';
@@ -44,16 +44,28 @@ export interface WidgetView {
   snap: WidgetSnapshot | null;
   /** true = los montos no se ven (el ojo está «cerrado»). */
   hidden: boolean;
+  /** true = hay foto pero ya es de un período que terminó: no se pintan cifras viejas, solo «Abre la app para actualizar». */
+  stale: boolean;
 }
 
-/** Lee la foto y la privacidad; con privacidad 'hidden' (por defecto) enmascara todos los montos. */
-export async function loadWidgetView(): Promise<WidgetView> {
-  const [snap, privacy] = await Promise.all([
+/** Texto del widget sin cifras: foto vieja (otro período) o app todavía sin abrir. */
+export function emptyText(view: Pick<WidgetView, 'stale'>, fresh: string): string {
+  return view.stale ? WIDGET_STALE_TEXT : fresh;
+}
+
+/**
+ * Lee la foto y la privacidad. La foto se pone al día de HOY (los días al cobro se calculan con la fecha de hoy; si el
+ * cobro ya llegó, `stale`); con privacidad 'hidden' (por defecto) enmascara todos los montos.
+ */
+export async function loadWidgetView(now: Date = new Date()): Promise<WidgetView> {
+  const [saved, privacy] = await Promise.all([
     StorageService.getWidgetSnapshot(),
     StorageService.getWidgetPrivacy(),
   ]);
   const hidden = privacy !== 'shown';
-  return { snap: snap && hidden ? maskForPrivacy(snap) : snap, hidden };
+  const fresh = saved ? freshenWidgetSnapshot(saved, now) : null;
+  const snap = fresh && !fresh.stale ? fresh.snap : null;
+  return { snap: snap && hidden ? maskForPrivacy(snap) : snap, hidden, stale: !!fresh && fresh.stale };
 }
 
 /** Alterna la privacidad guardada y devuelve el valor nuevo (true = ocultos). */

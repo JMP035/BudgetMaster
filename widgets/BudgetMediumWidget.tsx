@@ -4,7 +4,7 @@ import React from 'react';
 import { FlexWidget, TextWidget } from 'react-native-android-widget';
 import { capacityLevelLabel } from '../services/NotifUi';
 import { AddExpenseButton, BudgetBar, EyeButton, WIDGET_ROOT_STYLE } from './widget-parts';
-import { W, amountText, daysText, levelColor, nextCardText, nextFixedText, updatedText } from './widget-view';
+import { W, amountText, daysText, emptyText, levelColor, nextCardText, nextFixedText, updatedText } from './widget-view';
 import type { WidgetView } from './widget-view';
 
 function Item({ label, value }: { label: string; value: string }) {
@@ -23,7 +23,7 @@ export function BudgetMediumWidget({ view }: { view: WidgetView }) {
     return (
       <FlexWidget clickAction="OPEN_APP" style={{ ...WIDGET_ROOT_STYLE, padding: 12, flexDirection: 'column', justifyContent: 'center' }}>
         <TextWidget text="BUDGETMASTER" style={{ fontSize: 9, fontWeight: 'bold', color: W.bronze, letterSpacing: 1 }} />
-        <TextWidget text="Abre BudgetMaster para ver tu período de un vistazo" maxLines={3} style={{ fontSize: 13, color: W.sub }} />
+        <TextWidget text={emptyText(view, 'Abre BudgetMaster para ver tu período de un vistazo')} maxLines={3} style={{ fontSize: 13, color: W.sub }} />
       </FlexWidget>
     );
   }

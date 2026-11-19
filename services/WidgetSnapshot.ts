@@ -35,8 +35,15 @@ export interface WidgetSnapshot {
    * Una foto vieja (anterior a `daysLeftInPeriod`) puede traer 0 en el ciclo irregular: ver sanitizeWidgetSnapshot.
    */
   daysToPay: number | null;
-  /** Días que le quedan al período (con ciclo irregular, hasta fin de mes). */
+  /** Días que le quedan al período (con ciclo irregular, hasta fin de mes). Es el valor del momento de la foto: al pintar se recalcula con `periodEndDate`. */
   daysLeftInPeriod: number;
+  /**
+   * Fecha del próximo cobro 'AAAA-MM-DD' (la de `daysToPay`); `null` con ciclo irregular. El widget calcula los días al
+   * pintar con la fecha de hoy (ver freshenWidgetSnapshot): una foto de ayer no se queda diciendo «2 días al cobro».
+   */
+  nextPayDate?: string | null;
+  /** Primer día del período siguiente 'AAAA-MM-DD' (con ciclo irregular, el primero del mes que viene). Llegada esa fecha la foto ya es de otro período. */
+  periodEndDate?: string;
   /** availablePeriod repartido entre los días que faltan. */
   availablePerDay: number;
   /** Porcentaje del presupuesto ya gastado (0 sin presupuesto). */
@@ -130,6 +137,8 @@ export function buildWidgetSnapshot(data: WidgetSnapshotData, now: Date): Widget
     : (settings.monthlyIncome > 0 ? settings.monthlyIncome * periodBudgetFactor(settings.paymentCycle) : snap.incomeQ);
   const availablePeriod = round2(base - snap.spentQ);
   const availablePerDay = daysLeft > 0 ? round2(availablePeriod / daysLeft) : availablePeriod;
+  // Cuándo termina el período (hoy + los días que le quedan): con esa fecha el widget recalcula los días al pintar.
+  const endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + daysLeft, 12, 0, 0, 0);
 
   const out: WidgetSnapshot = {
     v: WIDGET_SNAPSHOT_VERSION,
@@ -138,6 +147,8 @@ export function buildWidgetSnapshot(data: WidgetSnapshotData, now: Date): Widget
     availablePeriod,
     daysToPay: hasPayDate(settings) ? daysLeft : null,
     daysLeftInPeriod: daysLeft,
+    nextPayDate: hasPayDate(settings) ? ymd(endDate) : null,
+    periodEndDate: ymd(endDate),
     availablePerDay,
     budgetPct: snap.hasBudget ? Math.max(0, snap.pct) : 0,
     hasBudget: snap.hasBudget,
@@ -228,8 +239,53 @@ export function sanitizeWidgetSnapshot(raw: unknown): WidgetSnapshot | null {
   if (r.v !== 1 || typeof r.availablePeriod !== 'number') return null;
   const hasNew = typeof r.daysLeftInPeriod === 'number';
   if (r.daysToPay !== null && typeof r.daysToPay !== 'number') return null;
-  if (hasNew) return r as WidgetSnapshot;
-  // Foto vieja: solo traía `daysToPay`. Un 0 es ambiguo (irregular o cobro hoy): se trata como «sin dato» para no mentir.
-  const old = typeof r.daysToPay === 'number' ? r.daysToPay : 0;
-  return { ...(r as WidgetSnapshot), daysToPay: old > 0 ? old : null, daysLeftInPeriod: old > 0 ? old : 0 };
+  let out: WidgetSnapshot;
+  if (hasNew) {
+    out = r as WidgetSnapshot;
+  } else {
+    // Foto vieja: solo traía `daysToPay`. Un 0 es ambiguo (irregular o cobro hoy): se trata como «sin dato» para no mentir.
+    const old = typeof r.daysToPay === 'number' ? r.daysToPay : 0;
+    out = { ...(r as WidgetSnapshot), daysToPay: old > 0 ? old : null, daysLeftInPeriod: old > 0 ? old : 0 };
+  }
+  // Fotos anteriores a `periodEndDate`: se deduce de cuándo se tomaron (fecha local de `updatedAt` + los días que decían quedar).
+  // Sin ese dato (0 días) no se puede saber cuándo termina el período: la foto se pinta tal cual, como antes.
+  if (typeof out.periodEndDate !== 'string' || !widgetDateOf(out.periodEndDate)) {
+    const at = new Date(out.updatedAt);
+    if (out.daysLeftInPeriod > 0 && !isNaN(at.getTime())) {
+      const end = new Date(at.getFullYear(), at.getMonth(), at.getDate() + out.daysLeftInPeriod, 12, 0, 0, 0);
+      out = { ...out, periodEndDate: ymd(end), nextPayDate: out.daysToPay === null ? null : ymd(end) };
+    } else {
+      const { periodEndDate: _p, nextPayDate: _n, ...rest } = out;
+      out = rest as WidgetSnapshot;
+    }
+  }
+  return out;
+}
+
+/** Texto del widget cuando la foto ya es de otro período (el cobro llegó o pasó): no se muestran cifras viejas. */
+export const WIDGET_STALE_TEXT = 'Abre la app para actualizar';
+
+export type WidgetFresh = { stale: false; snap: WidgetSnapshot } | { stale: true; snap: null };
+
+/**
+ * Pone la foto al día de HOY al pintar (el widget se repinta cada ~30 minutos aunque no abras la app). Los días al cobro
+ * y los que le quedan al período se recalculan con la fecha local de `now` y `periodEndDate`; el disponible por día
+ * se reparte entre los días que de verdad quedan. Si esa fecha ya llegó (hoy o antes), la foto es de un período que
+ * terminó: `stale: true` y el widget dice «Abre la app para actualizar» en vez de mostrar cifras viejas. Una foto sin
+ * `periodEndDate` (no se puede deducir) se devuelve igual.
+ */
+export function freshenWidgetSnapshot(snap: WidgetSnapshot, now: Date): WidgetFresh {
+  const end = snap.periodEndDate ? widgetDateOf(snap.periodEndDate) : null;
+  if (!end) return { stale: false, snap };
+  const remaining = Math.round((end.getTime() - noon(now).getTime()) / 86400000);
+  if (remaining <= 0) return { stale: true, snap: null };
+  return {
+    stale: false,
+    snap: {
+      ...snap,
+      daysLeftInPeriod: remaining,
+      daysToPay: snap.daysToPay === null ? null : remaining,
+      availablePerDay: round2(snap.availablePeriod / remaining),
+    },
+  };
 }
