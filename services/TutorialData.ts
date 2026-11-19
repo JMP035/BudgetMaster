@@ -302,9 +302,24 @@ export const TUTORIALS: Tutorial[] = [
             },
             {
                 id: 'mov_7', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
-                title: 'Clasifica bien tus movimientos',
-                description: 'La app clasifica sola por el nombre del comercio: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio y lo clasifica así la próxima vez. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía): corrige la categoría de un depósito, activa «Recordar» y los próximos del mismo origen llegan ya clasificados. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
-                noSmsDescription: 'Elige la categoría según el tipo de gasto: Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery), Supermercado es la despensa, y Comida es el resto (panaderías, mercados, tiendas de barrio). Combustible es la gasolina; Transporte, taxis, parqueos y peajes. Si te equivocaste, cámbiala en el detalle del movimiento. Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
+                title: 'Cómo clasifica la app',
+                lead: 'La app clasifica sola por el nombre del comercio:',
+                noSmsLead: 'Elige la categoría según el tipo de gasto:',
+                description: '• Restaurantes es la comida ya preparada (restaurantes, comida rápida, cafeterías y delivery).\n• Supermercado es la despensa.\n• Comida es el resto (panaderías, mercados, tiendas de barrio).\n• Combustible es la gasolina.\n• Transporte: taxis, parqueos y peajes.',
+            },
+            {
+                id: 'mov_7b', screen: 'transactions', position: 'center', icon: 'pricetag-outline',
+                title: 'Corrige y la app aprende',
+                lead: 'Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar».',
+                noSmsLead: 'Si te equivocaste, cámbiala en el detalle del movimiento.',
+                description: 'La app aprende ese comercio y lo clasifica así la próxima vez.\n\nSi no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
+                noSmsDescription: 'Si no hay una que te sirva, crea una ahí mismo con «+ Nueva categoría» (la última casilla de la lista).',
+            },
+            {
+                id: 'mov_7c', screen: 'transactions', position: 'center', icon: 'pricetag-outline', requiresSms: true,
+                title: 'Tus depósitos por SMS',
+                lead: 'En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía).',
+                description: 'Así que corrige la categoría de un depósito, activa «Recordar» y los próximos del mismo origen llegan ya clasificados.',
             },
         ],
     },
@@ -388,7 +403,19 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'sms_5', position: 'center', icon: 'pricetag-outline',
                 title: 'Clasificación automática',
-                description: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría: Restaurantes para comida preparada, Supermercado para la despensa y Comida para el resto. Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio. En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía), así que los próximos depósitos del mismo origen llegan ya clasificados. Si ya creaste una fuente de ingreso, un depósito que se le parece se vincula solo; si la app no está segura, el centro de revisión te pregunta «¿Es tu sueldo?» y tú confirmas con Sí o No.',
+                lead: 'Cada movimiento se guarda con el nombre del comercio (sin la zona ni la sucursal, que quedan como ubicación) y una categoría:',
+                description: '• Restaurantes para comida preparada.\n• Supermercado para la despensa.\n• Comida para el resto.',
+            },
+            {
+                id: 'sms_5b', position: 'center', icon: 'school-outline',
+                title: 'Corrige y la app aprende',
+                description: 'Si una categoría no es la correcta, cámbiala en el detalle del movimiento y activa «Recordar»: la app aprende ese comercio.',
+            },
+            {
+                id: 'sms_5c', position: 'center', icon: 'cash-outline',
+                title: 'Tus depósitos y tu sueldo',
+                lead: 'En ingresos por SMS, la app recuerda el origen del depósito (banco, cuenta y quién lo envía), así que los próximos depósitos del mismo origen llegan ya clasificados.',
+                description: 'Si ya creaste una fuente de ingreso, un depósito que se le parece se vincula solo; si la app no está segura, el centro de revisión te pregunta «¿Es tu sueldo?» y tú confirmas con Sí o No.',
             },
             {
                 id: 'sms_6', position: 'center', icon: 'shield-checkmark-outline',
