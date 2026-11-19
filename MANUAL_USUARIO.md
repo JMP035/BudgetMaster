@@ -446,7 +446,7 @@ Con **Ajustes → Seguridad Biométrica** activada, la app pide tu **huella digi
 
 ## 12. Notificaciones y alertas
 
-La app envía notificaciones locales (acepta el permiso la primera vez). Están pensadas para ayudarte sin molestar: **ya no hay un aviso por cada gasto**, y todo se mide en tu **período de pago** (desde el día que cae tu sueldo), según lo que tienes registrado. Las cifras de presupuesto se miden contra el **presupuesto del período** (tu mensual repartido si cobras por quincena o por semana).
+La app envía notificaciones locales. El permiso te lo pide cuando terminas la configuración inicial (nunca encima de la pantalla de bienvenida ni durante la configuración); si ya la habías terminado, te lo pide al abrir la app, apenas pasa la pantalla de bienvenida. Al aceptarlo, los avisos se programan en ese momento. Están pensadas para ayudarte sin molestar: **ya no hay un aviso por cada gasto**, y todo se mide en tu **período de pago** (desde el día que cae tu sueldo), según lo que tienes registrado. Las cifras de presupuesto se miden contra el **presupuesto del período** (tu mensual repartido si cobras por quincena o por semana).
 
 **Reglas generales**
 

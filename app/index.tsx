@@ -177,6 +177,11 @@ function AppContent() {
   const quickAddHandledRef = useRef<string | null>(null);
   // true cuando loadData ya leyó los ajustes (antes, onboardingComplete es solo el valor por defecto).
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  // Permiso de notificaciones: se pide UNA vez por sesión y nunca encima de la splash ni del onboarding (en Android 13+ el
+  // diálogo del sistema taparía la pantalla). Quien ya completó el onboarding lo recibe al terminar la splash; quien lo
+  // completa ahora, al terminar el onboarding (handleOnboarding).
+  const notifAskedRef = useRef(false);
+  const [notifStartup, setNotifStartup] = useState(false);
 
   // ── Carga inicial ─────────────────────────────────────────
   const loadData = useCallback(async (): Promise<AppData> => {
@@ -228,6 +233,24 @@ function AppContent() {
     return { ...data, settings: settingsToUse };
   }, []);
 
+  // Avisos de arranque (plan programado, avisos de configuración) con los datos del momento. Sin permiso no hacen nada.
+  const runNotificationStartup = useCallback(async () => {
+    const data = await StorageService.loadAllData();
+    await NotificationService.runStartupNotifications(data);
+  }, []);
+
+  // Pide el permiso de notificaciones y, apenas se concede, corre los avisos de arranque (en la primera sesión no corrían).
+  const askNotifications = useCallback(async () => {
+    if (notifAskedRef.current) return;
+    notifAskedRef.current = true;
+    try {
+      const granted = await NotificationService.requestPermissions();
+      if (granted) await runNotificationStartup();
+    } catch (e) {
+      console.warn("[notificaciones] permiso y arranque:", e);
+    }
+  }, [runNotificationStartup]);
+
   // Refresca el estado de settings cuando storage guarda desde un sheet suelto (p. ej. «+ Nueva categoría»).
   useEffect(() => onSettingsChanged(setSettings), []);
 
@@ -245,10 +268,17 @@ function AppContent() {
           if (!done && !guide?.tourDeferred) setTimeout(() => setAutoTutorial('tour_inicial'), 1800);
         }).catch(() => { });
       }
-      const granted = await NotificationService.requestPermissions();
-      if (granted) await NotificationService.runStartupNotifications(data);
-    })().catch(e => console.warn("[startup] notificaciones:", e));
+      // El permiso de notificaciones se pide después (ver abajo), no al montar.
+      setNotifStartup(!!data.settings.onboardingComplete);
+    })().catch(e => console.warn("[startup] carga inicial:", e));
   }, [loadData]);
+
+  // Quien ya completó el onboarding: el permiso se pide al terminar la splash (no encima de ella).
+  useEffect(() => {
+    if (showSplash || !notifStartup) return;
+    const timer = setTimeout(() => { void askNotifications(); }, 600);
+    return () => clearTimeout(timer);
+  }, [showSplash, notifStartup, askNotifications]);
 
   // ── Sincronización automática de SMS ──────────────────────
   // maybeAutoSync ya valida Android, permiso, interruptores y el límite de 15 min (persistido).
@@ -393,6 +423,8 @@ function AppContent() {
     const updated = { ...settings, cardsOnboardingComplete: true };
     await StorageService.saveSettings(updated);
     setSettings(updated);
+    // Los avisos de arranque esperan a este onboarding (runStartupNotifications lo exige): ahora ya pueden correr.
+    void runNotificationStartup().catch(e => console.warn("[notificaciones] arranque tras tarjetas:", e));
   };
 
   // «Ya no la tengo»: borra la deuda declarada en el onboarding viejo (legado; no se migra a cuotas).
@@ -405,6 +437,9 @@ function AppContent() {
   const hClearAll = async () => {
     await NotificationService.cancelAll();
     await StorageService.clearAllData();
+    // Vuelve el onboarding: al terminarlo se pide el permiso de nuevo (si ya estaba concedido no sale ningún diálogo).
+    notifAskedRef.current = false;
+    setNotifStartup(false);
     // La foto del widget se borró con los datos: se repinta ya (estado vacío «Abre BudgetMaster…»), sin esperar a los ~30 min.
     void clearWidgets();
     await loadData();
@@ -433,6 +468,8 @@ function AppContent() {
       createdAt: new Date().toISOString(),
     });
     await loadData();
+    // Onboarding terminado: AHORA se pide el permiso de notificaciones (antes del recorrido, para que el diálogo no se le cruce).
+    await askNotifications();
 
     const importAfter = Platform.OS === "android" && commit.settings.smsEnabled
       && r.draft.sms.importAfter && r.draft.sms.granted;
