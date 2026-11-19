@@ -406,11 +406,15 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (e2) Pares de transferencia entre cuentas propias: los `auto` se vinculan, el resto se propone.
     let transferPairs: TransferPair[] = [];
+    // Pares que el lote vinculó solo: uno puede unir un SMS nuevo con un movimiento ANTERIOR (otra sync o manual);
+    // al deshacer, la mitad que se conserva vuelve a ser lo que era.
+    const linkedPairs: NonNullable<SmsBatchRecord['transferPairs']> = [];
     try {
       const pairs = findTransferPairs(allTxs, new Set(dupIgnoredList), { onlyIds: newIds, accounts });
       transferPairs = pairs.filter(p => !p.auto);
       for (const p of pairs.filter(x => x.auto)) {
         await StorageService.linkTransferPair(p.outId, p.inId);
+        linkedPairs.push({ outId: p.outId, inId: p.inId });
         mutated = true;
       }
     } catch (e) {
@@ -504,7 +508,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
 
     // (f) Lote para "Deshacer".
     let batchId: string | null = null;
-    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0 || cardPayments.length > 0 || balanceAnchors.length > 0) {
+    if (newTxs.length > 0 || newInsts.length > 0 || fixedMarks.length > 0 || fixedMerges.length > 0 || cardPayments.length > 0 || balanceAnchors.length > 0 || linkedPairs.length > 0) {
       batchId = `smsb_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
       await StorageService.recordSmsBatch({
         id: batchId,
@@ -515,6 +519,7 @@ async function runSmsSync(mode: SmsSyncMode): Promise<SyncResult> {
         fixedMarks,
         ...(fixedMerges.length > 0 ? { fixedMerges } : {}),
         ...(incomeLinks.length > 0 ? { incomeLinks } : {}),
+        ...(linkedPairs.length > 0 ? { transferPairs: linkedPairs } : {}),
         ...(cardPayments.length > 0 ? { cardPayments } : {}),
         ...(balanceAnchors.length > 0 ? { balanceAnchors } : {}),
       });

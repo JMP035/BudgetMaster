@@ -2,6 +2,7 @@
 // Sin react-native ni AsyncStorage: de ./storage solo `import type`.
 import type { CreditInstallment, FixedExpense, SmsBatchRecord, Transaction } from './storage';
 import { removeAnchorsForTx } from './PeriodAnchors';
+import { revertTransferPair } from './TransferPairs';
 import type { PeriodAnchor } from './PeriodAnchors';
 
 /**
@@ -32,6 +33,31 @@ export function planIncomeLinksUndo(
   let nextAnchors = anchors;
   for (const l of links) nextAnchors = removeAnchorsForTx(nextAnchors, l.txId);
   return { txs, anchors: nextAnchors, txsChanged, anchorsChanged: nextAnchors.length !== anchors.length, reverted };
+}
+
+/**
+ * Pares de transferencia que el lote vinculó solos. Si el lote borra UNA mitad y la otra se conserva (era de una
+ * sync anterior o un registro manual), la que queda vuelve a su tipo y categoría de antes (revertTransferPair):
+ * sin esto quedaría como transferencia sin pareja y su gasto real desaparecería de estadísticas y presupuesto.
+ * Si se borran las dos, o se conservan las dos, no se toca nada. Lotes viejos sin el campo: sin cambios.
+ */
+export function planTransferPairsUndo(
+  pairs: SmsBatchRecord['transferPairs'] | undefined,
+  remainingTxs: Transaction[],
+  removedIds: Set<string>,
+): { txs: Transaction[]; changed: boolean } {
+  if (!pairs || pairs.length === 0) return { txs: remainingTxs, changed: false };
+  let txs = remainingTxs;
+  let changed = false;
+  for (const p of pairs) {
+    const outGone = removedIds.has(p.outId);
+    const inGone = removedIds.has(p.inId);
+    if (outGone === inGone) continue;
+    const keptId = outGone ? p.inId : p.outId;
+    const next = revertTransferPair(txs, keptId);
+    if (next !== txs) { txs = next; changed = true; }
+  }
+  return { txs, changed };
 }
 
 /** Plan (sin escribir nada) para deshacer un lote de sincronización. Criterio de "editado": D6. */

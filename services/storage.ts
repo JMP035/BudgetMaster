@@ -6,7 +6,7 @@ import { mergeManualIntoSms, splitMerged } from './DuplicateDetector';
 import { applyTransferPair, clearPairIdOfPartner, revertTransferPair, transferPairKey } from './TransferPairs';
 import { merchantKey, merchantOfTransaction, sameMerchantTxIds, upsertMerchantRule } from './MerchantRules';
 import { incomeKeyOfTx, incomeOriginLabelOfTx, sameOriginTxIds, upsertIncomeRule } from './IncomeRules';
-import { planIncomeLinksUndo, planSmsUndo } from './SmsUndoPlan';
+import { planIncomeLinksUndo, planSmsUndo, planTransferPairsUndo } from './SmsUndoPlan';
 import { applyCardPaymentMatch, applyCardPaymentProposal, buildCardPaymentTxs, cardPaymentProposalKey, planCardPaymentsUndo } from './CardStatement';
 import type { CardPaymentMatch } from './CardStatement';
 import { applyManualEffects, balanceModeOf, planBalanceAnchorsUndo, planManualEffectsRevert, planSmsBalanceAnchors, withBalanceAnchor } from './Balances';
@@ -355,6 +355,8 @@ export interface SmsBatchRecord {
   fixedMerges?: Array<{ smsId: string; expenseId: string; manual: Transaction }>;
   /** Ingresos que el lote vinculó solo a una fuente (para deshacer: categoría previa y ancla del período). */
   incomeLinks?: Array<{ txId: string; prevCategory: string; anchorKey?: string }>;
+  /** Pares de transferencia que el lote vinculó solo (para deshacer: la mitad que se conserva, p. ej. de una sync anterior, vuelve a su tipo). */
+  transferPairs?: Array<{ outId: string; inId: string }>;
   /** Pagos de tarjeta que el lote emparejó solo (para deshacer: la salida vuelve a su tipo y el pago pierde su estado). */
   cardPayments?: Array<{ txId: string; cardId: string; cutKey: string; outId?: string; outOnly?: boolean }>;
   /** Cuentas de saldo automático que el lote re-ancló con el saldo del SMS (para deshacer: vuelve el ancla previa). */
@@ -1234,8 +1236,11 @@ export const StorageService = {
     const cardUndo = (batch.cardPayments && batch.cardPayments.length > 0)
       ? planCardPaymentsUndo(batch.cardPayments, incomeUndo ? incomeUndo.txs : remaining)
       : null;
-    if (plan.removeTxs.length > 0 || dropped.changed || incomeUndo?.txsChanged || cardUndo?.changed) {
-      await this.saveTransactions(cardUndo ? cardUndo.txs : (incomeUndo ? incomeUndo.txs : remaining));
+    // Pares de transferencia del lote: si se va una mitad y la otra (anterior al lote) se conserva, esa vuelve a ser gasto/ingreso.
+    const afterCards = cardUndo ? cardUndo.txs : (incomeUndo ? incomeUndo.txs : remaining);
+    const pairUndo = planTransferPairsUndo(batch.transferPairs, afterCards, plan.removedTxIds);
+    if (plan.removeTxs.length > 0 || dropped.changed || incomeUndo?.txsChanged || cardUndo?.changed || pairUndo.changed) {
+      await this.saveTransactions(pairUndo.txs);
     }
     if (incomeUndo?.anchorsChanged) await this.savePeriodAnchors(incomeUndo.anchors);
     // Cuentas de saldo automático que el lote re-ancló con el saldo del SMS: vuelve el ancla de antes.
