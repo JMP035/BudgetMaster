@@ -796,6 +796,7 @@ export default function DashboardScreen({
                 accounts, txs: transactions, insts: creditInstallments, fixed: fixedExpenses, sources: incomeSources,
                 exchangeRate: settings.exchangeRate, monthlyIncome: settings.monthlyIncome,
                 payRules: sanitizePayRules(settings.payRules), cycle: fixedCycleConfig(settings),
+                paymentCycle: settings.paymentCycle,
                 periodAt: d => {
                     const fp = getCurrentFinancialPeriod(settings, d);
                     return { start: fp.start, end: fp.end, nextStart: fp.nextStart };

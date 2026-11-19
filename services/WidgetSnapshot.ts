@@ -172,6 +172,7 @@ export function buildWidgetSnapshot(data: WidgetSnapshotData, now: Date): Widget
     monthlyIncome: settings.monthlyIncome,
     payRules: sanitizePayRules(settings.payRules),
     cycle: fixedCycleConfig(settings),
+    paymentCycle: settings.paymentCycle,
     periodAt: data.periodAt,
   };
 

@@ -64,6 +64,7 @@ function ctxOf(over: Partial<CapacityContext>): CapacityContext {
   return {
     now: d(2026, 11, 18, 10), accounts: [visa, bank(4000)], txs: cardTxs, insts: [], fixed: [luz], sources: [],
     exchangeRate: 7.7, monthlyIncome: 8000, payRules: DEFAULT_PAY_RULES, cycle: fixedCycleConfig(settings),
+    paymentCycle: 'monthly',
     periodAt: (x: Date) => computeFinancialPeriod(settings, x, null) as never,
     ...over,
   };

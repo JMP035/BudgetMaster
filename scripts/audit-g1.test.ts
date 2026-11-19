@@ -3,9 +3,13 @@ process.env.TZ = 'America/Guatemala';
 //   npm run test:audit-g1   →   sucrase-node scripts/audit-g1.test.ts
 import { resetMemoryStorage } from './_async-storage-mock';
 
-import { setPeriodStartResolver } from '../services/FixedCycle';
+import { capacityFor, resourcesUntil } from '../services/Capacity';
+import type { CapacityContext } from '../services/Capacity';
+import { computeFinancialPeriod } from '../services/FinancialPeriod';
+import { fixedCycleConfig, setPeriodStartResolver } from '../services/FixedCycle';
+import { DEFAULT_PAY_RULES } from '../services/PayCalendar';
 import { DEFAULT_SETTINGS, StorageService } from '../services/storage';
-import type { FixedExpense, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
+import type { Account, FixedExpense, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
 
 let failures = 0;
 let checks = 0;
@@ -24,6 +28,15 @@ function tx(id: string, type: Transaction['type'], amount: number, at: Date, ext
   return {
     id, amount, description: `mov ${id}`, category: type === 'income' ? 'salary' : 'other', date: at.toISOString(),
     type, source: 'sms', currency: 'Q', ...extra,
+  };
+}
+
+const near = (a: number, b: number, eps = 0.01) => Math.abs(a - b) < eps;
+
+function acct(extra: Partial<Account>): Account {
+  return {
+    id: 'a', name: 'Cuenta', type: 'bank', currency: 'Q', balance: 0, initialBalance: 0, color: '#000', icon: 'x',
+    isActive: true, createdAt: '2026-01-01T12:00:00.000Z', ...extra,
   };
 }
 
@@ -102,6 +115,37 @@ async function scenarios(): Promise<void> {
     });
     await StorageService.undoSmsBatch('b_both', { includeEdited: false });
     check('G1-3: par entero del lote: se borra completo', (await StorageService.getTransactions()).length === 0);
+  }
+  // ───────────────────────────────────────────────────────────
+  // 4. Capacidad con ingreso declarado: se reparte por ciclo (no se resta lo del período a un ingreso mensual)
+  // ───────────────────────────────────────────────────────────
+  {
+    const visa = acct({ id: 'c1', name: 'Visa', type: 'credit', cutoffDay: 9, paymentDueDay: 22 });
+    const capCtx = (paymentCycle: PaymentCycle, now: Date, txs: Transaction[]): CapacityContext => {
+      const settings = { paymentCycle, paymentDay: 15, paymentDays: [1, 16], paymentWeekday: 5, monthlyIncome: 8000, exchangeRate: 7.7 } as unknown as UserSettings;
+      return {
+        now, accounts: [visa], txs, insts: [], fixed: [], sources: [], exchangeRate: 7.7, monthlyIncome: 8000,
+        payRules: DEFAULT_PAY_RULES, cycle: fixedCycleConfig(settings), paymentCycle,
+        periodAt: (x: Date) => computeFinancialPeriod(settings, x, null) as never,
+      };
+    };
+    const card3000: Transaction = tx('k1', 'expense', 3000, d(2026, 10, 20), { accountId: 'c1', source: 'manual' });
+    // Semanal: miércoles 18/11, la tarjeta de Q3,000 vence el 22/11 (en 4 días) y ya se gastaron Q1,500 esta semana.
+    const wNow = d(2026, 11, 18, 10);
+    const wk = capCtx('weekly', wNow, [card3000, tx('g1', 'expense', 1500, d(2026, 11, 16), { source: 'manual' })]);
+    const wRes = capacityFor(visa, wk)!;
+    check('G1-4: semanal, ingreso Q8,000/mes, Q1,500 gastados: recursos ≈ 1846 − 1500 (no 6,500)',
+      !!wRes && near(wRes.resources, 8000 * 12 / 52 - 1500, 0.02), String(wRes && wRes.resources));
+    check('G1-4: semanal: la tarjeta de Q3,000 que vence en 4 días sale en rojo', !!wRes && wRes.level === 'red', String(wRes && wRes.level));
+    // Quincenal: recursos = 4,000 − gastado de la quincena.
+    const bNow = d(2026, 11, 20, 10);
+    const bi = capCtx('biweekly', bNow, [card3000, tx('g2', 'expense', 1000, d(2026, 11, 18), { source: 'manual' })]);
+    const bRes = resourcesUntil(bi, d(2026, 11, 22))!;
+    check('G1-4: quincenal: recursos = 4,000 − 1,000', near(bRes.resources, 3000), String(bRes.resources));
+    // Mensual: sin cambio (regresión).
+    const mo = capCtx('monthly', bNow, [card3000, tx('g3', 'expense', 1000, d(2026, 11, 18), { source: 'manual' })]);
+    const mRes = resourcesUntil(mo, d(2026, 11, 22))!;
+    check('G1-4: mensual sin cambio: recursos = 8,000 − 1,000', near(mRes.resources, 7000), String(mRes.resources));
   }
 }
 

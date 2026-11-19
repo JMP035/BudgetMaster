@@ -177,6 +177,7 @@ function toCapacityCtx(i: Inputs, now: Date): CapacityContext {
         monthlyIncome: i.settings.monthlyIncome,
         payRules: sanitizePayRules(i.settings.payRules),
         cycle: fixedCycleConfig(i.settings),
+        paymentCycle: i.settings.paymentCycle,
         periodAt: periodAtFor(i.settings),
     };
 }

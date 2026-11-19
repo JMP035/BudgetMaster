@@ -9,7 +9,8 @@
 // se cuentan los ingresos esperados antes de la fecha de pago.
 // Si ninguna cuenta lleva saldo, se usa el INGRESO DECLARADO que queda del período (basis 'declared') y el mensaje lo
 // dice. El USD se convierte con el tipo de cambio solo para el ratio; las partes conservan sus monedas.
-import type { Account, CreditInstallment, FixedExpense, IncomeSource, Transaction } from './storage';
+import type { Account, CreditInstallment, FixedExpense, IncomeSource, PaymentCycle, Transaction } from './storage';
+import { periodBudgetFactor } from './PeriodBudget';
 import {
   dueDateInPeriod, isPaidForPeriod, nextPeriod, periodFor, storedToLocalDate,
 } from './FixedCycle';
@@ -52,6 +53,8 @@ export interface CapacityContext {
   monthlyIncome: number;
   payRules: PayRules;
   cycle: FixedCycleConfig;
+  /** Ciclo de pago de la persona: reparte el ingreso mensual declarado a lo que toca a un período (semana, quincena). */
+  paymentCycle: PaymentCycle;
   /** Período de pago (real, con el inicio del sueldo) que contiene a esa fecha. */
   periodAt: (d: Date) => PeriodRange & { nextStart: Date };
 }
@@ -100,7 +103,11 @@ export function expectedIncomeUntil(ctx: CapacityContext, until: Date): { total:
   return { total: round2(items.reduce((s, i) => s + i.amountQ, 0)), items };
 }
 
-/** Ingreso declarado que queda del período: lo declarado menos lo gastado (sin cargos de tarjeta: esos van en su estado). */
+/**
+ * Ingreso declarado que queda del período: lo que toca a UN período del ciclo (mensual × factor: la mitad en
+ * quincenal, ×12/52 en semanal, igual que el presupuesto) menos lo gastado en ese período (sin cargos de tarjeta:
+ * esos van en su estado).
+ */
 function declaredRemaining(ctx: CapacityContext): number {
   if (!(ctx.monthlyIncome > 0)) return 0;
   const rate = rateOf(ctx);
@@ -118,7 +125,7 @@ function declaredRemaining(ctx: CapacityContext): number {
     if (n < lo || n > hi) continue;
     spent += toQ(t.amount, t.currency ?? 'Q', rate);
   }
-  return Math.max(0, round2(ctx.monthlyIncome - spent));
+  return Math.max(0, round2(ctx.monthlyIncome * periodBudgetFactor(ctx.paymentCycle) - spent));
 }
 
 export interface ResourcesResult {
