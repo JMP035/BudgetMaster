@@ -7,15 +7,15 @@ import {
 } from '../services/DuplicateDetector';
 import {
   FIXED_AUTO_THRESHOLD, FIXED_PROPOSE_THRESHOLD, matchFixedExpenses,
-  findFixedFusions, findPastSmsForFixed, fixedRejectKey, planFixedFusion, rankFixedForTx, relinkFixedAfterSplit,
+  findFixedFusions, findInstallmentOverlap, findPastSmsForFixed, fixedRejectKey, planFixedFusion, rankFixedForTx, relinkFixedAfterSplit,
 } from '../services/FixedExpenseMatcher';
 import {
-  cycleKeyFor, cycleKeyFromFeTxId, defaultPaidDate, dueDateInPeriod, feTxId, fixedCycleConfig, fixedDueInfo,
-  fixedIdFromFeTxId, nextFixedReminder, normalizeCycleKey, periodFor, planFixedPeriodReset,
+  buildFixedPaidTx, cycleKeyFor, cycleKeyFromFeTxId, defaultPaidDate, dueDateInPeriod, feTxId, fixedCycleConfig, fixedDueInfo,
+  fixedIdFromFeTxId, nextFixedReminder, normalizeCycleKey, normalizeFixedExpenses, periodFor, planFixedPeriodReset,
 } from '../services/FixedCycle';
 import type { FixedCycleConfig } from '../services/FixedCycle';
 import { planSmsUndo } from '../services/SmsUndoPlan';
-import type { FixedExpense, SmsBatchRecord, Transaction } from '../services/storage';
+import type { CreditInstallment, FixedExpense, SmsBatchRecord, Transaction } from '../services/storage';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { R4_BODY } = require('./sms-corpus') as typeof import('./sms-corpus');
@@ -475,9 +475,9 @@ console.log('Gasto fijo ↔ SMS (Disney)');
     const dec1 = dSms('d-dec', d(2026, 12, 1, 8));
     const feDia10 = fixed('fe_d10', 'Disney+', 11.49, 10, { currency: 'USD', category: 'streaming' });
     const withKey = matchFixedExpenses([dec1], [{ ...feDia10, smsMatchKey: 'disney' }], [dec1], NOW_DEC, { cycle: CAL });
-    check('aprendizaje: con clave 85 automática', withKey.length === 1 && withKey[0].score === 85 && withKey[0].auto === true, JSON.stringify(withKey));
+    check('aprendizaje: con clave 100 automática (el día 1 ya no resta frente al vencimiento del 10)', withKey.length === 1 && withKey[0].score === 100 && withKey[0].auto === true, JSON.stringify(withKey));
     const noKey = matchFixedExpenses([dec1], [feDia10], [dec1], NOW_DEC, { cycle: CAL });
-    check('aprendizaje: sin clave 75 no automática', noKey.length === 1 && noKey[0].score === 75 && noKey[0].auto === false, JSON.stringify(noKey));
+    check('aprendizaje: sin clave 90 automática (cualquier día del período vale 20)', noKey.length === 1 && noKey[0].score === 90 && noKey[0].auto === true, JSON.stringify(noKey));
     // Precio distinto (13% > 10%) con clave y dentro de la ventana de pago (8 dic): 50 + 0 + 20.
     const dec8 = dSms('d-dec8', d(2026, 12, 8, 8), { amount: 12.99 });
     const price = matchFixedExpenses([dec8], [{ ...feDia10, smsMatchKey: 'disney' }], [dec8], NOW_DEC, { cycle: CAL });
@@ -845,6 +845,123 @@ console.log('Período de presupuesto (paymentDay=27)');
     check('config: paymentDay NaN -> 1', fixedCycleConfig({ paymentCycle: 'monthly', paymentDay: NaN, paymentDays: [15, 30] }).anchorDay === 1);
     check('config: paymentDay 40 -> 31', fixedCycleConfig({ paymentCycle: 'monthly', paymentDay: 40, paymentDays: [15, 30] }).anchorDay === 31);
   }
+}
+
+// ═════════════ Gastos fijos con cuenta y período ═════════════
+console.log('Gastos fijos con cuenta y período');
+{
+  const eegsa = fixed('eegsa', 'EEGSA', 687.2, 28);
+
+  // 1. Cualquier día del período vale 20: SMS del 03/07 por el mismo monto -> 90 y automático.
+  const early = sms('e-early', 687.2, d(2026, 7, 3), 'EEGSA WEB');
+  const m1 = matchFixedExpenses([early], [eegsa], [early], NOW, { cycle: CAL });
+  check('período: SMS del 03/07 -> 90 automático', m1.length === 1 && m1[0].score === 90 && m1[0].auto === true, JSON.stringify(m1));
+  check('período: razón "dentro del mismo período"', !!m1[0]?.reasons.includes('dentro del mismo período'));
+
+  // 2. Otro período: no coincide (calendario y día 27).
+  const prev = sms('e-prev', 687.2, d(2026, 6, 29), 'EEGSA WEB');
+  check('período: SMS del 29/06 -> 0 coincidencias', matchFixedExpenses([prev], [eegsa], [prev], NOW, { cycle: CAL }).length === 0);
+  const p27 = sms('e-p27', 687.2, d(2026, 7, 25), 'EEGSA WEB');
+  check('período P27: SMS del 25/07 cae en el período anterior -> 0', matchFixedExpenses([p27], [eegsa], [p27], NOW, { cycle: P27 }).length === 0);
+
+  // 3. Cuenta: Internet casa Q250 vs TIGO Q260.
+  const net = fixed('net', 'Internet casa', 250, 28, { category: 'internet' });
+  const tigoNo = sms('tg-no', 260, d(2026, 7, 10), 'TIGO');
+  const m3a = matchFixedExpenses([tigoNo], [net], [tigoNo], NOW, { cycle: CAL });
+  check('cuenta: sin cuentas 70 no automático', m3a[0]?.score === 70 && m3a[0]?.auto === false, JSON.stringify(m3a));
+  const tigoAcc = sms('tg-acc', 260, d(2026, 7, 10), 'TIGO', { accountId: 'bac' });
+  const m3b = matchFixedExpenses([tigoAcc], [{ ...net, accountId: 'bac' }], [tigoAcc], NOW, { cycle: CAL });
+  check('cuenta: misma cuenta 85 automático', m3b[0]?.score === 85 && m3b[0]?.auto === true, JSON.stringify(m3b));
+  check('cuenta: razón "misma cuenta o tarjeta"', !!m3b[0]?.reasons.includes('misma cuenta o tarjeta'));
+
+  // 4. Cuenta distinta: 65 y nunca automático.
+  const other = sms('e-bi', 687.2, d(2026, 7, 10), 'EEGSA WEB', { accountId: 'bi' });
+  const m4 = matchFixedExpenses([other], [{ ...eegsa, accountId: 'bac' }], [other], NOW, { cycle: CAL });
+  check('cuenta distinta: 65 y no automático', m4[0]?.score === 65 && m4[0]?.auto === false, JSON.stringify(m4));
+  check('cuenta distinta: razón "otra cuenta o tarjeta"', !!m4[0]?.reasons.includes('otra cuenta o tarjeta'));
+
+  // 5. El gasto fijo tiene cuenta y el SMS no: sin ajuste.
+  const noAcc = sms('e-noacc', 687.2, d(2026, 7, 10), 'EEGSA WEB');
+  const m5 = matchFixedExpenses([noAcc], [{ ...eegsa, accountId: 'bac' }], [noAcc], NOW, { cycle: CAL });
+  check('cuenta: solo el gasto fijo la tiene -> 90 automático', m5[0]?.score === 90 && m5[0]?.auto === true, JSON.stringify(m5));
+
+  // 6. Dos SMS que coinciden en nombre y cuenta: las dos propuestas.
+  const s1 = sms('e-d1', 687.2, d(2026, 7, 5), 'EEGSA WEB', { accountId: 'bac' });
+  const s2 = sms('e-d2', 687.2, d(2026, 7, 20), 'EEGSA WEB', { accountId: 'bac' });
+  const m6 = matchFixedExpenses([s1, s2], [{ ...eegsa, accountId: 'bac' }], [s1, s2], NOW, { cycle: CAL });
+  check('dos candidatos con la misma cuenta: dos propuestas', m6.length === 2 && m6.every(x => !x.auto), JSON.stringify(m6));
+
+  // 7. Montos.
+  const luz650 = fixed('l650', 'EEGSA', 650, 28);
+  const a1 = matchFixedExpenses([sms('a1', 656, d(2026, 7, 10), 'EEGSA WEB')], [luz650], [], NOW, { cycle: CAL });
+  check('monto 650 vs 656 (0.9 %): "monto igual (±1 %)"', !!a1[0]?.reasons.includes('monto igual (±1 %)') && a1[0]?.score === 90, JSON.stringify(a1));
+  const a2 = matchFixedExpenses([sms('a2', 702, d(2026, 7, 10), 'EEGSA WEB')], [luz650], [], NOW, { cycle: CAL });
+  check('monto 8 %: 20 puntos', a2[0]?.score === 80 && !!a2[0]?.reasons.includes('monto similar (<=10%)'), JSON.stringify(a2));
+  const otherCat = fixed('oc', 'EEGSA', 650, 28, { category: 'other' });
+  const a3 = matchFixedExpenses([sms('a3', 748, d(2026, 7, 10), 'EEGSA WEB')], [otherCat], [], NOW, { cycle: CAL });
+  check('categoría other al 15 %: monto 0 y propuesta', a3.length === 1 && a3[0].score === 60 && a3[0].auto === false, JSON.stringify(a3));
+  const a4 = matchFixedExpenses([sms('a4', 845, d(2026, 7, 10), 'EEGSA WEB')], [luz650], [], NOW, { cycle: CAL });
+  check('utilities al 30 %: monto 10', a4[0]?.score === 70 && !!a4[0]?.reasons.includes('monto variable (<=35%)'), JSON.stringify(a4));
+
+  // 8. Renta con la misma cuenta: nunca automática.
+  const rent = fixed('renta', 'Renta', 3000, 1, { category: 'rent', accountId: 'bac' });
+  const tr = sms('tr', 3000, d(2026, 7, 2), 'TRANSFERENCIA', { category: 'transfer', accountId: 'bac' });
+  const mr = matchFixedExpenses([tr], [rent], [tr], NOW, { cycle: CAL });
+  check('renta con la misma cuenta: propuesta, nunca automática', mr.length === 1 && mr[0].auto === false, JSON.stringify(mr));
+
+  // 9. Fusión con cuenta.
+  const feLuz = fixed('luz', 'EEGSA', 687.2, 28, { accountId: 'bac' });
+  const man = manual('fe_tx_luz_2026-07-01', 687.2, d(2026, 7, 28), 'EEGSA', { fixedExpenseId: 'luz', accountId: 'bac', accountSource: 'user' });
+  const smsBac = sms('f-bac', 687.2, d(2026, 7, 3), 'EEGSA WEB', { accountId: 'bac' });
+  const smsBi = sms('f-bi', 687.2, d(2026, 7, 3), 'EEGSA WEB', { accountId: 'bi' });
+  const fu1 = findFixedFusions([man, smsBac], [feLuz], { cycle: CAL });
+  check('fusión: misma cuenta -> automática', fu1.length === 1 && fu1[0].auto === true && fu1[0].score === 100, JSON.stringify(fu1));
+  const fu2 = findFixedFusions([man, smsBi], [feLuz], { cycle: CAL });
+  check('fusión: otra cuenta -> propuesta', fu2.length === 1 && fu2[0].auto === false && fu2[0].reasons.includes('otra cuenta o tarjeta'), JSON.stringify(fu2));
+  const pl = planFixedFusion(man, smsBi, feLuz, '2026-07-30T20:00:00.000Z', CAL);
+  check('fusión: la cuenta del manual queda en el SMS', pl.merged.accountId === 'bac', JSON.stringify(pl.merged));
+  check('fusión: la cuenta del SMS se guarda en smsPrev', pl.merged.mergedFrom?.smsPrev?.accountId === 'bi', JSON.stringify(pl.merged.mergedFrom));
+
+  // 10. normalizeFixedExpenses.
+  const okFe = fixed('n1', 'Luz', 100, 5);
+  const withAcc = fixed('n2', 'Agua', 50, 5, { accountId: 'bac' });
+  const norm = normalizeFixedExpenses([okFe, withAcc]);
+  check('normalizar: sin accountId conserva la misma referencia', norm[0] === okFe);
+  check('normalizar: con accountId válido conserva la referencia', norm[1] === withAcc);
+  const bad1 = normalizeFixedExpenses([{ ...okFe, accountId: 123 }]);
+  check('normalizar: accountId numérico se elimina', bad1.length === 1 && !('accountId' in bad1[0]) && bad1[0].name === 'Luz');
+  const bad2 = normalizeFixedExpenses([{ ...okFe, accountId: '  ' }]);
+  check('normalizar: accountId en blanco se elimina', bad2.length === 1 && !('accountId' in bad2[0]));
+  check('normalizar: no arreglo -> []', normalizeFixedExpenses(null).length === 0 && normalizeFixedExpenses({}).length === 0 && normalizeFixedExpenses('x').length === 0);
+  check('normalizar: descarta lo que no es objeto', normalizeFixedExpenses([okFe, null, 5, 'a']).length === 1);
+
+  // 11. buildFixedPaidTx.
+  const paidAt = d(2026, 7, 28, 9, 30);
+  const feAcc = fixed('pf', 'Luz', 300, 28, { accountId: 'bac', category: 'utilities' });
+  const t1 = buildFixedPaidTx(feAcc, paidAt, 'fe_tx_pf_2026-07-01', new Set(['bac']));
+  check('buildFixedPaidTx: con cuenta activa la pone', t1.accountId === 'bac' && t1.accountSource === 'user');
+  const t2 = buildFixedPaidTx(feAcc, paidAt, 'fe_tx_pf_2026-07-01', new Set(['otra']));
+  check('buildFixedPaidTx: con cuenta no activa no la pone', !('accountId' in t2) && !('accountSource' in t2));
+  const t3 = buildFixedPaidTx(fixed('pg', 'Luz', 300, 28), paidAt, 'fe_tx_pg_2026-07-01', new Set(['bac']));
+  check('buildFixedPaidTx: sin cuenta igual que antes',
+    JSON.stringify(t3) === JSON.stringify({
+      id: 'fe_tx_pg_2026-07-01', amount: 300, description: 'Luz', category: 'utilities', date: paidAt.toISOString(),
+      type: 'expense', source: 'manual', currency: 'Q',
+    }), JSON.stringify(t3));
+
+  // 12. findInstallmentOverlap.
+  const inst: CreditInstallment = {
+    id: 'i1', accountId: 'visa', name: 'Laptop', totalAmount: 6000, monthlyPayment: 500, totalInstallments: 12,
+    paidInstallments: 2, startDate: '2026-05-01', currency: 'Q', category: 'shopping', isActive: true,
+  };
+  check('visacuota: misma tarjeta y cuota -> la encuentra',
+    findInstallmentOverlap({ amount: 500, currency: 'Q', accountId: 'visa' }, [inst])?.id === 'i1');
+  check('visacuota: dentro de ±1 %', findInstallmentOverlap({ amount: 503, currency: 'Q', accountId: 'visa' }, [inst])?.id === 'i1');
+  check('visacuota: otra tarjeta -> null', findInstallmentOverlap({ amount: 500, currency: 'Q', accountId: 'mc' }, [inst]) === null);
+  check('visacuota: sin cuenta -> null', findInstallmentOverlap({ amount: 500, currency: 'Q' }, [inst]) === null);
+  check('visacuota: otra moneda -> null', findInstallmentOverlap({ amount: 500, currency: 'USD', accountId: 'visa' }, [inst]) === null);
+  check('visacuota: inactiva -> null', findInstallmentOverlap({ amount: 500, currency: 'Q', accountId: 'visa' }, [{ ...inst, isActive: false }]) === null);
+  check('visacuota: monto distinto -> null', findInstallmentOverlap({ amount: 600, currency: 'Q', accountId: 'visa' }, [inst]) === null);
 }
 
 console.log(`\n${checks} comprobaciones, ${failures} fallos`);

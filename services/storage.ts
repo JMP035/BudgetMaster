@@ -15,7 +15,7 @@ import { planAssignTransferDestination, planDismissTransferQuestion } from './Tr
 import { planIncomeLink, sanitizeIncomeSources } from './IncomeSources';
 import {
   cycleKeyFor, cycleKeyFromFeTxId, dueDateInPeriod, fixedCycleConfig, fixedIdFromFeTxId, normalizeCycleKey,
-  periodFor, planFixedPeriodReset, setPeriodStartResolver, storedToLocalDate,
+  normalizeFixedExpenses, periodFor, planFixedPeriodReset, setPeriodStartResolver, storedToLocalDate,
 } from './FixedCycle';
 import type { FixedCycleConfig } from './FixedCycle';
 import { DEFAULT_PAY_RULES, sanitizePayRules } from './PayCalendar';
@@ -262,6 +262,7 @@ export interface FixedExpense {
   paidBy?: 'manual' | 'sms';
   smsMatchKey?: string;      // merchantKey aprendido para emparejar SMS
   paidCycleKey?: string;     // Inicio ('YYYY-MM-DD') del período de presupuesto que cubre el pago; datos viejos pueden traer 'YYYY-MM'
+  accountId?: string;        // Cuenta o tarjeta de donde sale el pago (Account.id). Opcional; datos viejos no la traen.
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1987,7 +1988,7 @@ export const StorageService = {
     try {
       const data = await AsyncStorage.getItem(K.FIXED_EXPENSES);
       const parsed = data ? JSON.parse(data) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      return normalizeFixedExpenses(parsed);
     } catch { return []; }
   },
 
@@ -2128,6 +2129,15 @@ export const StorageService = {
     const all = await this.getAccounts();
     const updated = all.filter(a => a.id !== id);
     await this.saveAccounts(updated);
+    // Los gastos fijos que se pagaban con esta cuenta quedan sin cuenta (no se borra nada más).
+    const fixed = await this.getFixedExpenses();
+    if (fixed.some(fe => fe.accountId === id)) {
+      await this.saveFixedExpenses(fixed.map(fe => {
+        if (fe.accountId !== id) return fe;
+        const { accountId: _gone, ...rest } = fe;
+        return rest;
+      }));
+    }
     return updated;
   },
 

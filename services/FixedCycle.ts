@@ -8,7 +8,7 @@
 //
 // La clave de un período es la fecha de inicio ('YYYY-MM-DD', hora local). Los datos de formato
 // viejo ('YYYY-MM', mes calendario) se toleran y se convierten con `normalizeCycleKey`.
-import type { FixedExpense, UserSettings } from './storage';
+import type { FixedExpense, Transaction, UserSettings } from './storage';
 
 /** Prefijo del id del movimiento manual que crea "marcar pagado": `fe_tx_<gastoId>_<clave del período>`. */
 export const FE_TX_PREFIX = 'fe_tx_';
@@ -341,4 +341,52 @@ export function planFixedPeriodReset(
     };
   });
   return { next, changed };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Cuenta del gasto fijo
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Normaliza la lista guardada de gastos fijos: descarta lo que no sea objeto y quita `accountId` si no es un
+ * texto con contenido. No toca ningún otro campo y conserva la referencia de los objetos que no cambian.
+ */
+export function normalizeFixedExpenses(raw: unknown): FixedExpense[] {
+  if (!Array.isArray(raw)) return [];
+  const out: FixedExpense[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const fe = item as FixedExpense;
+    if ('accountId' in fe && (typeof fe.accountId !== 'string' || fe.accountId.trim().length === 0)) {
+      const { accountId: _bad, ...rest } = fe;
+      out.push(rest as FixedExpense);
+    } else {
+      out.push(fe);
+    }
+  }
+  return out;
+}
+
+/**
+ * Movimiento manual que crea «marcar pagado» (AUTO). Lleva la cuenta del gasto fijo solo si esa cuenta
+ * sigue activa; sin cuenta queda igual que siempre.
+ */
+export function buildFixedPaidTx(
+  fe: FixedExpense, paidAt: Date, txId: string, activeAccountIds: ReadonlySet<string>,
+): Transaction {
+  const tx: Transaction = {
+    id: txId,
+    amount: fe.amount,
+    description: fe.name,
+    category: fe.category,
+    date: paidAt.toISOString(),
+    type: 'expense',
+    source: 'manual',
+    currency: fe.currency,
+  };
+  if (fe.accountId && activeAccountIds.has(fe.accountId)) {
+    tx.accountId = fe.accountId;
+    tx.accountSource = 'user';
+  }
+  return tx;
 }

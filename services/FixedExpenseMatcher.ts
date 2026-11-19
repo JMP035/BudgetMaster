@@ -1,21 +1,25 @@
 // Emparejamiento gasto fijo <-> movimiento SMS (módulo PURO, decisión D4).
 // Sin react-native ni AsyncStorage: de ./storage solo `import type`.
 //
-// Puntaje (máximo 100):
-//   nombre  50 = merchantKey igual a fe.smsMatchKey (aprendido)
-//           40 = una palabra del nombre (>= 4 letras) aparece en el comercio o la descripción
-//           30 = coincide un grupo de alias (luz, agua, internet, streaming)
-//   monto   30 = diferencia <= 0.01 ; 20 = hasta 10 % ; 10 = hasta 35 % (solo utilities/internet)
-//   ventana 20 = del día de pago -7 al +5 ; 5 = otro día del período (el movimiento debe caer en
-//                el período de presupuesto actual: ver FixedCycle.periodFor / dueDistanceInPeriod)
-// Solo se marca sola con puntaje >= 80 y único en ambos sentidos; entre 45 y 79
+// Puntaje (máximo 100; el nombre es obligatorio):
+//   nombre   50 = merchantKey igual a fe.smsMatchKey (aprendido)
+//            40 = una palabra del nombre (>= 4 letras) aparece en el comercio o la descripción
+//            30 = coincide un grupo de alias (luz, agua, internet, streaming)
+//   monto    30 = diferencia <= máx(0.01, 1 % de la base) ; 20 = hasta 10 % ;
+//            10 = hasta 35 % (solo utilities/internet)
+//   período  20 = cualquier día del período del gasto fijo (el movimiento debe caer en el período de
+//                 presupuesto actual: ver FixedCycle.periodFor; ya no se resta por la distancia al día de pago)
+//   cuenta  +15 = fe.accountId y tx.accountId existen y son iguales
+//           -25 = existen las dos y son distintas (y la coincidencia NUNCA es automática)
+//             0 = falta alguna de las dos
+// Solo se marca sola con puntaje >= 80, único en ambos sentidos y sin cuenta distinta; entre 45 y 79
 // (o con varios candidatos) es propuesta.
-import type { FixedExpense, Transaction } from './storage';
+import type { CreditInstallment, FixedExpense, Transaction } from './storage';
 import { flatText } from './Categorizer';
 import { merchantKey, merchantOfTransaction } from './MerchantRules';
 import { dupPairKey, mergeManualIntoSms } from './DuplicateDetector';
 import {
-  cycleKeyFor, cycleKeyFromFeTxId, dueDistanceInPeriod, fixedIdFromFeTxId, normalizeCycleKey, periodFor,
+  cycleKeyFor, cycleKeyFromFeTxId, fixedIdFromFeTxId, normalizeCycleKey, periodFor,
   storedDayNumber,
 } from './FixedCycle';
 import type { FixedCycleConfig } from './FixedCycle';
@@ -94,7 +98,7 @@ function scoreName(fe: FixedExpense, tx: Transaction, text: string): { score: nu
 /** Puntaje de monto de `amount` contra un monto base (el del gasto fijo o el del manual). */
 function scoreAmountVs(base: number, category: string, amount: number): { score: number; reason?: string } {
   const diff = Math.abs(amount - base);
-  if (diff <= 0.01) return { score: 30, reason: 'monto exacto' };
+  if (diff <= Math.max(0.01, base * 0.01)) return { score: 30, reason: 'monto igual (±1 %)' };
   const rel = base > 0 ? diff / base : Infinity;
   if (rel <= 0.10) return { score: 20, reason: 'monto similar (<=10%)' };
   if (rel <= 0.35 && (category === 'utilities' || category === 'internet')) {
@@ -107,10 +111,33 @@ function scoreAmount(fe: FixedExpense, tx: Transaction): { score: number; reason
   return scoreAmountVs(fe.amount, fe.category, tx.amount);
 }
 
-function scoreWindow(fe: FixedExpense, tx: Transaction, cycle: FixedCycleConfig): { score: number; reason: string } {
-  const delta = dueDistanceInPeriod(fe.dayOfMonth, cycle, tx.date);
-  if (delta !== null && delta >= -7 && delta <= 5) return { score: 20, reason: 'cerca del día de pago' };
-  return { score: 5, reason: 'otro día del período' };
+/** Cualquier día del período vale igual: quien llama ya garantiza que el movimiento cae en el período del gasto. */
+function scoreWindow(): { score: number; reason: string } {
+  return { score: 20, reason: 'dentro del mismo período' };
+}
+
+/** Cuenta del gasto fijo contra la del movimiento: misma suma, distinta resta y marca `mismatch`; si falta una, 0. */
+function scoreAccount(feAcc?: string, txAcc?: string): { score: number; mismatch: boolean; reason?: string } {
+  if (!feAcc || !txAcc) return { score: 0, mismatch: false };
+  if (feAcc === txAcc) return { score: 15, mismatch: false, reason: 'misma cuenta o tarjeta' };
+  return { score: -25, mismatch: true, reason: 'otra cuenta o tarjeta' };
+}
+
+/**
+ * Visacuota activa de la misma tarjeta y moneda cuya cuota mensual coincide con el monto del gasto fijo
+ * (|cuota − monto| <= máx(0.01, 1 %)). Sirve para avisar de un posible doble conteo.
+ */
+export function findInstallmentOverlap(
+  fe: Pick<FixedExpense, 'amount' | 'currency' | 'accountId'>,
+  insts: CreditInstallment[],
+): CreditInstallment | null {
+  if (!fe.accountId) return null;
+  const tol = Math.max(0.01, Math.abs(fe.amount) * 0.01);
+  for (const i of insts) {
+    if (!i.isActive || i.accountId !== fe.accountId || i.currency !== fe.currency) continue;
+    if (Math.abs(i.monthlyPayment - fe.amount) <= tol) return i;
+  }
+  return null;
 }
 
 /**
@@ -145,6 +172,7 @@ export function matchFixedExpenses(
     fe.isActive && !fe.isPaid && !paidThisPeriod.has(fe.id));
 
   const scored: FixedMatch[] = [];
+  const noAuto = new Set<string>(); // pares con cuenta distinta o renta de respaldo: nunca automáticos
   for (const fe of active) {
     for (const tx of cands) {
       if (tx.currency !== fe.currency) continue;
@@ -153,19 +181,21 @@ export function matchFixedExpenses(
       const text = txText(tx);
       const name = scoreName(fe, tx, text);
       const amount = scoreAmount(fe, tx);
-      const win = scoreWindow(fe, tx, cfg);
+      const win = scoreWindow();
+      const acc = scoreAccount(fe.accountId, tx.accountId);
 
       const rentFallback = name.score === 0 && RENT_RE.test(flatText(fe.name))
         && amount.score === 30 && tx.category === 'transfer';
       // Sin ninguna señal de nombre solo se admite la renta (transferencia con monto exacto).
       if (name.score === 0 && !rentFallback) continue;
 
-      const score = name.score + amount.score + win.score;
+      const score = Math.min(100, name.score + amount.score + win.score + acc.score);
       if (score < FIXED_PROPOSE_THRESHOLD) continue;
 
-      const reasons = [name.reason, amount.reason, win.reason].filter((r): r is string => !!r);
+      const reasons = [name.reason, amount.reason, win.reason, acc.reason].filter((r): r is string => !!r);
       if (rentFallback) reasons.unshift('renta: transferencia con monto exacto');
       scored.push({ expenseId: fe.id, txId: tx.id, score, auto: false, reasons });
+      if (acc.mismatch || rentFallback) noAuto.add(`${fe.id}|${tx.id}`);
     }
   }
 
@@ -178,7 +208,8 @@ export function matchFixedExpenses(
   for (const m of scored) {
     m.auto = m.score >= FIXED_AUTO_THRESHOLD
       && perExpense.get(m.expenseId) === 1
-      && perTx.get(m.txId) === 1;
+      && perTx.get(m.txId) === 1
+      && !noAuto.has(`${m.expenseId}|${m.txId}`);
   }
   return scored.sort((a, b) => b.score - a.score);
 }
@@ -201,11 +232,12 @@ export function rankFixedForTx(tx: Transaction, expenses: FixedExpense[], cycle:
     }
     const name = scoreName(fe, tx, text);
     const amount = scoreAmount(fe, tx);
-    const win = scoreWindow(fe, tx, cycle);
+    const win = scoreWindow();
+    const acc = scoreAccount(fe.accountId, tx.accountId);
     out.push({
       expense: fe,
-      score: name.score + amount.score + win.score,
-      reasons: [name.reason, amount.reason, win.reason].filter((r): r is string => !!r),
+      score: Math.min(100, Math.max(0, name.score + amount.score + win.score + acc.score)),
+      reasons: [name.reason, amount.reason, win.reason, acc.reason].filter((r): r is string => !!r),
     });
   }
   return out.sort((a, b) => b.score - a.score || a.expense.name.localeCompare(b.expense.name));
@@ -253,7 +285,7 @@ export function findFixedFusions(
     }
   }
 
-  interface Cand { manual: Transaction; sms: Transaction; fe: FixedExpense; score: number; gap: number; reasons: string[]; order: number; }
+  interface Cand { manual: Transaction; sms: Transaction; fe: FixedExpense; score: number; gap: number; reasons: string[]; order: number; mismatch: boolean; }
   const cands: Cand[] = [];
   let order = 0;
   for (const { tx: manual, fe } of manuals) {
@@ -275,10 +307,11 @@ export function findFixedFusions(
       const amount = scoreAmountVs(manual.amount, fe.category, sms.amount);
       if (amount.score <= 0) continue;
 
-      const score = name.score + amount.score + 20;
+      const acc = scoreAccount(manual.accountId, sms.accountId);
+      const score = Math.min(100, name.score + amount.score + 20 + acc.score);
       if (score < FUSION_PROPOSE_THRESHOLD) continue;
-      const reasons = [name.reason, amount.reason, 'mismo vencimiento'].filter((r): r is string => !!r);
-      cands.push({ manual, sms, fe, score, gap, reasons, order: order++ });
+      const reasons = [name.reason, amount.reason, 'mismo vencimiento', acc.reason].filter((r): r is string => !!r);
+      cands.push({ manual, sms, fe, score, gap, reasons, order: order++, mismatch: acc.mismatch });
     }
   }
 
@@ -302,7 +335,8 @@ export function findFixedFusions(
       manualId: c.manual.id,
       smsId: c.sms.id,
       score: c.score,
-      auto: c.score >= FIXED_AUTO_THRESHOLD && perManual.get(c.manual.id) === 1 && perSms.get(c.sms.id) === 1,
+      auto: c.score >= FIXED_AUTO_THRESHOLD && !c.mismatch
+        && perManual.get(c.manual.id) === 1 && perSms.get(c.sms.id) === 1,
       reasons: c.reasons,
     });
   }
