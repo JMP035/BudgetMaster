@@ -160,7 +160,7 @@ Toca el botón **⟳** del Dashboard. La app:
 
 Al final te muestra un resumen: SMS revisados, mensajes bancarios, ya registrados, compras a cuotas, pagos de tarjeta y transferencias neutras, mensajes sin clasificar, y más. Si lo necesitas, **Deshacer** revierte esa sincronización. Si la sincronización juntó un SMS nuevo con un movimiento anterior como transferencia neutra, Deshacer deja ese movimiento anterior como estaba (gasto o ingreso normal) y no una transferencia sin pareja; si vinculó un depósito a tu fuente de ingreso, también devuelve el inicio del período y lo aprendido de ese origen a como estaban.
 
-Con **Ajustes → «Sincronizar al abrir la app»** activado, la sincronización corre sola cada vez que abres la app y solo lee los mensajes nuevos (nunca pide permisos por su cuenta). Si hay algo dudoso, el Inicio muestra un aviso con **«Ver»** o **«Revisar»**.
+Con **Ajustes → «Sincronizar al abrir la app»** activado, la sincronización corre sola al abrir la app (como máximo cada 15 minutos) y solo lee los mensajes nuevos (nunca pide permisos por su cuenta). Si hay algo dudoso, el Inicio muestra un aviso con **«Ver»** o **«Revisar»**.
 
 Las transacciones importadas llevan la etiqueta **SMS** y guardan el mensaje original: puedes verlo tocando la transacción en Movimientos → «Ver SMS original».
 

@@ -164,7 +164,7 @@ export default function StepSms({ draft, onChange, onCreateAccounts }: StepProps
                         <>
                             <ToggleRow
                                 label="Sincronizar al abrir la app"
-                                description="Revisa los mensajes nuevos cada vez que abres BudgetMaster."
+                                description="Revisa los mensajes nuevos al abrir BudgetMaster (como máximo cada 15 minutos)."
                                 value={draft.sms.autoSync}
                                 onValueChange={autoSync => onChange(d => ({ sms: { ...d.sms, autoSync } }))}
                             />

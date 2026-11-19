@@ -635,7 +635,7 @@ export default function SettingsScreen({ settings, onSave, onClearAll, focusSect
                         <View style={[s.switchRow, { marginTop: 16 }]}>
                             <View style={{ flex: 1 }}>
                                 <Text style={s.switchLabel}>Sincronizar al abrir la app</Text>
-                                <Text style={s.hint}>Solo lee los mensajes nuevos. Nunca pide permisos por su cuenta.</Text>
+                                <Text style={s.hint}>Solo lee los mensajes nuevos, como máximo cada 15 minutos. Nunca pide permisos por su cuenta.</Text>
                             </View>
                             <Switch value={smsAutoOpt} onValueChange={toggleSmsAuto} trackColor={{ false: C.bgDeep, true: C.accent }} thumbColor={C.text} style={{ marginLeft: 12 }} />
                         </View>
