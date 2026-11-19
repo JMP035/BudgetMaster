@@ -939,7 +939,8 @@ export default function TransactionsScreen({ transactions, settings, onDelete, o
                                     style={s.searchInput}
                                     value={search}
                                     onChangeText={setSearch}
-                                    placeholder="Buscar por descripción, banco, categoría..."
+                                    placeholder="Buscar movimientos…"
+                                    numberOfLines={1}
                                     placeholderTextColor={C.textMuted}
                                 />
                                 {search.length > 0 && (

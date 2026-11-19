@@ -1136,7 +1136,7 @@ export default function AccountsScreen({
         <GlassCard radius={20} blur={false} contentStyle={s.summaryContent}>
           <View style={s.summaryRow}>
             <View style={s.summaryItem}>
-              <Text style={s.summaryLbl}>ACTIVOS</Text>
+              <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>ACTIVOS</Text>
               <Money amount={totalAssets} size="md" tone="neutral" decimals={0} align="center" containerStyle={s.summaryMoney} />
               {(totalEUR !== 0 || totalGBP !== 0) && (
                 <Text style={s.summarySub}>
@@ -1146,29 +1146,29 @@ export default function AccountsScreen({
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
-              <Text style={s.summaryLbl}>VISACUOTAS PEND.</Text>
+              <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>VISACUOTAS PEND.</Text>
               <Money amount={installmentsPendingQ} size="sm" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
             </View>
             <View style={s.summaryDivider} />
             <View style={s.summaryItem}>
-              <Text style={s.summaryLbl}>NETO Q</Text>
+              <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>NETO Q</Text>
               <Money amount={totalQ} size="sm" tone="auto" decimals={0} align="center" containerStyle={s.summaryMoney} />
             </View>
           </View>
           {totalUSD !== 0 && (
             <View style={[s.summaryRow, s.summaryRowSep]}>
               <View style={s.summaryItem}>
-                <Text style={s.summaryLbl}>NETO USD</Text>
+                <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>NETO USD</Text>
                 <Money amount={totalUSD} currency="USD" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
               </View>
               <View style={s.summaryDivider} />
               <View style={s.summaryItem}>
-                <Text style={s.summaryLbl}>CUOTAS/MES</Text>
+                <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>CUOTAS/MES</Text>
                 <Money amount={monthlyInstTotal} size="sm" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
               </View>
               <View style={s.summaryDivider} />
               <View style={s.summaryItem}>
-                <Text style={s.summaryLbl}>TIPO CAMBIO</Text>
+                <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>TIPO CAMBIO</Text>
                 <Text style={[s.summaryVal, { color: C.textSub, fontSize: 13 }]}>Q {settings.exchangeRate}/USD</Text>
               </View>
             </View>
@@ -1177,14 +1177,14 @@ export default function AccountsScreen({
             <View style={[s.summaryRow, s.summaryRowSep]}>
               {totalEUR !== 0 && (
                 <View style={s.summaryItem}>
-                  <Text style={s.summaryLbl}>NETO EUR</Text>
+                  <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>NETO EUR</Text>
                   <Money amount={totalEUR} currency="EUR" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
                 </View>
               )}
               {totalEUR !== 0 && totalGBP !== 0 && <View style={s.summaryDivider} />}
               {totalGBP !== 0 && (
                 <View style={s.summaryItem}>
-                  <Text style={s.summaryLbl}>NETO £</Text>
+                  <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>NETO £</Text>
                   <Money amount={totalGBP} currency="£" size="sm" tone="auto" align="center" containerStyle={s.summaryMoney} />
                 </View>
               )}

@@ -18,7 +18,8 @@ export function DateField({ label, value, onChange }: { label: string; value: Da
     const [showPicker, setShowPicker] = useState(false);
     const maxDate = new Date();
     maxDate.setHours(23, 59, 59, 999);
-    const dateLabel = value.toLocaleDateString("es-GT", { weekday: "short", day: "2-digit", month: "long", year: "numeric" });
+    const rawLabel = value.toLocaleDateString("es-GT", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const dateLabel = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
 
     return (
         <View>
@@ -32,7 +33,7 @@ export function DateField({ label, value, onChange }: { label: string; value: Da
             >
                 <GlassBackground radius={12} blur={false} />
                 <Ionicons name="calendar-outline" size={18} color={C.primaryLight} style={{ marginRight: 10 }} />
-                <Text style={[s.txt, { textTransform: "capitalize" }]}>{dateLabel}</Text>
+                <Text style={s.txt} numberOfLines={1}>{dateLabel}</Text>
                 <Ionicons name="chevron-down" size={16} color={C.textSub} />
             </TouchableOpacity>
             {showPicker && Platform.OS === "android" && (
