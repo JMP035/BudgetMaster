@@ -21,8 +21,11 @@ import type { NotifPrefs } from './NotifPrefs';
 import { PLAN_ID_PREFIX, buildPlan, diffPlan, plannedCountOn, sigOf } from './NotificationPlan';
 import type { PlanData } from './NotificationPlan';
 import {
-    buildBriefingFallbackText, buildFinancialContextText, periodSnapshot, spentQOf, txsInPeriod,
+    budgetAlertBody, buildBriefingFallbackText, buildFinancialContextText, categoryAlertBody, goalProgressBody, periodSnapshot,
+    spentQOf, txsInPeriod,
 } from './NotificationTexts';
+import { formatMoney } from './format';
+import { hasPayDate } from './FinancialPeriod';
 import type { PeriodSnapshot } from './NotificationTexts';
 import { LEVEL_RANK, capacityFor, capacityMessage, salaryFigures, salaryMessage } from './Capacity';
 import type { CapacityContext } from './Capacity';
@@ -651,6 +654,8 @@ export const NotificationService = {
         const daysLeft = getDaysLeftInPeriod(settings, now);
         const dailyLeft = daysLeft > 0 ? remaining / daysLeft : remaining;
         const ctx = { settings, transactions, categoryBudgets, fixedExpenses };
+        // Con ciclo irregular no hay fecha de cobro: el aviso de 100 % habla de «días del período», no de «próximo ingreso».
+        const alertFigures = { spent: totalSpent, limit: periodLimit, remaining, daysLeft, dailyLeft, payDate: hasPayDate(settings) };
 
         // ── Alerta por categoría ─────────────────────────────
         if (catBudget && fig.catLimit > 0) {
@@ -660,14 +665,14 @@ export const NotificationService = {
             if (catPct >= 100) {
                 const sent = await this.sendSmartAlert(
                     '🔴 Límite de categoría superado', 'critical',
-                    `Superaste el presupuesto de ${catLabel}. Gastado: Q${catSpent.toFixed(2)} de Q${fig.catLimit}. Exceso: Q${(catSpent - fig.catLimit).toFixed(2)}.`,
+                    categoryAlertBody('over', { catLabel, spent: catSpent, limit: fig.catLimit, pct: catPct }),
                     ctx, `thr_cat_${tx.category}_100_${fp.key}`,
                 );
                 if (sent) return;
             } else if (catPct >= 80) {
                 const sent = await this.sendSmartAlert(
                     `⚠️ Categoría al ${Math.round(catPct)}%`, 'warning',
-                    `Vas en el ${Math.round(catPct)}% de tu presupuesto de ${catLabel}. Te quedan Q${(fig.catLimit - catSpent).toFixed(2)}.`,
+                    categoryAlertBody('near', { catLabel, spent: catSpent, limit: fig.catLimit, pct: catPct }),
                     ctx, `thr_cat_${tx.category}_80_${fp.key}`,
                 );
                 if (sent) return;
@@ -678,19 +683,19 @@ export const NotificationService = {
         if (pct >= 100) {
             await this.sendSmartAlert(
                 '🚨 Presupuesto agotado', 'critical',
-                `Has gastado Q${totalSpent.toFixed(2)} — superaste tu límite de Q${periodLimit} en Q${(totalSpent - periodLimit).toFixed(2)}. Quedan ${daysLeft} días hasta tu próximo ingreso.`,
+                budgetAlertBody(100, { ...alertFigures, pct }),
                 ctx, `thr_budget_100_${fp.key}`,
             );
         } else if (pct >= 80) {
             await this.sendSmartAlert(
                 `⚠️ Vas en el ${Math.round(pct)}% de tu presupuesto`, 'warning',
-                `Gastaste Q${totalSpent.toFixed(2)} de Q${periodLimit}. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — Q${dailyLeft.toFixed(2)}/día disponibles.`,
+                budgetAlertBody(80, { ...alertFigures, pct }),
                 ctx, `thr_budget_80_${fp.key}`,
             );
         } else if (pct >= 50) {
             await this.sendSmartAlert(
                 '📊 Vas en la mitad de tu presupuesto', 'discipline',
-                `Llevas el ${Math.round(pct)}% de tu presupuesto. Te quedan Q${remaining.toFixed(2)} para ${daysLeft} días — aproximadamente Q${dailyLeft.toFixed(2)} por día.`,
+                budgetAlertBody(50, { ...alertFigures, pct }),
                 ctx, `thr_budget_50_${fp.key}`,
             );
         }
@@ -811,17 +816,14 @@ Responde SOLO el texto, sin encabezados ni formato.
         const remaining = goal.targetAmount - goal.currentAmount;
         const deadline = parseDateOnly(storedDateToDateOnly(goal.deadline)) ?? new Date(goal.deadline);
         const daysLeft = Math.ceil((deadline.getTime() - Date.now()) / 86400000);
-        const monthly = daysLeft > 0 ? (remaining / (daysLeft / 30)).toFixed(2) : '0';
 
         if (pct >= 100) {
             await sendNotification(
                 '🏆 ¡Meta alcanzada!',
-                `Lograste tu meta "${goal.name}" de ${goal.currency} ${goal.targetAmount.toFixed(2)}. ${randomQuote('positive')}`,
+                `Lograste tu meta "${goal.name}" de ${formatMoney(goal.targetAmount, goal.currency)}. ${randomQuote('positive')}`,
             );
         } else if (pct >= 50) {
-            const body = daysLeft <= 0
-                ? `Te faltan ${goal.currency} ${remaining.toFixed(2)}. La fecha límite ya pasó; considera ajustarla.`
-                : `Te faltan ${goal.currency} ${remaining.toFixed(2)}. Ahorrando ${goal.currency} ${monthly}/mes llegas en ${Math.ceil(daysLeft / 30)} meses.`;
+            const body = goalProgressBody({ remaining, currency: goal.currency, daysLeft });
             await sendNotification(
                 `🎯 ${Math.round(pct)}% de tu meta "${goal.name}"`,
                 body,

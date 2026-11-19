@@ -10,6 +10,7 @@ import type { WidgetSnapshot } from '../services/WidgetSnapshot';
 import { computeFinancialPeriod, daysLeftInPeriod } from '../services/FinancialPeriod';
 import { StorageService } from '../services/storage';
 import type { UserSettings } from '../services/storage';
+import { budgetAlertBody, categoryAlertBody, goalProgressBody } from '../services/NotificationTexts';
 
 let failures = 0;
 let checks = 0;
@@ -146,12 +147,35 @@ async function clearAll(): Promise<void> {
     (await StorageService.getWidgetSnapshot()) === null && (await StorageService.getWidgetPrivacy()) === 'hidden');
 }
 
+// ── G2-5: textos de los avisos de presupuesto (ciclo irregular y formato de montos) ─────────────────
+function budgetTexts(): void {
+  const p = { spent: 5200, limit: 4800, remaining: -400, daysLeft: 9, dailyLeft: 0, pct: 108, payDate: true };
+  const withPay = budgetAlertBody(100, p);
+  check('G2-5a: con cobro dice «hasta tu próximo ingreso»', withPay.includes('Quedan 9 días hasta tu próximo ingreso.'), withPay);
+  const irregular = budgetAlertBody(100, { ...p, payDate: false });
+  check('G2-5b: con ciclo irregular NO dice «próximo ingreso»: dice «del período»', !irregular.includes('próximo ingreso') && irregular.includes('Quedan 9 días del período.'), irregular);
+  check('G2-5c: el límite sale con formato de dinero (Q 4,800.00), no «Q4800»', withPay.includes('Q 4,800.00') && !withPay.includes('Q4800') && withPay.includes('Q 5,200.00')
+    && withPay.includes('Q 400.00'), withPay);
+  check('G2-5d: 1 solo día queda en singular', budgetAlertBody(100, { ...p, daysLeft: 1 }).includes('Queda 1 día hasta tu próximo ingreso.')
+    && budgetAlertBody(100, { ...p, daysLeft: 1, payDate: false }).includes('Queda 1 día del período.'));
+  const w80 = budgetAlertBody(80, { spent: 3900, limit: 4800, remaining: 900, daysLeft: 5, dailyLeft: 180, pct: 81.25, payDate: false });
+  check('G2-5e: umbral 80 % con formatMoney y sin «próximo ingreso»', w80 === 'Gastaste Q 3,900.00 de Q 4,800.00. Te quedan Q 900.00 para 5 días — Q 180.00/día disponibles.', w80);
+  const w50 = budgetAlertBody(50, { spent: 2400, limit: 4800, remaining: 2400, daysLeft: 15, dailyLeft: 160, pct: 50, payDate: true });
+  check('G2-5f: umbral 50 % con formatMoney', w50 === 'Llevas el 50% de tu presupuesto. Te quedan Q 2,400.00 para 15 días — aproximadamente Q 160.00 por día.', w50);
+  check('G2-5g: categoría superada y cerca usan formatMoney',
+    categoryAlertBody('over', { catLabel: 'Comida', spent: 1500, limit: 1200, pct: 125 }) === 'Superaste el presupuesto de Comida. Gastado: Q 1,500.00 de Q 1,200.00. Exceso: Q 300.00.'
+    && categoryAlertBody('near', { catLabel: 'Comida', spent: 1000, limit: 1200, pct: 83.3 }) === 'Vas en el 83% de tu presupuesto de Comida. Te quedan Q 200.00.');
+  check('G2-5h: meta de ahorro con su moneda formateada (USD como $)', goalProgressBody({ remaining: 600, currency: 'USD', daysLeft: 60 }) === 'Te faltan $ 600.00. Ahorrando $ 300.00/mes llegas en 2 meses.'
+    && goalProgressBody({ remaining: 600, currency: 'Q', daysLeft: 0 }).startsWith('Te faltan Q 600.00. La fecha límite ya pasó'));
+}
+
 async function scenarios(): Promise<void> {
   resetMemoryStorage();
   quickAdd();
   await singleFlight();
   widgetFresh();
   await clearAll();
+  budgetTexts();
 }
 
 scenarios()

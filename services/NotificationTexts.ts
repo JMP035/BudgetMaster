@@ -5,6 +5,7 @@ import type { CategoryBudget, FixedExpense, Transaction, UserSettings } from './
 import { storedToLocalDate } from './FixedCycle';
 import type { DebtLoad } from './DebtLoad';
 import { periodBudgetLimit, periodCategoryLimit } from './PeriodBudget';
+import { formatMoney } from './format';
 
 /** Período (inicio y fin inclusive; `nextStart` = inicio del siguiente si se conoce). */
 export interface PeriodRange { start: Date; end: Date; nextStart?: Date; }
@@ -29,6 +30,45 @@ export function fmtMoney(n: number, currency: string): string {
   const sign = n < 0 ? '-' : '';
   const s = Math.abs(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
   return currency === 'USD' ? `${sign}$${s}` : `${sign}${s} ${currency}`;
+}
+
+/** «1 día» / «N días». */
+function daysPhrase(n: number): string {
+  return n === 1 ? '1 día' : `${n} días`;
+}
+
+/** Cuerpo del aviso de límite de una categoría: superado (`over`) o cerca (`near`, desde el 80 %). Los importes salen con formatMoney. */
+export function categoryAlertBody(kind: 'over' | 'near', p: { catLabel: string; spent: number; limit: number; pct: number }): string {
+  if (kind === 'over') {
+    return `Superaste el presupuesto de ${p.catLabel}. Gastado: ${formatMoney(p.spent)} de ${formatMoney(p.limit)}. Exceso: ${formatMoney(p.spent - p.limit)}.`;
+  }
+  return `Vas en el ${Math.round(p.pct)}% de tu presupuesto de ${p.catLabel}. Te quedan ${formatMoney(p.limit - p.spent)}.`;
+}
+
+/**
+ * Cuerpo del aviso de umbral del presupuesto general (100, 80 y 50 %). Con ciclo irregular (`payDate` false) no hay fecha de
+ * cobro: el aviso de 100 % dice «Quedan N días del período», no «hasta tu próximo ingreso».
+ */
+export function budgetAlertBody(level: 100 | 80 | 50, p: {
+  spent: number; limit: number; remaining: number; daysLeft: number; dailyLeft: number; pct: number; payDate: boolean;
+}): string {
+  if (level === 100) {
+    const left = p.payDate
+      ? `${p.daysLeft === 1 ? 'Queda' : 'Quedan'} ${daysPhrase(p.daysLeft)} hasta tu próximo ingreso.`
+      : `${p.daysLeft === 1 ? 'Queda' : 'Quedan'} ${daysPhrase(p.daysLeft)} del período.`;
+    return `Has gastado ${formatMoney(p.spent)} — superaste tu límite de ${formatMoney(p.limit)} en ${formatMoney(p.spent - p.limit)}. ${left}`;
+  }
+  if (level === 80) {
+    return `Gastaste ${formatMoney(p.spent)} de ${formatMoney(p.limit)}. Te quedan ${formatMoney(p.remaining)} para ${daysPhrase(p.daysLeft)} — ${formatMoney(p.dailyLeft)}/día disponibles.`;
+  }
+  return `Llevas el ${Math.round(p.pct)}% de tu presupuesto. Te quedan ${formatMoney(p.remaining)} para ${daysPhrase(p.daysLeft)} — aproximadamente ${formatMoney(p.dailyLeft)} por día.`;
+}
+
+/** Cuerpo del aviso de una meta de ahorro a medio camino (50 % o más, sin llegar): lo que falta y el ritmo mensual. */
+export function goalProgressBody(p: { remaining: number; currency: string; daysLeft: number }): string {
+  if (p.daysLeft <= 0) return `Te faltan ${formatMoney(p.remaining, p.currency)}. La fecha límite ya pasó; considera ajustarla.`;
+  const monthly = p.remaining / (p.daysLeft / 30);
+  return `Te faltan ${formatMoney(p.remaining, p.currency)}. Ahorrando ${formatMoney(monthly, p.currency)}/mes llegas en ${Math.ceil(p.daysLeft / 30)} meses.`;
 }
 
 /** 'dd/mm' */
