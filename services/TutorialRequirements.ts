@@ -6,7 +6,7 @@
 
 import { hasValidCardDates } from './CardSetup';
 
-export type TutorialRequirement = 'bank_account' | 'credit_card' | 'card_dates' | 'income_source' | 'sms_on';
+export type TutorialRequirement = 'bank_account' | 'any_account' | 'credit_card' | 'card_dates' | 'income_source' | 'sms_on';
 
 /** Lo que ya existe en los datos del usuario (lo calcula app/index.tsx). */
 export interface RequirementFacts {
@@ -27,6 +27,7 @@ export function missingRequirement(
   if (!req) return null;
   switch (req) {
     case 'bank_account': return facts.hasBankAccount ? null : req;
+    case 'any_account': return facts.hasBankAccount || facts.hasCreditCard ? null : req;
     case 'credit_card': return facts.hasCreditCard ? null : req;
     case 'card_dates': return facts.hasCardWithDates ? null : req;
     case 'income_source': return facts.hasIncomeSource ? null : req;
@@ -39,6 +40,7 @@ export function missingRequirement(
 export function requirementLabel(req: TutorialRequirement): string {
   switch (req) {
     case 'bank_account': return 'la cuenta';
+    case 'any_account': return 'una cuenta o tarjeta';
     case 'credit_card': return 'la tarjeta';
     case 'card_dates': return 'una tarjeta con su día de corte y de pago';
     case 'income_source': return 'una fuente de ingreso';

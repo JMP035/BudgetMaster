@@ -407,13 +407,13 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_3', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'checkbox-outline', padding: 8,
                 title: 'Marcar como pagado',
-                description: 'Toca la casilla de un gasto para marcarlo como pagado; la app te pregunta en qué fecha se pagó (por defecto, su día de cobro si ya pasó). Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcas. Mantén presionada la tarjeta para editarla. VENCIDO indica que pasó su día de pago sin marcarse.',
+                description: 'Toca la casilla de un gasto para marcarlo como pagado; la app te pregunta en qué fecha se pagó (por defecto, su día de cobro si ya pasó). Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcas. Mantén presionada la tarjeta para editarla. VENCIDO indica que pasó su día de pago sin marcarse. Si le pusiste cuenta o tarjeta, la ves en un chip junto al día de pago.',
                 emptyHint: 'Todavía no tienes gastos fijos. Agrega el primero con el botón + de esta pestaña.',
             },
             {
                 id: 'budget_4', elementId: 'budget_fixed_fab', screen: 'budget', position: 'top', icon: 'add-circle-outline', padding: 8,
                 title: 'Agregar un gasto fijo',
-                description: 'Con este botón registras renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago y categoría. La app te recuerda 3 días antes de cada vencimiento (a las 8:00, sin avisarte de noche) y las casillas se reinician al empezar un nuevo período.',
+                description: 'Con este botón registras renta, internet, seguros o cuotas: nombre, monto, moneda, día de pago, categoría y, si quieres, la cuenta o tarjeta de donde sale el pago. La app te recuerda 3 días antes de cada vencimiento (a las 8:00, sin avisarte de noche) y las casillas se reinician al empezar un nuevo período.',
             },
             {
                 id: 'budget_4b', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'card-outline', padding: 8,
@@ -733,6 +733,34 @@ export const TUTORIALS: Tutorial[] = [
                 title: '5. No es un gasto nuevo',
                 description: 'Pagar la tarjeta es una transferencia de tu cuenta a la tarjeta: no suma a tus gastos del período ni se cuenta dos veces, porque cada compra ya contó cuando la hiciste con la tarjeta. Al pagar todo, el estado queda «Pagado»; si pasa la fecha límite sin pagar, «Vencido».',
                 emptyHint: 'Cuando una tarjeta tenga estado verás aquí si está pagado o vencido.',
+            },
+        ],
+    },
+
+    // ── Gasto fijo con cuenta o tarjeta (tutorial de proceso) ─
+    {
+        id: 'tutorial_fijo_cuenta', title: 'Gasto fijo con cuenta o tarjeta',
+        description: 'La cuenta o tarjeta, el gasto fijo y a dónde va el pago.',
+        icon: 'card-outline', color: C.primary,
+        steps: [
+            {
+                id: 'fxa_1', elementId: 'accounts_list', screen: 'accounts', action: { id: 'accounts:setTab', arg: 'accounts' }, position: 'top', icon: 'wallet-outline', padding: 8,
+                requires: 'any_account',
+                title: '1. Crea la cuenta o la tarjeta',
+                description: 'Primero tiene que existir en Cuentas la cuenta o tarjeta de donde sale el pago (si es tarjeta, con su día de corte y de pago).',
+                emptyHint: 'Todavía no tienes cuentas ni tarjetas. Crea la primera con el botón +.',
+            },
+            {
+                id: 'fxa_2', elementId: 'budget_fixed_fab', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, position: 'top', icon: 'add-circle-outline', padding: 8,
+                title: '2. Elige la cuenta en el gasto fijo',
+                description: 'Crea el gasto con el botón + (o mantén presionado uno que ya tengas) y en «Cuenta o tarjeta» elige de dónde sale el pago.',
+            },
+            {
+                id: 'fxa_3', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'checkbox-outline', padding: 8,
+                title: '3. Márcalo pagado o deja que el SMS lo detecte',
+                description: 'Con AUTO, al marcarlo pagado el movimiento queda en esa cuenta: si es tarjeta entra a su «Ciclo abierto»; si la cuenta lleva saldo automático, lo resta. Si llega el SMS del banco con el mismo nombre, cualquier día del mismo período, la app lo marca pagado sola; si viene de otra cuenta, te lo pregunta en el Centro de revisión. Si ya lo habías marcado a mano, el SMS se une a tu registro y no se cuenta dos veces.',
+                noSmsDescription: 'Con AUTO, al marcarlo pagado el movimiento queda en esa cuenta: si es tarjeta entra a su «Ciclo abierto»; si la cuenta lleva saldo automático, lo resta.',
+                emptyHint: 'Todavía no tienes gastos fijos. Agrega el primero con el botón + de esta pestaña.',
             },
         ],
     },

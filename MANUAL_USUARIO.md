@@ -203,7 +203,9 @@ La pestaña Presupuesto tiene **cuatro secciones**: Gastos Fijos, Categorías, M
 
 Tus compromisos recurrentes: renta, internet, seguros, cuota del gym…
 
-- **Agregar**: botón ➕ flotante → nombre, monto, moneda (Q/USD), día del mes en que vence (1–31), categoría y notas.
+- **Agregar**: botón ➕ flotante → nombre, monto, moneda (Q/USD), día del mes en que vence (1–31), categoría, cuenta o tarjeta (opcional) y notas.
+- **Cuenta o tarjeta (opcional)**: elige de dónde sale el pago. La fila muestra un chip con el nombre de esa cuenta junto al día de pago. Con AUTO, al marcarlo pagado el movimiento queda en esa cuenta: si es una tarjeta entra a su «Ciclo abierto»; si la cuenta lleva su saldo automático, lo resta; en otra cuenta solo organiza tus pagos y no cambia el saldo guardado. Si eliges una tarjeta que ya carga una visacuota con el mismo monto, la app te avisa: si ese gasto fijo es la cuota, no lo agregues, porque se contaría dos veces. Si borras la cuenta, el gasto fijo se queda sin cuenta.
+- **Con SMS**: si llega el SMS del banco con el mismo nombre en cualquier día del mismo período, el gasto se marca pagado solo (con ciclo quincenal, semanal o irregular el período de los gastos fijos es el mes). El monto puede variar hasta 10 %. Si el SMS viene de otra cuenta, o hay dos candidatos, te lo pregunta en el Centro de revisión; si ya lo marcaste a mano, el SMS se une a tu registro y no se cuenta dos veces.
 - **Registrar automáticamente (AUTO)**: si está activado, al marcar el gasto como pagado ✓ se crea la transacción de gasto automáticamente. Activado por defecto.
 - **Marcar como pagado**: toca la casilla a la izquierda; la app te pregunta en qué fecha se pagó. Se tacha y suma al progreso del período.
 - **Editar**: mantén presionada la tarjeta. **Eliminar**: ícono 🗑.

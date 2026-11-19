@@ -150,6 +150,7 @@ export const HELP_MODULES: HelpModule[] = [
   { tutorialId: 'tutorial_visacuotas', label: 'Visacuotas' },
   { tutorialId: 'tutorial_compra_tarjeta', label: 'Compra con tarjeta' },
   { tutorialId: 'tutorial_pago_tarjeta', label: 'Pagar la tarjeta' },
+  { tutorialId: 'tutorial_fijo_cuenta', label: 'Gasto fijo con cuenta' },
   { tutorialId: 'tutorial_saldos', label: 'Saldos y transferencias' },
   { tutorialId: 'tutorial_stats', label: 'Estadísticas' },
   { tutorialId: 'tutorial_ia', label: 'Asesor' },

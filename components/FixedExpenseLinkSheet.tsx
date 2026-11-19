@@ -305,6 +305,7 @@ export default function FixedExpenseLinkSheet({
                     // Lo paga el SMS: sin registro automático para no duplicarlo
                     autoRecord: false,
                     smsMatchKey: learnKey ?? undefined,
+                    accountId: tx.accountId,
                 }}
                 onSave={handleCreateSave}
                 onClose={() => { if (!savingRef.current) switchTo("pick"); }}

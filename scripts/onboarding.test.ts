@@ -560,12 +560,12 @@ const now = new Date(2026, 10, 12, 12, 0); // 12 nov 2026
     isChecklistComplete(buildChecklist({ ...base, isAndroid: false, biometricAvailable: false, accountsCount: 1, tourDone: true }), ['income', 'fixed', 'gemini']));
 
   const ids = new Set(HELP_MODULES.map(m => m.tutorialId));
-  check('HELP_MODULES: 17 ids únicos', HELP_MODULES.length === 17 && ids.size === 17);
+  check('HELP_MODULES: 18 ids únicos', HELP_MODULES.length === 18 && ids.size === 18);
   check('HELP_MODULES: ids reales de Tutorial.ts', ['tour_inicial', 'tutorial_inicio', 'tutorial_movimientos', 'tutorial_agregar', 'tutorial_presupuesto',
-    'tutorial_cuentas', 'tutorial_stats', 'tutorial_ia', 'tutorial_ajustes', 'tutorial_sms', 'tutorial_periodo', 'tutorial_sueldo', 'tutorial_visacuotas', 'tutorial_compra_tarjeta', 'tutorial_pago_tarjeta', 'tutorial_saldos', 'tutorial_widget'].every(id => ids.has(id)));
+    'tutorial_cuentas', 'tutorial_stats', 'tutorial_ia', 'tutorial_ajustes', 'tutorial_sms', 'tutorial_periodo', 'tutorial_sueldo', 'tutorial_visacuotas', 'tutorial_compra_tarjeta', 'tutorial_pago_tarjeta', 'tutorial_fijo_cuenta', 'tutorial_saldos', 'tutorial_widget'].every(id => ids.has(id)));
   check('HELP_MODULES: el widget no requiere SMS', HELP_MODULES.find(m => m.tutorialId === 'tutorial_widget')?.requiresSms !== true);
-  check('helpModulesFor(false) sin tutorial_sms', !helpModulesFor(false).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(false).length === 16);
-  check('helpModulesFor(true) con tutorial_sms', helpModulesFor(true).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(true).length === 17);
+  check('helpModulesFor(false) sin tutorial_sms', !helpModulesFor(false).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(false).length === 17);
+  check('helpModulesFor(true) con tutorial_sms', helpModulesFor(true).some(m => m.tutorialId === 'tutorial_sms') && helpModulesFor(true).length === 18);
 
   const st = { v: 1, dismissed: false, collapsed: true, skipped: ['tour', 'zzz'], tourDeferred: true, createdAt: NOW };
   const san = sanitizeGettingStarted(st);

@@ -531,6 +531,7 @@ function AppContent() {
     tutorialOpenedAccountsRef.current = false;
     switch (req) {
       case "bank_account":
+      case "any_account":
       case "credit_card":
         setAccountCreate({ type: req === "credit_card" ? "credit" : "bank", n: Date.now() });
         setShowAI(false);

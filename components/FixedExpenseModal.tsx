@@ -1,8 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { CustomCategory, Currency, FixedExpense, parseAmount } from "../services/storage";
+import { Account, CreditInstallment, CustomCategory, Currency, FixedExpense, parseAmount, StorageService } from "../services/storage";
 import { merchantKey } from "../services/MerchantRules";
+import { balanceModeOf } from "../services/Balances";
+import { findInstallmentOverlap } from "../services/FixedExpenseMatcher";
+import { formatMoney } from "../services/format";
 import { getAllExpenseCategories } from "../categories";
 import { C } from "../theme";
 import { GlassButton } from "./GlassButton";
@@ -22,12 +25,16 @@ export interface FixedExpenseModalProps {
     defaultCurrency: Currency;
     /** Muestra el campo «Nombre en el SMS». Apagado = oculto. */
     smsOn?: boolean;
+    /** Cuentas para elegir de dónde sale el pago. Sin esto, el modal las carga solo. */
+    accounts?: Account[];
+    /** Visacuotas activas, para avisar si el gasto fijo ya está contado como cuota. Sin esto, el modal las carga solo. */
+    installments?: CreditInstallment[];
 }
 
 // ─────────────────────────────────────────────────────────────
 // MODAL — NUEVO GASTO FIJO
 // ─────────────────────────────────────────────────────────────
-export function FixedExpenseModal({ onSave, onClose, existing, prefill, customCategories, defaultCurrency, smsOn = false }: FixedExpenseModalProps) {
+export function FixedExpenseModal({ onSave, onClose, existing, prefill, customCategories, defaultCurrency, smsOn = false, accounts: accountsProp, installments: installmentsProp }: FixedExpenseModalProps) {
     const allCats = getAllExpenseCategories(customCategories);
     // `prefill` solo aplica a un gasto nuevo; al editar manda `existing`.
     const init = existing ?? prefill;
@@ -39,7 +46,32 @@ export function FixedExpenseModal({ onSave, onClose, existing, prefill, customCa
     const [autoRecord, setAutoRecord] = useState(init?.autoRecord ?? true);
     const [notes, setNotes] = useState(init?.notes || "");
     const [matchKey, setMatchKey] = useState(init?.smsMatchKey || "");
+    const [accountId, setAccountId] = useState<string | null>(init?.accountId ?? null);
+    const [loadedAccounts, setLoadedAccounts] = useState<Account[]>([]);
+    const [loadedInsts, setLoadedInsts] = useState<CreditInstallment[]>([]);
     const [error, setError] = useState("");
+    const accounts = accountsProp ?? loadedAccounts;
+    const installments = installmentsProp ?? loadedInsts;
+    useEffect(() => {
+        if (accountsProp && installmentsProp) return;
+        let alive = true;
+        Promise.all([StorageService.getAccounts(), StorageService.getCreditInstallments()])
+            .then(([a, i]) => { if (alive) { setLoadedAccounts(a); setLoadedInsts(i); } })
+            .catch(() => { });
+        return () => { alive = false; };
+    }, [accountsProp, installmentsProp]);
+    const accountChoices = accounts.filter(a => a.isActive || a.id === init?.accountId);
+    const chosenAccount = accountId ? accounts.find(a => a.id === accountId) : undefined;
+    const amountNum = parseAmount(amount);
+    const overlap = chosenAccount && !isNaN(amountNum) && amountNum > 0
+        ? findInstallmentOverlap({ amount: amountNum, currency, accountId: chosenAccount.id }, installments.filter(i => i.accountId === chosenAccount.id))
+        : null;
+    const accountHint = !chosenAccount ? ""
+        : chosenAccount.type === "credit"
+            ? "Al marcarlo pagado con AUTO, el cargo entra al «Ciclo abierto» de esta tarjeta."
+            : balanceModeOf(chosenAccount) === "auto"
+                ? "Esta cuenta lleva su saldo automático: el pago lo resta solo."
+                : "Este gasto no cambia el saldo guardado de la cuenta: aquí la cuenta organiza tus pagos.";
     const currencyOptions = FORM_CURRENCIES.includes(currency) ? FORM_CURRENCIES : [...FORM_CURRENCIES, currency];
     const learned = !!existing?.smsMatchKey && matchKey === existing.smsMatchKey;
 
@@ -76,6 +108,7 @@ export function FixedExpenseModal({ onSave, onClose, existing, prefill, customCa
             paidBy: existing?.paidBy,
             paidCycleKey: existing?.paidCycleKey,
             smsMatchKey,
+            accountId: accountId ?? undefined,
             autoRecord,
             notes: notes.trim(),
             isActive: true,
@@ -134,6 +167,44 @@ export function FixedExpenseModal({ onSave, onClose, existing, prefill, customCa
                     ))}
                 </View>
             </ScrollView>
+
+            <Text style={md.lbl}>CUENTA O TARJETA (Opcional)</Text>
+            <View style={md.accWrap}>
+                <TouchableOpacity
+                    style={[md.accChip, accountId === null && md.accChipActive]}
+                    onPress={() => setAccountId(null)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sin cuenta"
+                    accessibilityState={{ selected: accountId === null }}
+                >
+                    <Text style={[md.accChipTxt, accountId === null && { color: C.textPrimary }]} numberOfLines={1}>Sin cuenta</Text>
+                </TouchableOpacity>
+                {accountChoices.map(a => (
+                    <TouchableOpacity
+                        key={a.id}
+                        style={[md.accChip, accountId === a.id && md.accChipActive]}
+                        onPress={() => setAccountId(a.id)}
+                        accessibilityRole="button"
+                        accessibilityLabel={a.name}
+                        accessibilityState={{ selected: accountId === a.id }}
+                    >
+                        <View style={[md.accDot, { backgroundColor: a.color }]} />
+                        <Ionicons name={a.type === "credit" ? "card-outline" : "wallet-outline"} size={14} color={accountId === a.id ? C.textPrimary : C.textSub} />
+                        <Text style={[md.accChipTxt, accountId === a.id && { color: C.textPrimary }]} numberOfLines={1}>{a.name}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+            {!!accountHint && <Text style={md.hint}>{accountHint}</Text>}
+            {smsOn && !!chosenAccount && (
+                <Text style={md.hint}>Si el SMS del banco viene de esta cuenta, la app lo reconoce con más seguridad.</Text>
+            )}
+            {!!overlap && chosenAccount && (
+                <InlineNotice
+                    variant="warning"
+                    style={md.overlapNotice}
+                    text={`Esta tarjeta ya carga la visacuota «${overlap.name}» de ${formatMoney(overlap.monthlyPayment, overlap.currency)} cada corte. Si este gasto fijo es esa cuota, no lo agregues: se contaría dos veces.`}
+                />
+            )}
 
             <View style={md.switchRow}>
                 <View style={{ flex: 1 }}>
@@ -216,6 +287,12 @@ const md = StyleSheet.create({
     catChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
     catChipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
     catChipTxt: { color: C.textSub, fontSize: 11, fontWeight: "700" },
+    accWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+    accChip: { flexDirection: "row", alignItems: "center", gap: 6, maxWidth: "100%", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput },
+    accChipActive: { borderColor: C.glassActiveBorder, backgroundColor: C.glassActive },
+    accChipTxt: { color: C.textSub, fontSize: 12, fontWeight: "700", flexShrink: 1 },
+    accDot: { width: 10, height: 10, borderRadius: 5 },
+    overlapNotice: { marginTop: 10 },
     switchRow: { flexDirection: "row", alignItems: "center", marginTop: 8 },
     toggle: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: C.glassInputBorder, backgroundColor: C.glassInput, marginLeft: 12 },
     toggleActive: { backgroundColor: C.primary, borderColor: C.primaryLight },

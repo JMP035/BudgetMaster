@@ -22,7 +22,7 @@ const FULL: RequirementFacts = { hasBankAccount: true, hasCreditCard: true, hasC
 const EMPTY: RequirementFacts = { hasBankAccount: false, hasCreditCard: false, hasCardWithDates: false, hasIncomeSource: false, smsOn: false };
 
 // ── missingRequirement: cada requisito con datos completos e incompletos ─────
-const REQS: TutorialRequirement[] = ['bank_account', 'credit_card', 'card_dates', 'income_source', 'sms_on'];
+const REQS: TutorialRequirement[] = ['bank_account', 'any_account', 'credit_card', 'card_dates', 'income_source', 'sms_on'];
 for (const r of REQS) {
   check(`${r}: facts completos -> null`, missingRequirement({ requires: r }, FULL) === null);
   check(`${r}: facts vacíos -> ${r}`, missingRequirement({ requires: r }, EMPTY) === r);
@@ -40,6 +40,12 @@ check('income_source presente', missingRequirement({ requires: 'income_source' }
 check('sms_on apagado', missingRequirement({ requires: 'sms_on' }, { ...FULL, smsOn: false }) === 'sms_on');
 check('sms_on encendido', missingRequirement({ requires: 'sms_on' }, { ...EMPTY, smsOn: true }) === null);
 
+// any_account: basta una cuenta o una tarjeta
+check('any_account con solo cuenta -> null', missingRequirement({ requires: 'any_account' }, { ...EMPTY, hasBankAccount: true }) === null);
+check('any_account con solo tarjeta -> null', missingRequirement({ requires: 'any_account' }, { ...EMPTY, hasCreditCard: true }) === null);
+check('any_account sin ninguna -> any_account', missingRequirement({ requires: 'any_account' }, EMPTY) === 'any_account');
+check('any_account no la cumple solo tener SMS o ingresos', missingRequirement({ requires: 'any_account' }, { ...EMPTY, smsOn: true, hasIncomeSource: true }) === 'any_account');
+
 // Paso sin requires -> null siempre
 check('sin requires con facts vacíos -> null', missingRequirement({}, EMPTY) === null);
 check('sin requires con facts completos -> null', missingRequirement({}, FULL) === null);
@@ -47,6 +53,7 @@ check('requires undefined explícito -> null', missingRequirement({ requires: un
 
 // ── Textos ──────────────────────────────────────────────────
 check('label bank_account', requirementLabel('bank_account') === 'la cuenta');
+check('label any_account', requirementLabel('any_account') === 'una cuenta o tarjeta');
 check('label credit_card', requirementLabel('credit_card') === 'la tarjeta');
 check('label card_dates', requirementLabel('card_dates') === 'una tarjeta con su día de corte y de pago');
 check('label income_source', requirementLabel('income_source') === 'una fuente de ingreso');

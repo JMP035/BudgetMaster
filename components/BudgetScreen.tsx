@@ -15,7 +15,7 @@ import {
 import { isSmsFeatureOn } from "../services/features";
 import { merchantOfTransaction } from "../services/MerchantRules";
 import { matchFixedExpenses } from "../services/FixedExpenseMatcher";
-import { cycleKeyFor, defaultPaidDate, feTxId, fixedCycleConfig, fixedDueInfo, periodFor } from "../services/FixedCycle";
+import { buildFixedPaidTx, cycleKeyFor, defaultPaidDate, feTxId, fixedCycleConfig, fixedDueInfo, periodFor } from "../services/FixedCycle";
 import { getAllExpenseCategories, getCat } from "../categories";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "../categories";
 import { C, shadow } from "../theme";
@@ -510,16 +510,9 @@ function FixedExpensesTab({
             // Al marcar como pagado con auto-registro: id determinístico, reversible y único por período
             let txId = feTxId(expense.id, cycleKey);
             if (transactions.some(t => t.id === txId)) txId = `${txId}_${Date.now()}`;
-            const tx: Transaction = {
-                id: txId,
-                amount: expense.amount,
-                description: expense.name,
-                category: expense.category,
-                date: paidAt.toISOString(),
-                type: 'expense',
-                source: 'manual',
-                currency: expense.currency,
-            };
+            const tx: Transaction = buildFixedPaidTx(
+                expense, paidAt, txId, new Set(debtAccounts.filter(a => a.isActive).map(a => a.id)),
+            );
             const txAll = await StorageService.addTransaction(tx);
             setTransactions(txAll);
             lastTxId = tx.id;
@@ -575,24 +568,24 @@ function FixedExpensesTab({
                     <GlassCard radius={16} blur={false} style={s.summaryCard} contentStyle={s.summaryContent}>
                         <View style={s.summaryItem}>
                             <Text style={s.summaryVal}>{paid}/{active.length}</Text>
-                            <Text style={s.summaryLbl}>PAGADOS</Text>
+                            <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>PAGADOS</Text>
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
                             <Money amount={paidQ} currency="Q" size="md" tone="income" decimals={0} align="center" containerStyle={s.summaryMoney} />
-                            <Text style={s.summaryLbl}>CUBIERTO</Text>
+                            <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>CUBIERTO</Text>
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
                             <Money amount={totalQ - paidQ} currency="Q" size="md" tone="warning" decimals={0} align="center" containerStyle={s.summaryMoney} />
-                            <Text style={s.summaryLbl}>PENDIENTE</Text>
+                            <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>PENDIENTE</Text>
                         </View>
                         <View style={s.summaryDivider} />
                         <View style={s.summaryItem}>
                             {hasPayDate(settings)
                                 ? <Text style={[s.summaryVal, { color: daysLeft <= 5 ? C.danger : C.accent }]}>{daysLeft}d</Text>
                                 : <Text style={[s.summaryVal, { color: C.textMuted }]}>—</Text>}
-                            <Text style={s.summaryLbl}>PRÓX. PAGO</Text>
+                            <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>PRÓX. PAGO</Text>
                         </View>
                     </GlassCard>
 
@@ -614,6 +607,7 @@ function FixedExpensesTab({
                             .map(({ expense, info }) => {
                                 const cat = getCat(expense.category, settings.customCategories);
                                 const isOverdue = isFixedExpenseOverdue(expense, cycle, listNow);
+                                const payAcc = expense.accountId ? debtAccounts.find(a => a.id === expense.accountId) : undefined;
                                 return (
                                     <GlassCard
                                         key={expense.id}
@@ -655,6 +649,12 @@ function FixedExpensesTab({
                                                     {isOverdue && <View style={s.overdueBadge}><Text style={s.overdueTxt}>VENCIDO</Text></View>}
                                                     {expense.autoRecord && <View style={s.autoBadge}><Text style={s.autoTxt}>AUTO</Text></View>}
                                                     {smsOn && expense.isPaid && expense.paidBy === 'sms' && <View style={s.autoBadge}><Text style={s.autoTxt}>SMS</Text></View>}
+                                                    {!!payAcc && (
+                                                        <View style={s.accBadge} accessibilityLabel={`Se paga con ${payAcc.name}`}>
+                                                            <View style={[s.accBadgeDot, { backgroundColor: payAcc.color }]} />
+                                                            <Text style={s.accBadgeTxt} numberOfLines={1}>{payAcc.name}</Text>
+                                                        </View>
+                                                    )}
                                                 </View>
                                             </View>
 
@@ -719,7 +719,7 @@ function FixedExpensesTab({
                         </>
                     )}
                 </View>
-                <View style={{ height: 100 }} />
+                <View style={{ height: 140 }} />
             </ScrollView>
 
             {/* FAB */}
@@ -752,6 +752,8 @@ function FixedExpensesTab({
                     customCategories={settings.customCategories}
                     defaultCurrency={settings.currency || "Q"}
                     smsOn={smsOn}
+                    accounts={debtAccounts}
+                    installments={debtInsts}
                 />
             )}
         </View>
@@ -843,17 +845,17 @@ function CategoryBudgetTab({
                 <GlassCard radius={16} blur={false} style={s.summaryCard} contentStyle={s.summaryContent}>
                     <View style={s.summaryItem}>
                         <Money amount={totalBudgeted} currency="Q" size="md" tone="neutral" decimals={0} align="center" containerStyle={s.summaryMoney} />
-                        <Text style={s.summaryLbl}>PLANIFICADO</Text>
+                        <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>PLANIFICADO</Text>
                     </View>
                     <View style={s.summaryDivider} />
                     <View style={s.summaryItem}>
                         <Money amount={totalSpent} currency="Q" size="md" tone="expense" decimals={0} align="center" containerStyle={s.summaryMoney} />
-                        <Text style={s.summaryLbl}>GASTADO</Text>
+                        <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>GASTADO</Text>
                     </View>
                     <View style={s.summaryDivider} />
                     <View style={s.summaryItem}>
                         <Money amount={totalBudgeted - totalSpent} currency="Q" size="md" tone="auto" decimals={0} align="center" containerStyle={s.summaryMoney} />
-                        <Text style={s.summaryLbl}>{totalBudgeted - totalSpent >= 0 ? "DISPONIBLE" : "EXCESO"}</Text>
+                        <Text style={s.summaryLbl} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7} maxFontSizeMultiplier={1.2}>{totalBudgeted - totalSpent >= 0 ? "DISPONIBLE" : "EXCESO"}</Text>
                     </View>
                 </GlassCard>
             </View>
@@ -1255,7 +1257,7 @@ function SavingsGoalsTab({
                     )}
                 </View>
 
-                <View style={{ height: 100 + kb }} />
+                <View style={{ height: 140 + kb }} />
             </ScrollView>
 
             <View ref={fabRef} collapsable={false} style={s.fabWrap}>
@@ -1445,7 +1447,7 @@ function IncomeTab({
                         })
                     )}
                 </View>
-                <View style={{ height: 100 }} />
+                <View style={{ height: 140 }} />
             </ScrollView>
 
             <View ref={fabRef} collapsable={false} style={s.fabWrap}>
@@ -1594,16 +1596,19 @@ const s = StyleSheet.create({
     // Resumen
     summaryCard: { marginBottom: 14 },
     summaryContent: { flexDirection: "row", padding: 16 },
-    summaryItem: { flex: 1, alignItems: "center", paddingHorizontal: 2 },
+    summaryItem: { flex: 1, minWidth: 0, alignItems: "center", paddingHorizontal: 2 },
     summaryMoney: { alignSelf: "stretch", marginBottom: 4 },
     summaryVal: { color: C.textPrimary, fontSize: 16, fontWeight: "900", marginBottom: 4 },
-    summaryLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
-    summaryDivider: { width: 1, backgroundColor: C.glassBorder, marginHorizontal: 8 },
+    summaryLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 0.5, textAlign: "center", alignSelf: "stretch" },
+    summaryDivider: { width: 1, backgroundColor: C.glassBorder, marginHorizontal: 6 },
 
     // Gastos fijos
     fixedCard: { marginBottom: 10 },
     fixedCardPaid: { opacity: 0.7 },
     fixedRow: { flexDirection: "row", alignItems: "center", padding: 14 },
+    accBadge: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6, backgroundColor: C.glassActive, borderWidth: 1, borderColor: C.glassActiveBorder, flexShrink: 1, maxWidth: "100%" },
+    accBadgeDot: { width: 8, height: 8, borderRadius: 4 },
+    accBadgeTxt: { color: C.text, fontSize: 10, fontWeight: "800", flexShrink: 1 },
     fixedMeta: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 8, marginTop: 3 },
     checkbox: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: C.textSub, alignItems: "center", justifyContent: "center", marginRight: 12 },
     checkboxPaid: { backgroundColor: C.income, borderColor: C.income },
