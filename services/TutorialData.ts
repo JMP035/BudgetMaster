@@ -126,7 +126,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_1', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'calendar-outline', padding: 8,
                 title: 'Tu período financiero',
-                description: 'Arriba ves tu nombre, el período actual y en qué día del período estás. El período sigue el ciclo de pago que elegiste (mensual, quincenal, semanal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan. Toca el rango del período para ver de dónde sale su inicio y cambiarlo. Junto al día del período ves cuántos días faltan para tu próximo ingreso.',
+                lead: 'Arriba ves tu nombre, el período actual y en qué día del período estás.',
+                description: 'El período sigue el ciclo de pago que elegiste (mensual, quincenal, semanal o irregular), no el mes calendario, y empieza el día que cae tu sueldo: si tu día de pago cae en fin de semana o feriado, arranca el día hábil en que realmente te pagan.',
+            },
+            {
+                id: 'ini_1b', elementId: 'dash_header', screen: 'dashboard', position: 'bottom', icon: 'create-outline', padding: 8,
+                title: 'Toca el rango del período',
+                lead: 'Toca el rango del período para ver de dónde sale su inicio y cambiarlo.',
+                description: 'Junto al día del período ves cuántos días faltan para tu próximo ingreso.',
             },
             {
                 id: 'ini_guide', elementId: 'dash_guide', screen: 'dashboard', position: 'bottom', icon: 'compass-outline', padding: 8,
@@ -147,7 +154,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_4', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'diamond-outline', padding: 8,
                 title: 'Patrimonio total',
-                description: 'Suma solo las cuentas que llevan saldo (efectivo, bancos, ahorro e inversión); las cuentas «Sin seguimiento» y las tarjetas de crédito no suman. Los quetzales van arriba y los dólares (u otras monedas) debajo, sin convertirlos. Si ninguna cuenta lleva saldo, es un estimado: tus ahorros externos más tus ingresos menos tus gastos registrados. Lo que debes en visacuotas no se resta: aparece aparte como «Compromisos de crédito». Toca el ícono de información de la tarjeta para ver el detalle.',
+                lead: 'Suma solo las cuentas que llevan saldo (efectivo, bancos, ahorro e inversión); las cuentas «Sin seguimiento» y las tarjetas de crédito no suman.',
+                description: 'Los quetzales van arriba y los dólares (u otras monedas) debajo, sin convertirlos.',
+            },
+            {
+                id: 'ini_4b', elementId: 'dash_networth', screen: 'dashboard', position: 'top', icon: 'information-circle-outline', padding: 8,
+                title: 'Cuando ninguna cuenta lleva saldo',
+                lead: 'Si ninguna cuenta lleva saldo, es un estimado: tus ahorros externos más tus ingresos menos tus gastos registrados.',
+                description: 'Lo que debes en visacuotas no se resta: aparece aparte como «Compromisos de crédito».\n\nToca el ícono de información de la tarjeta para ver el detalle.',
             },
             {
                 id: 'ini_5', elementId: 'dash_balance_q', screen: 'dashboard', position: 'top', icon: 'cash-outline', padding: 8,
@@ -162,7 +176,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ini_capacity', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'speedometer-outline', padding: 8,
                 title: 'Semáforo de capacidad de pago',
-                description: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás: verde si usas menos del 70 %, ámbar desde el 70 %, rojo desde el 90 % y «no alcanza» al llegar al 100 %. Tócalo para ver el detalle: de dónde sale lo que tendrás (los saldos de tus cuentas más los ingresos que esperas antes del pago, o, si ninguna cuenta lleva saldo, la parte de tu ingreso declarado que toca a un período —mensual completo, la mitad en quincenal, 12/52 en semanal— menos lo que ya gastaste en él) y cuánto te sobra o te falta.',
+                lead: 'Compara lo que vas a deber hasta el día de pago de tu tarjeta más próxima (el estado de la tarjeta, gastos fijos por pagar y otras deudas) con lo que tendrás:',
+                description: '• Verde si usas menos del 70 %.\n• Ámbar desde el 70 %.\n• Rojo desde el 90 %.\n• «No alcanza» al llegar al 100 %.',
+                emptyHint: 'Aparece cuando tienes una tarjeta con día de corte y de pago, y algo por pagar. Configura el corte y el pago de tu tarjeta en Cuentas.',
+            },
+            {
+                id: 'ini_capacity_b', elementId: 'dash_capacity', screen: 'dashboard', position: 'top', icon: 'list-outline', padding: 8,
+                title: 'Qué hay en su detalle',
+                lead: 'Tócalo para ver el detalle: de dónde sale lo que tendrás y cuánto te sobra o te falta.',
+                description: 'Lo que tendrás sale de:\n• Los saldos de tus cuentas más los ingresos que esperas antes del pago.\n• O, si ninguna cuenta lleva saldo, la parte de tu ingreso declarado que toca a un período (mensual completo, la mitad en quincenal, 12/52 en semanal), menos lo que ya gastaste en él.',
                 emptyHint: 'Aparece cuando tienes una tarjeta con día de corte y de pago, y algo por pagar. Configura el corte y el pago de tu tarjeta en Cuentas.',
             },
             {
@@ -477,7 +499,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_3', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'checkbox-outline', padding: 8,
                 title: 'Marcar como pagado',
-                description: 'Toca la casilla de un gasto para marcarlo como pagado; la app te pregunta en qué fecha se pagó (por defecto, su día de cobro si ya pasó). Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcas. Mantén presionada la tarjeta para editarla. VENCIDO indica que pasó su día de pago sin marcarse. Si le pusiste cuenta o tarjeta, la ves en un chip junto al día de pago.',
+                lead: 'Toca la casilla de un gasto para marcarlo como pagado; la app te pregunta en qué fecha se pagó (por defecto, su día de cobro si ya pasó).',
+                description: 'Si tiene la etiqueta AUTO, la app lo registra en Movimientos automáticamente y lo revierte si lo desmarcas.',
+                emptyHint: 'Todavía no tienes gastos fijos. Agrega el primero con el botón + de esta pestaña.',
+            },
+            {
+                id: 'budget_3b', elementId: 'budget_fixed_list', screen: 'budget', scrollKey: 'budget_fixed', position: 'top', icon: 'create-outline', padding: 8,
+                title: 'Editar y estados',
+                lead: 'Mantén presionada la tarjeta para editarla.',
+                description: 'VENCIDO indica que pasó su día de pago sin marcarse.\n\nSi le pusiste cuenta o tarjeta, la ves en un chip junto al día de pago.',
                 emptyHint: 'Todavía no tienes gastos fijos. Agrega el primero con el botón + de esta pestaña.',
             },
             {
@@ -488,7 +518,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_4b', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'card-outline', padding: 8,
                 title: 'Deuda programada',
-                description: 'Debajo de tus gastos fijos, «Deuda programada» lista lo que vence en este período: cada tarjeta con lo que falta pagar de su estado de cuenta (quetzales y dólares por separado) y cada préstamo sin tarjeta, con su fecha de vencimiento. «Estimado» quiere decir que el monto sale de los cargos de la tarjeta; si escribes el monto real del estado en Cuentas, deja de ser estimado. Se suma a lo «Comprometido» del período junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo. Pagar la tarjeta no es un gasto nuevo.',
+                description: 'Debajo de tus gastos fijos, «Deuda programada» lista lo que vence en este período: cada tarjeta con lo que falta pagar de su estado de cuenta (quetzales y dólares por separado) y cada préstamo sin tarjeta, con su fecha de vencimiento.',
+                emptyHint: 'Aquí aparecen tus tarjetas y préstamos con su vencimiento. Todavía no hay nada por pagar en este período.',
+            },
+            {
+                id: 'budget_4c', elementId: 'budget_debt_list', screen: 'budget', action: { id: 'budget:setTab', arg: 0 }, scrollKey: 'budget_fixed', position: 'top', icon: 'calculator-outline', padding: 8,
+                title: 'Estimado y comprometido',
+                lead: '«Estimado» quiere decir que el monto sale de los cargos de la tarjeta; si escribes el monto real del estado en Cuentas, deja de ser estimado.',
+                description: 'Se suma a lo «Comprometido» del período junto con tus gastos fijos pendientes, sin contar dos veces lo que ya tengas como gasto fijo.\n\nPagar la tarjeta no es un gasto nuevo.',
                 emptyHint: 'Aquí aparecen tus tarjetas y préstamos con su vencimiento. Todavía no hay nada por pagar en este período.',
             },
             {
@@ -505,7 +542,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_6', elementId: 'budget_cat_grid', screen: 'budget', scrollKey: 'budget_categories', position: 'top', icon: 'pricetag-outline', padding: 8,
                 title: 'Asignar un límite',
-                description: 'Toca una categoría, escribe el límite MENSUAL y confirma con el check. Si cobras por quincena o por semana, el límite también se reparte por período (cada tarjeta muestra cuánto toca por período y cuánto al mes). La app te avisa una vez cuando llegas al 80% del límite del período y otra si lo superas; no te manda un aviso por cada gasto. Para quitar un límite usa la papelera de su tarjeta.',
+                lead: 'Toca una categoría, escribe el límite MENSUAL y confirma con el check.',
+                description: 'Si cobras por quincena o por semana, el límite también se reparte por período (cada tarjeta muestra cuánto toca por período y cuánto al mes).',
+            },
+            {
+                id: 'budget_6b', elementId: 'budget_cat_grid', screen: 'budget', scrollKey: 'budget_categories', position: 'top', icon: 'notifications-outline', padding: 8,
+                title: 'Avisos y quitar un límite',
+                lead: 'La app te avisa una vez cuando llegas al 80% del límite del período y otra si lo superas; no te manda un aviso por cada gasto.',
+                description: 'Para quitar un límite usa la papelera de su tarjeta.',
             },
             {
                 id: 'budget_7', elementId: 'budget_goals_list', screen: 'budget', action: { id: 'budget:setTab', arg: 2 }, scrollKey: 'budget_goals', position: 'bottom', icon: 'trophy-outline', padding: 8,
@@ -521,7 +565,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'budget_9', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'cash-outline', padding: 8,
                 title: 'Tus fuentes de ingreso',
-                description: 'Arriba ves tu ingreso base del período: lo que de verdad te pagan tus fuentes base en un mes (los extras como aguinaldo o bono 14 no cuentan). Debajo, cada fuente con su estado: Esperado (aún no llega), Recibido (ya llegó y la app lo reconoció) o Atrasado (pasó la tolerancia). Toca una fuente para editarla. Si tu ingreso real difiere en más de 5% del que declaraste, la app te lo sugiere y lo actualizas con un toque.',
+                lead: 'Arriba ves tu ingreso base del período: lo que de verdad te pagan tus fuentes base en un mes (los extras como aguinaldo o bono 14 no cuentan).',
+                description: 'Debajo, cada fuente con su estado:\n• Esperado (aún no llega).\n• Recibido (ya llegó y la app lo reconoció).\n• Atrasado (pasó la tolerancia).\n\nToca una fuente para editarla.',
+                emptyHint: 'Todavía no tienes fuentes de ingreso. Crea la primera con el botón + de esta pestaña.',
+            },
+            {
+                id: 'budget_9b', elementId: 'budget_income_list', screen: 'budget', action: { id: 'budget:setTab', arg: 3 }, scrollKey: 'budget_income', position: 'bottom', icon: 'trending-up-outline', padding: 8,
+                title: 'Cuando tu ingreso real cambia',
+                description: 'Si tu ingreso real difiere en más de 5% del que declaraste, la app te lo sugiere y lo actualizas con un toque.',
                 emptyHint: 'Todavía no tienes fuentes de ingreso. Crea la primera con el botón + de esta pestaña.',
             },
             {
@@ -557,8 +608,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_transfers', elementId: 'stats_transfers', screen: 'stats', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
                 title: 'Transferencias sin clasificar',
-                description: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior. Con «Aclarar en el Centro de revisión» eliges a qué cuenta fue y deja de contar.',
-                noSmsDescription: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior. Si fue dinero entre tus cuentas, cambia su categoría en Movimientos o regístralo con «Transferir» en Cuentas.',
+                lead: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas.',
+                description: 'El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior.',
+                emptyHint: 'Aparece cuando hay movimientos con categoría Transferencia que cuentan como gasto o ingreso en el período elegido.',
+            },
+            {
+                id: 'stats_transfers_b', elementId: 'stats_transfers', screen: 'stats', position: 'bottom', icon: 'checkmark-circle-outline', padding: 8,
+                title: 'Aclarar una transferencia',
+                description: 'Con «Aclarar en el Centro de revisión» eliges a qué cuenta fue y deja de contar.',
+                noSmsDescription: 'Si fue dinero entre tus cuentas, cambia su categoría en Movimientos o regístralo con «Transferir» en Cuentas.',
                 emptyHint: 'Aparece cuando hay movimientos con categoría Transferencia que cuentan como gasto o ingreso en el período elegido.',
             },
             {
@@ -607,7 +665,15 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'stats_debt', elementId: 'stats_debt', screen: 'stats', position: 'top', icon: 'alert-circle-outline', padding: 8,
                 title: 'Ratio deuda / ingreso',
-                description: 'Compara lo que pagas cada mes en cuotas de visacuotas y préstamos activos con tu ingreso mensual: el de tus fuentes de ingreso o, si no tienes, el que declaraste. No incluye el consumo de tarjeta que pagas completo cada mes. Verde por debajo del 20 %, ámbar entre 20 % y 40 %, rojo por encima del 40 %. Si venía de lo que declaraste al configurar la app (por ejemplo una deuda tipo tarjeta, que no se convierte en cuota porque sus compras ya son gasto), aparece avisado y puedes quitarlo con «Ya no la tengo».',
+                lead: 'Compara lo que pagas cada mes en cuotas de visacuotas y préstamos activos con tu ingreso mensual: el de tus fuentes de ingreso o, si no tienes, el que declaraste.',
+                description: 'No incluye el consumo de tarjeta que pagas completo cada mes.',
+                emptyHint: 'Aparece cuando tienes visacuotas o préstamos activos. Agrégalos en Cuentas → Visacuotas.',
+            },
+            {
+                id: 'stats_debt_b', elementId: 'stats_debt', screen: 'stats', position: 'top', icon: 'color-palette-outline', padding: 8,
+                title: 'Colores y deudas declaradas',
+                lead: 'Verde por debajo del 20 %, ámbar entre 20 % y 40 %, rojo por encima del 40 %.',
+                description: 'Si venía de lo que declaraste al configurar la app (por ejemplo una deuda tipo tarjeta, que no se convierte en cuota porque sus compras ya son gasto), aparece avisado y puedes quitarlo con «Ya no la tengo».',
                 emptyHint: 'Aparece cuando tienes visacuotas o préstamos activos. Agrégalos en Cuentas → Visacuotas.',
             },
             {
@@ -655,7 +721,14 @@ export const TUTORIALS: Tutorial[] = [
             {
                 id: 'ia_4', elementId: 'advisor_input', screen: 'advisor', position: 'top', icon: 'chatbubble-ellipses-outline', padding: 8,
                 title: 'Escribe una orden o una consulta',
-                description: 'Órdenes: «Crea una meta de Q5,000 para una laptop en diciembre», «Ponle un límite de Q800 a Restaurantes», «Agrega Netflix de $15.99 el 5 de cada mes», «Gasté 85 en gasolina ayer». Consultas: «¿Cuánto gasté en Restaurantes este período?» o «¿Qué gastos fijos me faltan por pagar?». Toda escritura se confirma con la tarjeta y después se puede deshacer. También puedes pedir consejos, como ¿puedo comprarme un celular de Q3,000?',
+                lead: 'Órdenes:',
+                description: '• «Crea una meta de Q5,000 para una laptop en diciembre»\n• «Ponle un límite de Q800 a Restaurantes»\n• «Agrega Netflix de $15.99 el 5 de cada mes»\n• «Gasté 85 en gasolina ayer»',
+            },
+            {
+                id: 'ia_4b', elementId: 'advisor_input', screen: 'advisor', position: 'top', icon: 'help-circle-outline', padding: 8,
+                title: 'Consultas y consejos',
+                lead: 'Consultas:',
+                description: '• «¿Cuánto gasté en Restaurantes este período?»\n• «¿Qué gastos fijos me faltan por pagar?»\n\nToda escritura se confirma con la tarjeta y después se puede deshacer.\n\nTambién puedes pedir consejos, como ¿puedo comprarme un celular de Q3,000?',
             },
             {
                 id: 'ia_5', elementId: 'advisor_clear', screen: 'advisor', position: 'bottom', icon: 'refresh-outline', padding: 8,
@@ -1011,18 +1084,45 @@ export const TUTORIALS: Tutorial[] = [
             },
             {
                 id: 'wid_2', position: 'center', icon: 'speedometer-outline',
-                title: '2. Qué muestra',
-                description: 'El pequeño: lo disponible del período y los días al cobro (con ingresos irregulares no hay cobro: dice cuántos días quedan del mes). El mediano: lo disponible por día, la barra del presupuesto, el próximo pago de tarjeta (fecha y monto, «estimado» si todavía no escribiste el estado de cuenta real), el próximo gasto fijo, el semáforo de capacidad de pago y los saldos de tus cuentas con seguimiento. Los montos grandes se abrevian (por ejemplo Q 12.4k) y en los saldos ves tu primera cuenta y cuántas más tienes. Son las mismas cifras del Inicio y se actualizan cuando abres la app o registras algo. Aunque no abras la app, los días al cobro bajan solos cada día; pero cuando llega tu día de cobro el widget deja de mostrar las cifras del período anterior y dice «Abre la app para actualizar» hasta que la abras.',
+                title: '2. El widget pequeño',
+                description: 'El pequeño: lo disponible del período y los días al cobro (con ingresos irregulares no hay cobro: dice cuántos días quedan del mes).',
+            },
+            {
+                id: 'wid_2b', position: 'center', icon: 'albums-outline',
+                title: '3. El widget mediano',
+                description: 'El mediano: lo disponible por día, la barra del presupuesto, el próximo pago de tarjeta (fecha y monto, «estimado» si todavía no escribiste el estado de cuenta real), el próximo gasto fijo, el semáforo de capacidad de pago y los saldos de tus cuentas con seguimiento.',
+            },
+            {
+                id: 'wid_2c', position: 'center', icon: 'calculator-outline',
+                title: '4. Montos abreviados y cifras',
+                lead: 'Los montos grandes se abrevian (por ejemplo Q 12.4k) y en los saldos ves tu primera cuenta y cuántas más tienes.',
+                description: 'Son las mismas cifras del Inicio y se actualizan cuando abres la app o registras algo.',
+            },
+            {
+                id: 'wid_2d', position: 'center', icon: 'time-outline',
+                title: '5. Si no abres la app',
+                description: 'Aunque no abras la app, los días al cobro bajan solos cada día; pero cuando llega tu día de cobro el widget deja de mostrar las cifras del período anterior y dice «Abre la app para actualizar» hasta que la abras.',
             },
             {
                 id: 'wid_3', position: 'center', icon: 'eye-off-outline',
-                title: '3. El ojo: ocultar o ver los montos',
-                description: 'Por defecto los montos salen ocultos (••••) para que nadie los vea de reojo. Toca el ojo del widget para verlos y tócalo otra vez para ocultarlos. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre. Ojo: Cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget. Si no quieres que nadie los vea, deja el ojo cerrado o quita el widget.',
+                title: '6. El ojo: ocultar o ver los montos',
+                lead: 'Por defecto los montos salen ocultos (••••) para que nadie los vea de reojo.',
+                description: 'Toca el ojo del widget para verlos y tócalo otra vez para ocultarlos. Los días, el porcentaje del presupuesto, las fechas y el semáforo se ven siempre.',
+            },
+            {
+                id: 'wid_3b', position: 'center', icon: 'warning-outline',
+                title: '7. Seguridad del ojo',
+                description: 'Ojo: cualquiera con acceso a tu pantalla de inicio puede tocar el ojo y ver los montos; la huella no protege el widget. Si no quieres que nadie los vea, deja el ojo cerrado o quita el widget.',
             },
             {
                 id: 'wid_4', position: 'center', icon: 'add-outline',
-                title: '4. «+ gasto»',
-                description: 'El botón «+ gasto» del widget abre BudgetMaster directo en la pestaña Agregar para anotar un gasto al instante, también si la app ya estaba abierta o en segundo plano (cada toque te lleva a Agregar sin abrir otra copia de la app). Si tienes la seguridad biométrica activada, la app te la pide primero. Si todavía no terminaste la configuración inicial, el toque se ignora: termínala primero.',
+                title: '8. «+ gasto»',
+                description: 'El botón «+ gasto» del widget abre BudgetMaster directo en la pestaña Agregar para anotar un gasto al instante, también si la app ya estaba abierta o en segundo plano (cada toque te lleva a Agregar sin abrir otra copia de la app).',
+            },
+            {
+                id: 'wid_4b', position: 'center', icon: 'lock-closed-outline',
+                title: '9. Seguridad y configuración inicial',
+                description: 'Si tienes la seguridad biométrica activada, la app te la pide primero.\n\nSi todavía no terminaste la configuración inicial, el toque se ignora: termínala primero.',
             },
         ],
     },
