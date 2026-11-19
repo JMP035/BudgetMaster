@@ -2,15 +2,20 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useRef, useState } from "react";
 import {
     Animated, Easing, ScrollView,
-    StyleSheet, Text, TouchableOpacity, useWindowDimensions, View
+    StyleSheet, Switch, Text, TouchableOpacity, useWindowDimensions, View
 } from "react-native";
 import Svg, { Circle, G, Path } from "react-native-svg";
 import { CreditInstallment, IncomeSource, Transaction, UserSettings, getCurrentFinancialPeriod, getDaysLeftInPeriod, hasPayDate } from "../services/storage";
 import { monthlyDebtLoad } from "../services/DebtLoad";
 import { periodBudgetLimit } from "../services/PeriodBudget";
-import { getAllExpenseCategories } from "../categories";
+import { categoryLabelOf, getCat } from "../categories";
+import {
+    explainSavings, hasCurrencyActivity, isUnclassifiedTransfer, savingsComment, savingsLevel, statsRange, summarizeStats,
+    topCategories, txsInRange,
+} from "../services/StatsSummary";
+import type { StatsCurrency, StatsPeriod, StatsSummary, StatsView } from "../services/StatsSummary";
 import { C } from "../theme";
-import { useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
+import { useTutorialAction, useTutorialRef, useTutorialScroll } from "../context/TutorialContext";
 import { GlassCard } from "./GlassCard";
 import { GlassSegmented } from "./GlassSegmented";
 import { GlassButton } from "./GlassButton";
@@ -38,14 +43,15 @@ function AnimBar({ pct, color, height = 8 }: { pct: number; color: string; heigh
     );
 }
 
-// Monto compacto sin Intl: <1000 → "Q 850", ≥1000 → "Q50.2k", ≥1,000,000 → "Q1.2M"
-function formatCompactMoney(n: number): string {
+// Monto compacto sin Intl: <1000 → "Q 850", ≥1000 → "Q50.2k", ≥1,000,000 → "Q1.2M" (con dólares, «$»)
+function formatCompactMoney(n: number, currency: StatsCurrency = "Q"): string {
+    const sym = currency === "USD" ? "$" : "Q";
     const v = Math.abs(isFinite(n) ? n : 0);
-    if (Math.round(v) < 1000) return `Q ${Math.round(v)}`;
+    if (Math.round(v) < 1000) return `${sym} ${Math.round(v)}`;
     const k = Math.round(v / 100) / 10; // un decimal en miles
-    if (k < 1000) return `Q${k.toFixed(1).replace(/\.0$/, "")}k`;
+    if (k < 1000) return `${sym}${k.toFixed(1).replace(/\.0$/, "")}k`;
     const mm = Math.round(v / 100000) / 10; // un decimal en millones
-    return `Q${mm.toFixed(1).replace(/\.0$/, "")}M`;
+    return `${sym}${mm.toFixed(1).replace(/\.0$/, "")}M`;
 }
 
 const pc = StyleSheet.create({
@@ -59,10 +65,11 @@ const pc = StyleSheet.create({
 // ─────────────────────────────────────────────────────────────
 interface PieSlice { id: string; label: string; value: number; pct: number; color: string; icon: string; }
 
-function PieChart({ slices, selected, onSelect }: {
+function PieChart({ slices, selected, onSelect, currency }: {
     slices: PieSlice[];
     selected: string | null;
     onSelect: (id: string | null) => void;
+    currency: StatsCurrency;
 }) {
     const { width } = useWindowDimensions();
     const size = width * 0.72;
@@ -155,7 +162,7 @@ function PieChart({ slices, selected, onSelect }: {
                             minimumFontScale={0.6}
                             maxFontSizeMultiplier={1}
                         >
-                            {formatCompactMoney(total)}
+                            {formatCompactMoney(total, currency)}
                         </Text>
                         <Text style={pc.centerSub} numberOfLines={1} maxFontSizeMultiplier={1}>TOTAL</Text>
                     </>
@@ -242,6 +249,79 @@ function VertBars({ data, color, labels }: { data: number[]; color: string; labe
 }
 
 // ─────────────────────────────────────────────────────────────
+// AHORRO EXPLICADO
+// ─────────────────────────────────────────────────────────────
+function SavingsExplainer({ summary, customCategories, tutRef }: {
+    summary: StatsSummary;
+    customCategories: UserSettings["customCategories"];
+    tutRef?: (n: View | null) => void;
+}) {
+    const level = savingsLevel(summary);
+    const rate = summary.savingsRate;
+    const rateColor = level === "great" ? C.income : level === "low" ? C.warning : level === "negative" ? C.danger : C.textSub;
+    const labelOf = (id: string) => categoryLabelOf(id, customCategories, "expense");
+    const top = topCategories(summary.expenseByCategory, 3);
+    const lines = explainSavings(summary, labelOf);
+    return (
+        <View ref={tutRef} collapsable={false} style={s.cardWrap}>
+            <GlassCard radius={16} blur={false} contentStyle={s.cardContent}>
+                <View style={s.cardHeader}>
+                    <View style={[s.cardIcon, { backgroundColor: C.primary + "22" }]}>
+                        <Ionicons name="wallet-outline" size={18} color={C.primaryLight} />
+                    </View>
+                    <Text style={s.cardTitle}>Tu ahorro explicado</Text>
+                </View>
+
+                <View style={s.sumRow}>
+                    <Text style={s.sumLbl}>Ingresos</Text>
+                    <Money size="md" tone="income" currency={summary.currency} decimals={0} amount={summary.income} align="right" containerStyle={s.sumMoney} />
+                </View>
+                <View style={s.sumRow}>
+                    <Text style={s.sumLbl}>Gastos</Text>
+                    <Money size="md" tone="expense" currency={summary.currency} decimals={0} amount={summary.expense} align="right" containerStyle={s.sumMoney} />
+                </View>
+                <View style={s.sumDivider} />
+                <View style={s.sumRow}>
+                    <Text style={s.sumLblStrong}>Ahorro = Ingresos − Gastos</Text>
+                    <Money size="lg" tone="auto" currency={summary.currency} decimals={0} amount={summary.savings} align="right" containerStyle={s.sumMoney} />
+                </View>
+
+                {/* Tasa de ahorro */}
+                <View style={[s.savingsRow, { marginTop: 16 }]}>
+                    <Text style={s.savingsLbl}>Tasa de Ahorro</Text>
+                    <Text style={[s.savingsVal, { color: rateColor }]}>{rate === null ? "—" : `${rate.toFixed(1)}%`}</Text>
+                </View>
+                <AnimBar pct={rate === null ? 0 : Math.max(0, Math.min(rate, 100))} color={rateColor} />
+                <Text style={[s.savingsHint, { color: level === "great" ? C.income : C.warning }]}>{savingsComment(level)}</Text>
+
+                {/* Lo que más pesa */}
+                {top.length > 0 && (
+                    <View style={{ marginTop: 16 }}>
+                        <Text style={s.chartLabel}>LO QUE MÁS PESA</Text>
+                        {top.map(c => {
+                            const cat = getCat(c.id, customCategories, "expense");
+                            return (
+                                <View key={c.id} style={s.topRow}>
+                                    <View style={[s.legendDot, { backgroundColor: cat.color }]} />
+                                    <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
+                                    <Money size="sm" gradient={false} tone="muted" currency={summary.currency} decimals={0} amount={c.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
+                                    <Text style={[s.legendPct, { color: cat.color }]}>{c.pct.toFixed(0)}%</Text>
+                                </View>
+                            );
+                        })}
+                    </View>
+                )}
+
+                {/* En palabras simples */}
+                <View style={{ marginTop: 16, gap: 8 }}>
+                    {lines.map((l, i) => <Text key={i} style={s.explainTxt}>{l}</Text>)}
+                </View>
+            </GlassCard>
+        </View>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
 // PANTALLA PRINCIPAL
 // ─────────────────────────────────────────────────────────────
 interface Props {
@@ -257,14 +337,21 @@ interface Props {
 
 export default function StatsScreen({ transactions, settings, creditInstallments = [], incomeSources = [], onClearLegacyDebt }: Props) {
     const dialog = useGlassDialog();
-    const [period, setPeriod] = useState<"current" | "prev" | "year" | "all">("current");
+    const [period, setPeriod] = useState<StatsPeriod>("current");
     const [selectedSlice, setSelectedSlice] = useState<string | null>(null);
     const [legendExpanded, setLegendExpanded] = useState(false);
+    const [view, setView] = useState<StatsView>("expense");
+    const [currency, setCurrency] = useState<StatsCurrency>("Q");
+    const [excludeTransfers, setExcludeTransfers] = useState(false);
+    useTutorialAction("stats:setView", arg => { setView(arg === "income" || arg === "savings" ? arg : "expense"); setSelectedSlice(null); setLegendExpanded(false); });
 
     const headerRef = useTutorialRef('stats_header');
     const filterRef = useTutorialRef('stats_filter');
     const quickRef = useTutorialRef('stats_quick');
     const pieRef = useTutorialRef('stats_pie');
+    const currencyRef = useTutorialRef('stats_currency');
+    const transfersRef = useTutorialRef('stats_transfers');
+    const savingsRef = useTutorialRef('stats_savings');
     const projRef = useTutorialRef('stats_projected');
     const compareRef = useTutorialRef('stats_compare');
     const accumulatedRef = useTutorialRef('stats_accumulated');
@@ -282,34 +369,36 @@ export default function StatsScreen({ transactions, settings, creditInstallments
 
     const fp = getCurrentFinancialPeriod(settings);
 
-    // Filtrar por período
-    const filtered = period === "current"
-        ? transactions.filter(t => { const d = new Date(t.date); return d >= fp.start && d <= fp.end; })
-        : period === "prev"
-            ? transactions.filter(t => { const d = new Date(t.date); return d >= fp.prevStart && d <= fp.prevEnd; })
-            : period === "year"
-                ? transactions.filter(t => new Date(t.date).getFullYear() === y)
-                : transactions;
+    // Rango del período elegido (por día local, igual que el Inicio)
+    const range = statsRange(period, fp, now);
+    const inRange = txsInRange(transactions, range);
 
     const periodLabel = period === "current" ? fp.label
         : period === "prev" ? fp.prevLabel
         : period === "year" ? `Año ${y}` : "Historial completo";
 
-    const expensesQ = filtered.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency));
-    const incomesQ = filtered.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency));
-    const totalExp = expensesQ.reduce((s, t) => s + t.amount, 0);
-    const totalInc = incomesQ.reduce((s, t) => s + t.amount, 0);
-    const savings = totalInc - totalExp;
-    const savingsRate = totalInc > 0 ? (savings / totalInc) * 100 : 0;
+    // Moneda: el selector solo existe si el período tiene movimientos en dólares; si no, se vuelve a Q.
+    const hasUSD = hasCurrencyActivity(inRange, "USD")
+        || summarizeStats(inRange, { currency: "USD", excludeUnclassified: false }).unclassified.count > 0;
+    const cur: StatsCurrency = hasUSD ? currency : "Q";
+    const summary = summarizeStats(inRange, { currency: cur, excludeUnclassified: excludeTransfers });
+    const summaryQ = summarizeStats(inRange, { currency: "Q", excludeUnclassified: excludeTransfers });
 
-    // ── Datos para pastel ─────────────────────────────────────
-    const byCat: PieSlice[] = getAllExpenseCategories(settings.customCategories)
-        .map(cat => {
-            const sum = expensesQ.filter(t => t.category === cat.id).reduce((s, t) => s + t.amount, 0);
-            return { id: cat.id, label: cat.label, value: sum, pct: totalExp > 0 ? (sum / totalExp) * 100 : 0, color: cat.color, icon: cat.icon };
-        })
-        .filter(c => c.value > 0)
-        .sort((a, b) => b.value - a.value);
+    // Las tarjetas de más abajo siguen en quetzales; «Sin transferencias» también las afecta.
+    const base = excludeTransfers ? transactions.filter(t => !isUnclassifiedTransfer(t)) : transactions;
+    const filtered = txsInRange(base, range);
+
+    const expensesQ = filtered.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency));
+    const totalExp = summaryQ.expense;
+    const totalInc = summaryQ.income;
+
+    // ── Datos para la gráfica de pastel (gastos o ingresos) ──
+    const sliceType = view === "income" ? "income" : "expense";
+    const sliceSource = view === "income" ? summary.incomeByCategory : summary.expenseByCategory;
+    const byCat: PieSlice[] = sliceSource.map(c => {
+        const cat = getCat(c.id, settings.customCategories, sliceType);
+        return { id: c.id, label: cat.label, value: c.value, pct: c.pct, color: cat.color, icon: cat.icon };
+    });
 
     const selectedCatData = byCat.find(s => s.id === selectedSlice);
 
@@ -352,23 +441,23 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     });
 
     const expByMonth = last6Months.map(mo =>
-        transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
+        base.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
             new Date(t.date).getMonth() === mo.month && new Date(t.date).getFullYear() === mo.year
         ).reduce((s, t) => s + t.amount, 0)
     );
     const incByMonth = last6Months.map(mo =>
-        transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
+        base.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
             new Date(t.date).getMonth() === mo.month && new Date(t.date).getFullYear() === mo.year
         ).reduce((s, t) => s + t.amount, 0)
     );
 
     const netWorthByMonth = last6Months.map((_, i) => {
         const cumInc = last6Months.slice(0, i + 1).reduce((s, mo) =>
-            s + transactions.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
+            s + base.filter(t => t.type === "income" && (t.currency === "Q" || !t.currency) &&
                 new Date(t.date).getMonth() === mo.month && new Date(t.date).getFullYear() === mo.year
             ).reduce((ss, t) => ss + t.amount, 0), 0);
         const cumExp = last6Months.slice(0, i + 1).reduce((s, mo) =>
-            s + transactions.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
+            s + base.filter(t => t.type === "expense" && (t.currency === "Q" || !t.currency) &&
                 new Date(t.date).getMonth() === mo.month && new Date(t.date).getFullYear() === mo.year
             ).reduce((ss, t) => ss + t.amount, 0), 0);
         return Math.max(cumInc - cumExp + (settings.externalSavings || 0), 0);
@@ -382,7 +471,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
     const daysWithExpense = new Set(expensesQ.map(t => new Date(t.date).toDateString())).size;
     const daysWithoutExpense = Math.max(daysElapsed - daysWithExpense, 0);
 
-    const prevPeriodExp = transactions.filter(t => {
+    const prevPeriodExp = base.filter(t => {
         const d = new Date(t.date);
         return t.type === "expense" && (t.currency === "Q" || !t.currency) &&
             d >= fp.prevStart && d <= fp.prevEnd;
@@ -434,8 +523,6 @@ export default function StatsScreen({ transactions, settings, creditInstallments
             ? `A este ritmo (${q0(avgDaily)}/día), proyectas gastar ${q0(projected)} este año. ${projBalance >= 0 ? `Te sobraría ${q0(projBalance)}.` : `Te faltarían ${q0(projBalance)}.`}`
             : `Gastaste ${q0(projected)} en ${periodLabel} (${q0(avgDaily)}/día). ${projBalance >= 0 ? `Te sobró ${q0(projBalance)}.` : `Te faltaron ${q0(projBalance)}.`}`;
 
-    const savingsColor = savingsRate >= 20 ? C.income : savingsRate >= 0 ? C.warning : C.danger;
-
     return (
         <ScrollView
             ref={statsScroll.ref}
@@ -457,7 +544,7 @@ export default function StatsScreen({ transactions, settings, creditInstallments
             <GlassSegmented
                 containerRef={filterRef}
                 value={period}
-                onChange={(v) => { setPeriod(v); setSelectedSlice(null); }}
+                onChange={(v) => { setPeriod(v); setSelectedSlice(null); setLegendExpanded(false); }}
                 options={[
                     { value: "current", label: "Per. Actual" },
                     { value: "prev", label: "Per. Anterior" },
@@ -473,24 +560,92 @@ export default function StatsScreen({ transactions, settings, creditInstallments
                 <Text style={s.periodTxt} numberOfLines={1}>{periodLabel}</Text>
             </View>
 
-            {/* RESUMEN RÁPIDO */}
-            <View ref={quickRef} collapsable={false} style={s.quickRow}>
-                <GlassCard radius={14} blur={false} topAccentColor={C.income} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
-                    <Text style={s.quickLbl}>INGRESOS</Text>
-                    <Money size="md" tone="income" sign="always" decimals={0} amount={totalInc} align="center" containerStyle={s.quickMoney} />
-                </GlassCard>
-                <GlassCard radius={14} blur={false} topAccentColor={C.expense} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
-                    <Text style={s.quickLbl}>GASTOS</Text>
-                    <Money size="md" tone="expense" sign="always" decimals={0} amount={-totalExp} align="center" containerStyle={s.quickMoney} />
-                </GlassCard>
-                <GlassCard radius={14} blur={false} topAccentColor={savings >= 0 ? C.accent : C.danger} topAccentWidth={2} style={s.quickCard} contentStyle={s.quickContent}>
-                    <Text style={s.quickLbl}>AHORRO</Text>
-                    <Money size="md" tone="auto" sign="always" decimals={0} amount={savings} align="center" containerStyle={s.quickMoney} />
-                </GlassCard>
+            {/* SELECTOR DE MONEDA (solo si el período tiene dólares) */}
+            {hasUSD && (
+                <View style={{ marginBottom: 14 }}>
+                    <GlassSegmented
+                        containerRef={currencyRef}
+                        value={cur}
+                        onChange={(v) => { setCurrency(v); setSelectedSlice(null); setLegendExpanded(false); }}
+                        options={[
+                            { value: "Q", label: "Quetzales (Q)" },
+                            { value: "USD", label: "Dólares ($)" },
+                        ]}
+                    />
+                    {cur === "USD" && <Text style={s.quickHint}>Las tarjetas de más abajo siguen en quetzales.</Text>}
+                </View>
+            )}
+
+            {/* RESUMEN RÁPIDO: cada cuadro cambia la gráfica de abajo */}
+            <View ref={quickRef} collapsable={false}>
+                <View style={s.quickRow}>
+                    {([
+                        { v: "income" as StatsView, lbl: "INGRESOS", a11y: "Ver ingresos", accent: C.income },
+                        { v: "expense" as StatsView, lbl: "GASTOS", a11y: "Ver gastos", accent: C.expense },
+                        { v: "savings" as StatsView, lbl: "AHORRO", a11y: "Ver ahorro", accent: summary.savings >= 0 ? C.accent : C.danger },
+                    ]).map(q => {
+                        const selected = view === q.v;
+                        return (
+                            <TouchableOpacity
+                                key={q.v}
+                                style={s.quickTouch}
+                                activeOpacity={0.85}
+                                onPress={() => { setView(q.v); setSelectedSlice(null); setLegendExpanded(false); }}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected }}
+                                accessibilityLabel={q.a11y}
+                            >
+                                <GlassCard
+                                    radius={14}
+                                    blur={false}
+                                    topAccentColor={q.accent}
+                                    topAccentWidth={selected ? 4 : 2}
+                                    style={selected ? [s.quickCard, s.quickCardActive] : s.quickCard}
+                                    contentStyle={s.quickContent}
+                                >
+                                    <Text style={s.quickLbl}>{q.lbl}</Text>
+                                    {q.v === "income" && <Money size="md" tone="income" sign="always" currency={cur} decimals={0} amount={summary.income} align="center" containerStyle={s.quickMoney} />}
+                                    {q.v === "expense" && <Money size="md" tone="expense" sign="always" currency={cur} decimals={0} amount={-summary.expense} align="center" containerStyle={s.quickMoney} />}
+                                    {q.v === "savings" && <Money size="md" tone="auto" sign="always" currency={cur} decimals={0} amount={summary.savings} align="center" containerStyle={s.quickMoney} />}
+                                </GlassCard>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </View>
+                <Text style={s.quickHint}>Toca un cuadro para cambiar la gráfica.</Text>
             </View>
 
-            {/* ── GRÁFICA DE PASTEL ── */}
-            {byCat.length > 0 && (
+            {/* AVISO DE TRANSFERENCIAS SIN CLASIFICAR */}
+            {(summary.unclassified.count > 0 || excludeTransfers) && (
+                <View ref={transfersRef} collapsable={false} style={s.cardWrap}>
+                    <GlassCard radius={16} blur={false} contentStyle={s.cardContent}>
+                        {summary.unclassified.count > 0 && (
+                            <InlineNotice
+                                variant="warning"
+                                text={`${formatMoney(summary.unclassified.total, cur)} en transferencias sin clasificar: puede que sea dinero entre tus cuentas.${excludeTransfers ? " No se cuentan en esta pantalla." : " Por ahora se cuentan como gasto o ingreso."}`}
+                            />
+                        )}
+                        <View style={s.switchRow}>
+                            <View style={s.switchText}>
+                                <Text style={s.switchLabel}>Sin transferencias</Text>
+                                <Text style={s.switchHint}>Quita estos movimientos de los totales y gráficas de esta pantalla. No borra nada.</Text>
+                            </View>
+                            <Switch
+                                value={excludeTransfers}
+                                onValueChange={v => { setExcludeTransfers(v); setSelectedSlice(null); }}
+                                trackColor={{ false: C.bgDeep, true: C.accent }}
+                                thumbColor={C.text}
+                                accessibilityLabel="Sin transferencias"
+                            />
+                        </View>
+                    </GlassCard>
+                </View>
+            )}
+
+            {/* ── ÁREA DE LA GRÁFICA: ingresos, gastos o ahorro ── */}
+            {view === "savings" ? (
+                <SavingsExplainer summary={summary} customCategories={settings.customCategories} tutRef={savingsRef} />
+            ) : (
                 <View ref={pieRef} collapsable={false} style={s.cardWrap}>
                     <GlassCard radius={16} blur={false} contentStyle={s.cardContent}>
                         <View style={s.cardHeader}>
@@ -498,66 +653,62 @@ export default function StatsScreen({ transactions, settings, creditInstallments
                                 <Ionicons name="pie-chart-outline" size={18} color={C.primaryLight} />
                             </View>
                             <Text style={s.cardTitle}>
-                                Desglose por Categoría — {periodLabel}
+                                {view === "income" ? "Ingresos" : "Gastos"} por categoría — {periodLabel}
                             </Text>
                         </View>
 
-                        <PieChart slices={byCat} selected={selectedSlice} onSelect={setSelectedSlice} />
+                        {byCat.length === 0 ? (
+                            <Text style={s.emptyChart}>
+                                No hay {view === "income" ? "ingresos" : "gastos"} en {cur === "USD" ? "dólares" : "quetzales"} en este período.
+                            </Text>
+                        ) : (
+                            <>
+                                <PieChart slices={byCat} selected={selectedSlice} onSelect={setSelectedSlice} currency={cur} />
 
-                        {/* Detalle de slice seleccionado */}
-                        {selectedCatData && (
-                            <View style={[s.sliceDetail, { borderColor: selectedCatData.color + "55", backgroundColor: selectedCatData.color + "11" }]}>
-                                <Ionicons name={selectedCatData.icon as any} size={20} color={selectedCatData.color} />
-                                <View style={{ flex: 1, marginLeft: 10 }}>
-                                    <Text style={[s.sliceName, { color: selectedCatData.color }]}>{selectedCatData.label}</Text>
-                                    <Money size="md" tone="neutral" amount={selectedCatData.value} containerStyle={s.sliceAmt} />
+                                {/* Detalle de slice seleccionado */}
+                                {selectedCatData && (
+                                    <View style={[s.sliceDetail, { borderColor: selectedCatData.color + "55", backgroundColor: selectedCatData.color + "11" }]}>
+                                        <Ionicons name={selectedCatData.icon as any} size={20} color={selectedCatData.color} />
+                                        <View style={{ flex: 1, marginLeft: 10 }}>
+                                            <Text style={[s.sliceName, { color: selectedCatData.color }]}>{selectedCatData.label}</Text>
+                                            <Money size="md" tone="neutral" currency={cur} amount={selectedCatData.value} containerStyle={s.sliceAmt} />
+                                        </View>
+                                        <Text style={[s.slicePct, { color: selectedCatData.color }]}>{selectedCatData.pct.toFixed(1)}%</Text>
+                                    </View>
+                                )}
+
+                                {/* Leyenda */}
+                                <View style={{ marginTop: 16 }}>
+                                    {(legendExpanded ? byCat : byCat.slice(0, 3)).map(cat => (
+                                        <TouchableOpacity
+                                            key={cat.id}
+                                            style={[s.legendRow, selectedSlice === cat.id && { backgroundColor: cat.color + "11", borderRadius: 8 }]}
+                                            onPress={() => setSelectedSlice(selectedSlice === cat.id ? null : cat.id)}
+                                        >
+                                            <View style={s.legendTop}>
+                                                <View style={[s.legendDot, { backgroundColor: cat.color }]} />
+                                                <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
+                                                <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
+                                                <Money size="sm" gradient={false} tone="muted" currency={cur} decimals={0} amount={cat.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
+                                                <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
+                                            </View>
+                                            <View style={s.legendBar}>
+                                                <AnimBar pct={cat.pct} color={cat.color} height={5} />
+                                            </View>
+                                        </TouchableOpacity>
+                                    ))}
+                                    {byCat.length > 3 && (
+                                        <GlassButton
+                                            kind="secondary"
+                                            label={legendExpanded ? "Ver menos" : `Ver todas (${byCat.length})`}
+                                            icon={legendExpanded ? "chevron-up" : "chevron-down"}
+                                            onPress={() => setLegendExpanded(v => !v)}
+                                            style={s.legendToggle}
+                                        />
+                                    )}
                                 </View>
-                                <Text style={[s.slicePct, { color: selectedCatData.color }]}>{selectedCatData.pct.toFixed(1)}%</Text>
-                            </View>
+                            </>
                         )}
-
-                        {/* Leyenda */}
-                        <View style={{ marginTop: 16 }}>
-                            {(legendExpanded ? byCat : byCat.slice(0, 3)).map(cat => (
-                                <TouchableOpacity
-                                    key={cat.id}
-                                    style={[s.legendRow, selectedSlice === cat.id && { backgroundColor: cat.color + "11", borderRadius: 8 }]}
-                                    onPress={() => setSelectedSlice(selectedSlice === cat.id ? null : cat.id)}
-                                >
-                                    <View style={s.legendTop}>
-                                        <View style={[s.legendDot, { backgroundColor: cat.color }]} />
-                                        <Ionicons name={cat.icon as any} size={14} color={cat.color} style={{ marginRight: 6 }} />
-                                        <Text style={s.legendLabel} numberOfLines={1}>{cat.label}</Text>
-                                        <Money size="sm" gradient={false} tone="muted" decimals={0} amount={cat.value} align="right" minScale={0.7} style={s.legendAmt} containerStyle={s.legendAmtWrap} />
-                                        <Text style={[s.legendPct, { color: cat.color }]}>{cat.pct.toFixed(0)}%</Text>
-                                    </View>
-                                    <View style={s.legendBar}>
-                                        <AnimBar pct={cat.pct} color={cat.color} height={5} />
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-                            {byCat.length > 3 && (
-                                <GlassButton
-                                    kind="secondary"
-                                    label={legendExpanded ? "Ver menos" : `Ver todas (${byCat.length})`}
-                                    icon={legendExpanded ? "chevron-up" : "chevron-down"}
-                                    onPress={() => setLegendExpanded(v => !v)}
-                                    style={s.legendToggle}
-                                />
-                            )}
-                        </View>
-
-                        {/* Tasa de ahorro */}
-                        <View style={[s.savingsRow, { marginTop: 16 }]}>
-                            <Text style={s.savingsLbl}>Tasa de Ahorro</Text>
-                            <Text style={[s.savingsVal, { color: savingsColor }]}>
-                                {savingsRate.toFixed(1)}%
-                            </Text>
-                        </View>
-                        <AnimBar pct={Math.max(0, Math.min(savingsRate, 100))} color={savingsColor} />
-                        <Text style={[s.savingsHint, { color: savingsRate >= 20 ? C.income : C.warning }]}>
-                            {savingsRate >= 20 ? "Excelente: superas el 20% recomendado" : savingsRate >= 0 ? "Bajo: apunta al 20% mínimo" : "Negativo: gastas más de lo que ingresas"}
-                        </Text>
                     </GlassCard>
                 </View>
             )}
@@ -673,7 +824,22 @@ const s = StyleSheet.create({
     periodRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 14, paddingHorizontal: 4 },
     periodTxt: { color: C.textSub, fontSize: 11, fontWeight: "700", flexShrink: 1 },
     quickRow: { flexDirection: "row", gap: 10, marginBottom: 14 },
+    quickTouch: { flex: 1 },
     quickCard: { flex: 1 },
+    quickCardActive: { borderWidth: 1.5, borderColor: C.glassActiveBorder, borderRadius: 14 },
+    quickHint: { color: C.textSub, fontSize: 11, marginTop: 8, marginBottom: 2, paddingHorizontal: 4 },
+    emptyChart: { color: C.textSub, fontSize: 13, lineHeight: 19 },
+    switchRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 12 },
+    switchText: { flex: 1 },
+    switchLabel: { color: C.textPrimary, fontSize: 14, fontWeight: "700" },
+    switchHint: { color: C.textSub, fontSize: 12, marginTop: 2, lineHeight: 17 },
+    sumRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 },
+    sumLbl: { color: C.textSub, fontSize: 13, fontWeight: "700" },
+    sumLblStrong: { color: C.textPrimary, fontSize: 13, fontWeight: "800", flex: 1 },
+    sumMoney: { flexShrink: 1 },
+    sumDivider: { height: 1, backgroundColor: C.glassBorder, marginVertical: 6 },
+    topRow: { flexDirection: "row", alignItems: "center", paddingVertical: 6 },
+    explainTxt: { color: C.textSub, fontSize: 13, lineHeight: 19 },
     quickContent: { padding: 12, alignItems: "center" },
     quickLbl: { color: C.textSub, fontSize: 10, fontWeight: "700", letterSpacing: 1, marginBottom: 4 },
     quickMoney: { alignSelf: "stretch" },

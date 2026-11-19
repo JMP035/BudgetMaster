@@ -340,8 +340,11 @@ Para compras financiadas con tarjeta (por ejemplo «Laptop — Q6,000 en 12 cuot
 
 Análisis completo con filtros: **Per. Actual · Per. Anterior · Este Año · Todo**. «Período actual» sigue tu ciclo de pago.
 
-- **Gráfica de pastel por categoría** — toca una porción (o la leyenda) para ver su detalle. El centro muestra el total.
-- **Tasa de ahorro** — (ingresos − gastos) / ingresos. Meta recomendada: ≥ 20 %.
+- **Cuadros de resumen tocables** — INGRESOS, GASTOS y AHORRO del período. Toca uno para cambiar la gráfica de abajo (el cuadro elegido queda resaltado): **GASTOS** muestra en qué categorías se fue tu dinero, **INGRESOS** de dónde vino, y **AHORRO** te explica la cuenta completa.
+- **Gráfica de pastel por categoría** — toca una porción (o la leyenda) para ver su detalle. El centro muestra el total. Si no hay movimientos en esa moneda y período, la tarjeta te lo dice.
+- **Vista AHORRO** — muestra ingresos, gastos y «Ahorro = Ingresos − Gastos», las tres categorías que más pesan y frases simples que explican por qué tu ahorro sale positivo o negativo. Aquí está la **tasa de ahorro**: (ingresos − gastos) / ingresos; meta recomendada: ≥ 20 %. Sin ingresos en el período no se puede calcular y se muestra «—».
+- **Quetzales o dólares** — si el período tiene movimientos en dólares aparece un selector **Q / $**: los cuadros, la gráfica, el ahorro y el aviso de transferencias se calculan solo con esa moneda, sin convertir. Las tarjetas de más abajo siguen en quetzales.
+- **Transferencias sin clasificar y «Sin transferencias»** — un movimiento con categoría Transferencia que cuenta como gasto o ingreso (porque no se aclaró a qué cuenta fue) puede ser dinero entre tus cuentas. Estadísticas te avisa con el monto, en cualquier período (también en el anterior). El interruptor **«Sin transferencias»** los quita de los totales y gráficas de esta pantalla mientras tanto; no borra nada.
 - **Flujo de caja proyectado** — a tu ritmo diario actual, cuánto gastarás al final del período y si te sobrará o faltará.
 - **Comparativa de 6 meses** — barras de gastos e ingresos mes a mes, con la diferencia vs. el período anterior.
 - **Ahorro acumulado** y **proyección a 6 y 12 meses** según tu ritmo de ahorro (se basa en tus movimientos registrados, no en el saldo de tus cuentas).

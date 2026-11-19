@@ -474,15 +474,32 @@ export const TUTORIALS: Tutorial[] = [
                 description: 'Período Actual sigue tu ciclo de pago; también puedes ver el Período Anterior, Este Año o Todo el historial. Las tarjetas se recalculan con el período elegido, salvo la comparativa de 6 meses, que siempre muestra los últimos seis.',
             },
             {
-                id: 'stats_2', elementId: 'stats_quick', screen: 'stats', position: 'bottom', icon: 'swap-vertical-outline', padding: 8,
-                title: 'Resumen rápido',
-                description: 'Ingresos, gastos y ahorro del período en quetzales. El ahorro es ingresos menos gastos: si es negativo, gastaste más de lo que entró.',
+                id: 'stats_currency', elementId: 'stats_currency', screen: 'stats', position: 'bottom', icon: 'cash-outline', padding: 8,
+                title: 'Quetzales o dólares',
+                description: 'Si en el período tienes movimientos en dólares, elige Q o $: los cuadros, las gráficas, el ahorro y el aviso de transferencias se calculan solo con esa moneda, sin convertir. Las tarjetas de más abajo siguen en quetzales.',
+                emptyHint: 'Aparece cuando tienes movimientos en dólares en el período elegido.',
             },
             {
-                id: 'stats_3', elementId: 'stats_pie', screen: 'stats', position: 'bottom', icon: 'pie-chart-outline', padding: 8,
+                id: 'stats_2', elementId: 'stats_quick', screen: 'stats', action: { id: 'stats:setView', arg: 'expense' }, position: 'bottom', icon: 'swap-vertical-outline', padding: 8,
+                title: 'Resumen rápido',
+                description: 'Ingresos, gastos y ahorro del período. Toca un cuadro para cambiar la gráfica de abajo: INGRESOS muestra de dónde vino tu dinero, GASTOS en qué se fue y AHORRO te explica la cuenta. El cuadro elegido queda resaltado.',
+            },
+            {
+                id: 'stats_transfers', elementId: 'stats_transfers', screen: 'stats', position: 'bottom', icon: 'swap-horizontal-outline', padding: 8,
+                title: 'Transferencias sin clasificar',
+                description: 'Si hay movimientos con categoría Transferencia que cuentan como gasto o ingreso, la app te avisa: puede que sea dinero entre tus cuentas. El interruptor «Sin transferencias» los quita de esta pantalla mientras tanto, sin borrar nada. Funciona en cualquier período, también en el anterior.',
+                emptyHint: 'Aparece cuando hay movimientos con categoría Transferencia que cuentan como gasto o ingreso en el período elegido.',
+            },
+            {
+                id: 'stats_3', elementId: 'stats_pie', screen: 'stats', action: { id: 'stats:setView', arg: 'expense' }, position: 'bottom', icon: 'pie-chart-outline', padding: 8,
                 title: 'Desglose por categoría',
-                description: 'Muestra en qué categorías se fue tu dinero. Toca una porción o una fila de la leyenda para ver su monto y porcentaje. Debajo está tu tasa de ahorro: lo recomendado es al menos el 20% de tus ingresos.',
-                emptyHint: 'La gráfica aparece cuando registras gastos en quetzales en el período elegido.',
+                description: 'Muestra en qué categorías se fue tu dinero (o, con INGRESOS, de dónde vino). Toca una porción o una fila de la leyenda para ver su monto y porcentaje.',
+                emptyHint: 'La gráfica muestra un aviso cuando no hay movimientos en la moneda y el período elegidos.',
+            },
+            {
+                id: 'stats_3b', elementId: 'stats_savings', screen: 'stats', action: { id: 'stats:setView', arg: 'savings' }, position: 'bottom', icon: 'wallet-outline', padding: 8,
+                title: 'Tu ahorro explicado',
+                description: 'Al tocar AHORRO ves la cuenta completa: ingresos menos gastos, tu tasa de ahorro (lo recomendado es al menos el 20 % de tus ingresos), las tres categorías que más pesan y, en palabras simples, por qué tu ahorro sale positivo o negativo.',
             },
             {
                 id: 'stats_4', elementId: 'stats_projected', screen: 'stats', position: 'top', icon: 'trending-up-outline', padding: 8,
