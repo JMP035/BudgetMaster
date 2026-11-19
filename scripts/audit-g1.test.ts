@@ -5,11 +5,12 @@ import { resetMemoryStorage } from './_async-storage-mock';
 
 import { capacityFor, resourcesUntil } from '../services/Capacity';
 import type { CapacityContext } from '../services/Capacity';
+import { migrateInstallmentsSchedule, planInstallmentCharges } from '../services/InstallmentSchedule';
 import { computeFinancialPeriod } from '../services/FinancialPeriod';
 import { fixedCycleConfig, setPeriodStartResolver } from '../services/FixedCycle';
 import { DEFAULT_PAY_RULES } from '../services/PayCalendar';
 import { DEFAULT_SETTINGS, StorageService } from '../services/storage';
-import type { Account, FixedExpense, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
+import type { Account, CreditInstallment, FixedExpense, PaymentCycle, SmsBatchRecord, Transaction, UserSettings } from '../services/storage';
 
 let failures = 0;
 let checks = 0;
@@ -146,6 +147,32 @@ async function scenarios(): Promise<void> {
     const mo = capCtx('monthly', bNow, [card3000, tx('g3', 'expense', 1000, d(2026, 11, 18), { source: 'manual' })]);
     const mRes = resourcesUntil(mo, d(2026, 11, 22))!;
     check('G1-4: mensual sin cambio: recursos = 8,000 − 1,000', near(mRes.resources, 7000), String(mRes.resources));
+  }
+
+  // ───────────────────────────────────────────────────────────
+  // 5. Visacuota «zombi»: tras migrar, si ya pasaron todos los cortes se cierra
+  // ───────────────────────────────────────────────────────────
+  {
+    const NOW = d(2026, 11, 18, 15);
+    const old = (over: Partial<CreditInstallment> = {}): CreditInstallment => ({
+      id: 'z1', accountId: '', name: 'Préstamo viejo', totalAmount: 6000, monthlyPayment: 1000, totalInstallments: 6,
+      paidInstallments: 2, startDate: d(2026, 1, 10).toISOString(), currency: 'Q', category: 'other', isActive: true, ...over,
+    } as CreditInstallment);
+    const mig = migrateInstallmentsSchedule([old()], [], NOW);
+    const plan = planInstallmentCharges(mig.installments, [], [], [], NOW);
+    const after = plan.updates[0] ?? mig.installments[0];
+    check('G1-5: visacuota de 6 cuotas desde el 10/01 con 2 pagadas, migrada el 18/11: queda cerrada',
+      after.isActive === false && after.paidInstallments === 6, JSON.stringify({ a: after.isActive, p: after.paidInstallments }));
+    check('G1-5: la migración no genera cargos retroactivos', plan.toAdd.length === 0);
+    // Una a la que todavía le quedan cortes sigue viva y conserva lo contado.
+    const mig2 = migrateInstallmentsSchedule([old({ id: 'z2', totalInstallments: 12, totalAmount: 12000 })], [], NOW);
+    const plan2 = planInstallmentCharges(mig2.installments, [], [], [], NOW);
+    const after2 = plan2.updates[0] ?? mig2.installments[0];
+    check('G1-5: con cortes futuros sigue activa y paga lo que llevaba (2/12)', after2.isActive === true && after2.paidInstallments === 2,
+      JSON.stringify({ a: after2.isActive, p: after2.paidInstallments }));
+    // Idempotente: una vez cerrada no vuelve a cambiar.
+    const again = planInstallmentCharges([after], [], [], [], NOW);
+    check('G1-5: idempotente', again.updates.length === 0 && again.toAdd.length === 0);
   }
 }
 

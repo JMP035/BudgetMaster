@@ -72,7 +72,8 @@ export interface InstallmentChargePlan {
  *   exista (mismo id o mismo installmentId+installmentNo) o su id esté en `dismissed`;
  * - si ya hay un SMS de gasto de la misma tarjeta, mismo monto (±0.01) y fecha dentro del ciclo de ese corte,
  *   ese SMS es el cargo: se le marca la cuota en vez de crear otro movimiento;
- * - `paidInstallments = clamp(cuotas cargadas + paidOffset)` y al llegar al total la visacuota queda inactiva.
+ * - `paidInstallments = clamp(cuotas cargadas + paidOffset)` y al llegar al total la visacuota queda inactiva;
+ *   si ya pasaron todos los cortes, queda pagada por completo (total) e inactiva sin importar el offset.
  */
 export function planInstallmentCharges(
   insts: CreditInstallment[],
@@ -147,7 +148,11 @@ export function planInstallmentCharges(
       haveNo.add(`${inst.id}#${n}`);
     }
 
-    const paid = Math.min(total, Math.max(0, count + (inst.paidOffset ?? 0)));
+    // Ya pasaron todos los cortes: no queda nada por cargar y la visacuota termina (sin esto, una migrada con
+    // paidOffset negativo quedaba «zombi»: 2/6 y activa para siempre porque ya no hay cortes futuros).
+    const paid = total > 0 && count >= total
+      ? total
+      : Math.min(total, Math.max(0, count + (inst.paidOffset ?? 0)));
     const isActive = paid < total;
     if (paid !== inst.paidInstallments || isActive !== inst.isActive) {
       updates.push({ ...inst, paidInstallments: paid, isActive });
