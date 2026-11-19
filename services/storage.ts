@@ -2341,8 +2341,12 @@ export const StorageService = {
     try { await AsyncStorage.setItem(K.LAST_RESET, date); } catch { }
   },
 
-  async checkAndRunMonthlyReset(): Promise<boolean> {
-    const now = new Date();
+  async checkAndRunMonthlyReset(now: Date = new Date()): Promise<boolean> {
+    // El reinicio mide el período con el resolvedor global: en frío vale null (período NOMINAL) y con fin de semana o
+    // feriado cortaría un día antes o después del real. Por eso se arman primero migraciones, anclas y resolvedor.
+    await this.runMigrations();
+    await this.getPeriodAnchors();
+    refreshPeriodResolver(await this.getSettings());
     // Gastos fijos: por período (idempotente, en cada carga). Visacuotas: un cargo por corte de la tarjeta
     // (idempotente; se pone al día de una vez si la app estuvo sin abrir varios cortes).
     await this.resetFixedExpensesForNewPeriod(now);

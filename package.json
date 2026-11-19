@@ -40,7 +40,8 @@
     "test:card-setup": "sucrase-node scripts/card-setup.test.ts",
     "test:weekly-period": "sucrase-node scripts/weekly-period.test.ts",
     "test:period-budget": "sucrase-node scripts/period-budget.test.ts",
-    "test:tone-lint": "sucrase-node scripts/tone-lint.test.ts"
+    "test:tone-lint": "sucrase-node scripts/tone-lint.test.ts",
+    "test:audit-g1": "sucrase-node scripts/audit-g1.test.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
